@@ -22,6 +22,7 @@ export default [
     // Lab-wide attendance: every meeting/event the viewer is invited to, with its
     // roster. Lives under General; replaced the retired Core-only overview.
     route("attendance", "routes/attendance.tsx"),
+    route("expenses", "expenses/routes/expenses.tsx"),
     // Document signing: the member "documents to sign" inbox + per-agreement
     // fill/sign page. The app gate (layout loader) redirects here when a
     // required agreement is unsigned.
@@ -400,6 +401,7 @@ export default [
   route("alumni/welcome", "routes/alumni.welcome.tsx"),
   route("alumni/lab", "routes/alumni.lab.tsx"),
   route("alumni/onboarding", "routes/alumni.onboarding.tsx"),
+  route("alumni/invite/:token", "routes/alumni.invite.$token.tsx"),
 
   // Login / signup / onboarding (no layout)
   route("login", "routes/login.tsx"),
@@ -432,6 +434,10 @@ export default [
   route("api/mobile/notes/:id", "routes/api.mobile.notes.$id.ts"),
   route("api/mobile/webview", "routes/api.mobile.webview.ts"),
   route("api/mobile/people", "routes/api.mobile.people.ts"),
+  route("api/mobile/expenses/options", "routes/api.mobile.expenses.options.ts"),
+  route("api/mobile/expenses/uploads", "routes/api.mobile.expenses.uploads.ts"),
+  route("api/mobile/expenses", "routes/api.mobile.expenses.ts"),
+  route("api/mobile/expenses/:id", "routes/api.mobile.expenses.$id.ts"),
 
   // OAuth endpoints (no layout)
   route("oauth/authorize", "routes/oauth.authorize.ts"),
@@ -548,6 +554,8 @@ export default [
     "public-api/routes/api.public.partner-meeting-requests.ts",
   ),
 
+  route("expenses/upload", "expenses/routes/expenses.upload.ts"),
+  route("expenses/export", "expenses/routes/expenses.export.ts"),
   route("api/attendance/feed", "routes/api.attendance.feed.ts"),
 
   // Scheduled meetings

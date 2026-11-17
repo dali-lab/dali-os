@@ -472,7 +472,13 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
           "opportunities.chat_offered",
           "opportunities.chat_ask_match",
           "opportunities.still_open",
-          "opportunities.referral_shipped"
+          "opportunities.referral_shipped",
+          "expense.submitted",
+          "expense.returned",
+          "expense.approved",
+          "expense.paid",
+          "expense.needs_receipt",
+          "expense.unpaid_reminder"
         ],
         "description": "Event type key, as returned by \`list_notification_preferences\`."
       },
@@ -10584,6 +10590,559 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
         "description": "Pass page.nextCursor from the previous response to get the next page."
       }
     },
+    "additionalProperties": false
+  },
+  "requiredScope": "mcp:read"
+}
+{
+  "name": "list_expenses",
+  "description": "List expenses. scope 'mine' (default) is the caller's own; 'approvals' is what the caller can approve (staff see everyone's, a card owner sees expenses on their staff cards; defaults to status SUBMITTED); 'all' is every expense and is for Core and staff only. Filter by status, cardId, categoryId, termId, a purchase date range (from, to as YYYY-MM-DD), noReceipt, or outstanding (approved expenses paid on the filer's own card, owed back to them). Amounts are decimal strings. Use get_expense for one expense's receipts, checks and links.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "scope": {
+        "type": "string",
+        "enum": [
+          "mine",
+          "approvals",
+          "all"
+        ]
+      },
+      "status": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "enum": [
+            "DRAFT",
+            "SUBMITTED",
+            "RETURNED",
+            "APPROVED",
+            "PAID"
+          ]
+        },
+        "maxItems": 5
+      },
+      "cardId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "categoryId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "termId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "from": {
+        "type": "string",
+        "description": "Earliest purchase date, YYYY-MM-DD."
+      },
+      "to": {
+        "type": "string",
+        "description": "Latest purchase date, YYYY-MM-DD."
+      },
+      "noReceipt": {
+        "type": "boolean"
+      },
+      "outstanding": {
+        "type": "boolean"
+      },
+      "limit": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 500
+      },
+      "offset": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "additionalProperties": false
+  },
+  "requiredScope": "mcp:read"
+}
+{
+  "name": "get_expense",
+  "description": "One expense with its receipts (short-lived download links), extracted fields, category suggestion, matched statement charge and the checks (duplicate receipt, missing receipt, total mismatch). Only the filer, staff, Core and the card's owner can see it. Amounts are decimal strings.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "expenseId": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "required": [
+      "expenseId"
+    ],
+    "additionalProperties": false
+  },
+  "requiredScope": "mcp:read"
+}
+{
+  "name": "create_expense_receipt_upload",
+  "description": "Start uploading one receipt for an expense. Returns a presigned S3 POST, a ready curl command for a POSIX shell and the receipt key. Run the curl with the local file path and expect a final line of HTTP 204. Call this once per file (an expense takes up to 12), then call manage_expense with action 'create' and the keys as receiptKeys. Accepts JPEG, PNG, WebP and PDF; HEIC has to be converted to JPEG first. The link expires after 15 minutes, and the key only works for the caller.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "contentType": {
+        "type": "string",
+        "enum": [
+          "image/jpeg",
+          "image/png",
+          "image/webp",
+          "application/pdf"
+        ]
+      },
+      "fileName": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 255,
+        "description": "The local file's name, used only to build the curl command."
+      }
+    },
+    "required": [
+      "contentType",
+      "fileName"
+    ],
+    "additionalProperties": false
+  },
+  "requiredScope": "mcp:write"
+}
+{
+  "name": "manage_expense",
+  "description": "Create and change expenses, with the same rules as the Expenses page. Money is a decimal string such as \\"12.50\\"; dates are YYYY-MM-DD. Actions: 'create' (needs receiptKeys from create_expense_receipt_upload; optional paidWith 'STAFF_CARD' or 'OWN_CARD' and cardId; reads the receipts and fills in the merchant, date, total and a category suggestion; saves a draft; with noReceipt true it files without receipts and needs noReceiptReason); 'create_no_receipt' (needs noReceiptReason; optional merchant, purchasedAt, total, purpose, categoryId, paidWith, cardId, or chargeId to file against a statement charge that has no receipt); 'update' (needs expenseId and any of merchant, purchasedAt, total, purpose, categoryId, projectId, attendeeIds, paidWith, cardId, noReceiptReason; the filer edits drafts and returned expenses, approvers can change only categoryId and purpose on a submitted one); 'submit' (needs expenseId; a draft or returned expense with a merchant, date, total and category); 'withdraw' (needs expenseId; filer, while submitted); 'delete' (needs expenseId; a draft only, and removes its receipts); 'mark_paid' (needs expenseId; staff, or the filer for their own approved expense); 'match_charge' (needs expenseId and chargeId; card owner or Core; ties an expense to a statement charge on the same card); 'unmatch_charge' (needs expenseId). Approving and returning are in decide_expense. Returns the expense.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": [
+          "create",
+          "create_no_receipt",
+          "update",
+          "submit",
+          "withdraw",
+          "delete",
+          "mark_paid",
+          "match_charge",
+          "unmatch_charge"
+        ]
+      },
+      "expenseId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "receiptKeys": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "minItems": 1,
+        "maxItems": 12,
+        "description": "Keys from create_expense_receipt_upload."
+      },
+      "paidWith": {
+        "type": "string",
+        "enum": [
+          "STAFF_CARD",
+          "OWN_CARD"
+        ]
+      },
+      "cardId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "chargeId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "noReceipt": {
+        "type": "boolean"
+      },
+      "noReceiptReason": {
+        "type": "string",
+        "maxLength": 1000
+      },
+      "merchant": {
+        "type": "string",
+        "maxLength": 200
+      },
+      "purchasedAt": {
+        "type": "string",
+        "description": "YYYY-MM-DD."
+      },
+      "total": {
+        "type": "string",
+        "description": "Decimal string, e.g. \\"42.10\\"."
+      },
+      "purpose": {
+        "type": "string",
+        "maxLength": 2000
+      },
+      "categoryId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "projectId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "attendeeIds": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1
+        },
+        "maxItems": 100
+      }
+    },
+    "required": [
+      "action"
+    ],
+    "additionalProperties": false
+  },
+  "requiredScope": "mcp:write"
+}
+{
+  "name": "decide_expense",
+  "description": "Approve or return a submitted expense. Staff can decide any expense, and a card's owner can decide expenses on their staff card; nobody can decide their own. Approving needs a category and records its chart string. Returning needs a note that tells the filer what to fix. Notifies the filer. Returns the expense.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "expenseId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "decision": {
+        "type": "string",
+        "enum": [
+          "approve",
+          "return"
+        ]
+      },
+      "note": {
+        "type": "string",
+        "maxLength": 2000,
+        "description": "Required when returning."
+      }
+    },
+    "required": [
+      "expenseId",
+      "decision"
+    ],
+    "additionalProperties": false
+  },
+  "requiredScope": "mcp:write"
+}
+{
+  "name": "list_expense_categories",
+  "description": "List expense categories with their chart strings and keyword hints, in display order. Use the ids for categoryId on manage_expense and list_expenses.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "includeArchived": {
+        "type": "boolean"
+      }
+    },
+    "additionalProperties": false
+  },
+  "requiredScope": "mcp:read"
+}
+{
+  "name": "list_expense_cards",
+  "description": "List staff cards the caller can see: Core sees all, a card owner sees their cards, and a holder sees the cards they can file on. Each card has its nickname, last four digits, owner, holders and default category. Use the ids for cardId on manage_expense, list_card_charges and create_card_statement_upload.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "includeArchived": {
+        "type": "boolean"
+      }
+    },
+    "additionalProperties": false
+  },
+  "requiredScope": "mcp:read"
+}
+{
+  "name": "manage_expense_card",
+  "description": "Core only. Add or change a staff card. Actions: 'create' (needs nickname, last4 as exactly four digits, and ownerId, who has to be a staff member; optional holderIds, who can file on the card, and defaultCategoryId); 'update' (needs cardId and any of the same fields); 'archive' (needs cardId; if expenses on the card are waiting for approval it changes nothing and returns needsConfirm with submittedCount, so repeat with confirm true to archive anyway). Returns the card.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": [
+          "create",
+          "update",
+          "archive"
+        ]
+      },
+      "cardId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "nickname": {
+        "type": "string",
+        "maxLength": 100
+      },
+      "last4": {
+        "type": "string",
+        "minLength": 4,
+        "maxLength": 4
+      },
+      "ownerId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "holderIds": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1
+        },
+        "maxItems": 100
+      },
+      "defaultCategoryId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "confirm": {
+        "type": "boolean",
+        "description": "Archive even if submitted expenses are waiting."
+      }
+    },
+    "required": [
+      "action"
+    ],
+    "additionalProperties": false
+  },
+  "requiredScope": "mcp:write"
+}
+{
+  "name": "manage_expense_category",
+  "description": "Core only. Add or change an expense category. Actions: 'create' (needs label; optional chartString, which has to be a valid chart string, hints as lowercase keywords that help suggest the category from a receipt, and sortOrder); 'update' (needs categoryId and any of the same fields); 'archive' (needs categoryId; archived categories can't be picked on new expenses). Returns the category.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": [
+          "create",
+          "update",
+          "archive"
+        ]
+      },
+      "categoryId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "label": {
+        "type": "string",
+        "maxLength": 100
+      },
+      "chartString": {
+        "type": "string",
+        "maxLength": 100
+      },
+      "hints": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "maxItems": 50
+      },
+      "sortOrder": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "required": [
+      "action"
+    ],
+    "additionalProperties": false
+  },
+  "requiredScope": "mcp:write"
+}
+{
+  "name": "create_card_statement_upload",
+  "description": "Start uploading a card statement CSV. Returns a presigned S3 POST, a ready curl command for a POSIX shell and the key. Run the curl with the local file path and expect a final line of HTTP 204, then call import_card_statement with the same cardId, the key and a column mapping. Max 2 MB; the link expires after 15 minutes. Only the card's owner or Core.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "cardId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "fileName": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 255,
+        "description": "The CSV's file name. Must end in .csv."
+      }
+    },
+    "required": [
+      "cardId",
+      "fileName"
+    ],
+    "additionalProperties": false
+  },
+  "requiredScope": "mcp:write"
+}
+{
+  "name": "import_card_statement",
+  "description": "Import a statement CSV uploaded with create_card_statement_upload into a card. The mapping names the CSV's column headers exactly: date, merchant and amount. Set invertSign true when the bank lists purchases as negative numbers. Charges already imported are skipped, new charges are matched to expenses, and the file is deleted afterwards. Returns imported, skipped, matched, needsReceipt, notOnStatement and ambiguous counts plus row errors. Only the card's owner or Core.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "cardId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "key": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 1024,
+        "description": "Key from create_card_statement_upload."
+      },
+      "mapping": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Header of the date column."
+          },
+          "merchant": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Header of the merchant or description column."
+          },
+          "amount": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Header of the amount column."
+          },
+          "invertSign": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "date",
+          "merchant",
+          "amount"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "required": [
+      "cardId",
+      "key",
+      "mapping"
+    ],
+    "additionalProperties": false
+  },
+  "requiredScope": "mcp:write"
+}
+{
+  "name": "list_card_charges",
+  "description": "List imported statement charges on a card, newest first. state 'needs_receipt' is a charge with no expense, 'matched' has one, 'refund' is a credit. Amounts are decimal strings. Only the card's owner or Core.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "cardId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "state": {
+        "type": "string",
+        "enum": [
+          "matched",
+          "needs_receipt",
+          "refund"
+        ]
+      },
+      "limit": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 1000
+      }
+    },
+    "required": [
+      "cardId"
+    ],
+    "additionalProperties": false
+  },
+  "requiredScope": "mcp:read"
+}
+{
+  "name": "export_expenses",
+  "description": "Export expenses as a CSV or PDF file, the same export as the Expenses page, for the scope and filters given (same meaning as list_expenses; 'all' is Core and staff only). Returns a download URL that expires in 5 minutes, with the file name and format. Download it with curl -L -o <file> '<url>'.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "format": {
+        "type": "string",
+        "enum": [
+          "csv",
+          "pdf"
+        ]
+      },
+      "scope": {
+        "type": "string",
+        "enum": [
+          "mine",
+          "approvals",
+          "all"
+        ]
+      },
+      "status": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "enum": [
+            "DRAFT",
+            "SUBMITTED",
+            "RETURNED",
+            "APPROVED",
+            "PAID"
+          ]
+        },
+        "maxItems": 5
+      },
+      "cardId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "categoryId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "termId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "from": {
+        "type": "string",
+        "description": "Earliest purchase date, YYYY-MM-DD."
+      },
+      "to": {
+        "type": "string",
+        "description": "Latest purchase date, YYYY-MM-DD."
+      },
+      "noReceipt": {
+        "type": "boolean"
+      },
+      "outstanding": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "format"
+    ],
     "additionalProperties": false
   },
   "requiredScope": "mcp:read"

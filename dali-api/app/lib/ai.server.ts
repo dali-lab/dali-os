@@ -29,6 +29,7 @@ export type AiTask =
   | "meetingNotes"
   | "email"
   | "resumeExtract"
+  | "receiptExtract"
   | "releaseNotes"
   | "projectTldr"
   | "alumniChat";
@@ -41,6 +42,7 @@ export const AI_TASKS: Record<AiTask, { tier: ModelTier; effort?: Effort; prefer
   ask: { tier: "sonnet", effort: "medium" },
   enhance: { tier: "sonnet", effort: "medium", prefer: "dartmouth" },
   resumeExtract: { tier: "sonnet", effort: "low" },
+  receiptExtract: { tier: "sonnet", effort: "low", prefer: "anthropic" },
   meetingNotes: { tier: "sonnet", effort: "low" },
   email: { tier: "sonnet", effort: "low", prefer: "dartmouth" },
   releaseNotes: { tier: "sonnet", effort: "low", prefer: "dartmouth" },

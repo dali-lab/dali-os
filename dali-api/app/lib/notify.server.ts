@@ -136,6 +136,7 @@ export async function notify(args: {
       select: {
         id: true,
         firstName: true,
+        email: true,
         daliEmail: true,
         dartmouthEmail: true,
         personalEmail: true,
@@ -355,14 +356,15 @@ export async function notify(args: {
   let emailed = 0;
   for (const r of resolved.filter((x) => x.instantEmail)) {
     if (dedupedInApp.has(r.user.id)) continue;
-    // Same chain as education's recipientEmail(): the netId fallback only fires
-    // for portal students (members always have daliEmail). ccDartmouth delivers
+    // User.email is the address the member chose to be reached at; the rest is
+    // education's recipientEmail() chain, whose netId fallback only fires for portal students. ccDartmouth delivers
     // to both work addresses in one comma-joined To:.
     const dartmouth =
       r.user.dartmouthEmail ?? (r.user.netId ? `${r.user.netId}@dartmouth.edu` : null);
     const to = ccDartmouthFor(r.recipient)
       ? Array.from(new Set([r.user.daliEmail, dartmouth].filter(Boolean))).join(", ") || null
-      : (r.user.daliEmail ??
+      : (r.user.email ??
+        r.user.daliEmail ??
         r.user.dartmouthEmail ??
         r.user.personalEmail ??
         (r.user.netId ? `${r.user.netId}@dartmouth.edu` : null));

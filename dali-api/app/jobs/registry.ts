@@ -109,6 +109,7 @@ import { runRecordingFinalizer } from "~/jobs/recording-finalizer.server";
 import { runMeetingRecordPrompts } from "~/jobs/meeting-record-prompts.server";
 import { runMeetingNotesNudge } from "~/jobs/meeting-notes-nudge.server";
 import { runOpportunitiesFreshness } from "~/jobs/opportunities-freshness.server";
+import { runUnpaidExpenseReminders } from "~/expenses/lib/reminders.server";
 
 export const JOBS: JobDefinition[] = [
   {
@@ -543,6 +544,23 @@ export const JOBS: JobDefinition[] = [
       "Reminds Core when a project's last planned term ends within 30 days and no decision exists for the next term. Links to Renewals.",
     intervalMinutes: 1440,
     handler: runPartnerRenewalSweep,
+  },
+  {
+    name: "expense-unpaid-reminders",
+    description:
+      "Reminds staff about approved out-of-pocket expenses that have not been paid back, once per interval per expense. Does nothing while the Expenses flag is off.",
+    intervalMinutes: 1440,
+    settings: [
+      {
+        key: "unpaidAfterDays",
+        label: "Remind after approved for",
+        unit: "days",
+        min: 1,
+        max: 90,
+        default: 14,
+      },
+    ],
+    handler: runUnpaidExpenseReminders,
   },
   {
     name: "partner-request-expiry",

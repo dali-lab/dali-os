@@ -284,3 +284,57 @@ describe("mutation helpers — null-project findFirst-before-write", () => {
     });
   });
 });
+
+describe("getBudgetData — purchases", () => {
+  const sums = (rows: Array<{ projectId: string | null; chartString: string | null; total: number }>) => {
+    (prisma as any).expense = {
+      groupBy: vi.fn().mockResolvedValue(rows.map((r) => ({ projectId: r.projectId, chartString: r.chartString, _sum: { total: r.total } }))),
+    };
+    return (prisma as any).expense.groupBy as ReturnType<typeof vi.fn>;
+  };
+
+  it("does not query purchases unless asked, and reports zero", async () => {
+    const groupBy = sums([{ projectId: "p1", chartString: "cs-1", total: 99 }]);
+    setup({ projects: [{ id: "p1", name: "Alpha" }], entries: [{ id: "e1", projectId: "p1", chartString: "cs-1", termId: TERM, revenue: 100, projectType: null }] });
+    const data = await getBudgetData(TERM);
+    expect(groupBy).not.toHaveBeenCalled();
+    expect(data.groups[0].rows[0].purchases).toBe(0);
+    expect(data.grandTotalPurchases).toBe(0);
+    expect(data.grandTotalNet).toBe(100);
+  });
+
+  it("sums approved and paid expenses for the term, separate from payroll expense", async () => {
+    const groupBy = sums([{ projectId: "p1", chartString: "cs-1", total: 40.5 }]);
+    setup({
+      projects: [{ id: "p1", name: "Alpha" }],
+      entries: [{ id: "e1", projectId: "p1", chartString: "cs-1", termId: TERM, revenue: 500, projectType: null }],
+      expenses: [{ projectId: "p1", chartString: "cs-1", earnings: 200 }],
+    });
+    const data = await getBudgetData(TERM, { purchases: true });
+    expect(groupBy.mock.calls[0][0].where).toEqual({ termId: TERM, status: { in: ["APPROVED", "PAID"] }, chartString: { not: null } });
+    const row = data.groups[0].rows[0];
+    expect(row.expense).toBe(200);
+    expect(row.purchases).toBe(40.5);
+    expect(row.net).toBe(259.5);
+    expect(data.groups[0].totalPurchases).toBe(40.5);
+    expect(data.grandTotalPurchases).toBe(40.5);
+    expect(data.grandTotalNet).toBe(259.5);
+  });
+
+  it("creates a purchases-only row, and puts projectless purchases in the non-project bucket", async () => {
+    sums([
+      { projectId: null, chartString: "cs-social", total: 80 },
+      { projectId: "p1", chartString: "cs-new", total: 20 },
+      { projectId: "p1", chartString: null, total: 5 },
+    ]);
+    setup({ projects: [{ id: "p1", name: "Alpha" }] });
+    const data = await getBudgetData(TERM, { purchases: true });
+    const bucket = data.groups.find((g) => g.projectId === null)!;
+    expect(bucket.rows).toEqual([expect.objectContaining({ chartString: "cs-social", purchases: 80, expense: 0, net: -80 })]);
+    const alpha = data.groups.find((g) => g.projectId === "p1")!;
+    expect(alpha.rows).toHaveLength(1);
+    expect(alpha.rows[0]).toMatchObject({ chartString: "cs-new", purchases: 20, entryId: null });
+    expect(data.grandTotalPurchases).toBe(100);
+    expect(data.grandTotalNet).toBe(-100);
+  });
+});

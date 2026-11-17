@@ -2,7 +2,7 @@ import { prisma } from "~/lib/db.server";
 import { BadRequestError } from "~/lib/http-error";
 import { LAB_MEMBER_WHERE } from "~/lib/prisma-shapes";
 import { resolvePhotoUrl } from "~/lib/photo";
-import { addQuestWorkExperience, markAlumniOnboarded, setPreferredEmail } from "~/lib/alumni-game.server";
+import { addQuestWorkExperience, markAlumniOnboarded } from "~/lib/alumni-game.server";
 import { updateProfileFields } from "~/members/lib/profile-update.server";
 import {
   blockIdFor,
@@ -53,7 +53,6 @@ export type OnboardingData = {
     currentLocationRegion: string | null;
     currentLocationCountry: string | null;
   };
-  emails: { onFile: string[]; personal: string | null; preferred: string | null };
   linkedinUrl: string;
   personalSite: string;
   birthday: string;
@@ -100,10 +99,6 @@ export async function loadOnboarding(userId: string): Promise<OnboardingData> {
       currentLocationCity: true,
       currentLocationRegion: true,
       currentLocationCountry: true,
-      daliEmail: true,
-      dartmouthEmail: true,
-      personalEmail: true,
-      preferredEmail: true,
       linkedinUrl: true,
       personalSite: true,
       birthday: true,
@@ -170,11 +165,6 @@ export async function loadOnboarding(userId: string): Promise<OnboardingData> {
       currentLocationCity: user.currentLocationCity,
       currentLocationRegion: user.currentLocationRegion,
       currentLocationCountry: user.currentLocationCountry,
-    },
-    emails: {
-      onFile: [user.daliEmail, user.dartmouthEmail].filter((e): e is string => !!e),
-      personal: user.personalEmail,
-      preferred: user.preferredEmail,
     },
     linkedinUrl: user.linkedinUrl ?? "",
     personalSite: user.personalSite ?? "",
@@ -267,11 +257,6 @@ export async function saveBasedIn(
   await updateProfileFields(userId, input, { allowNetId: false });
 }
 
-export async function savePreferredEmail(userId: string, email: string) {
-  const address = email.trim();
-  if (!/^\S+@\S+\.\S+$/.test(address)) throw new BadRequestError("That email doesn't look right.");
-  await setPreferredEmail(userId, address);
-}
 
 export async function saveHometown(userId: string, hometown: string) {
   await updateProfileFields(userId, { hometown }, { allowNetId: false });

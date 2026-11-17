@@ -319,6 +319,38 @@ describe("notify", () => {
     expect(emailCalls()).toHaveLength(0);
   });
 
+  it("emails the address the member chose (User.email) before any work address", async () => {
+    mockPrisma.user.findMany.mockResolvedValue([
+      user("u1", { email: "ada@example.com", personalEmail: "old@example.com" }),
+    ]);
+    await notify({ eventType: "education.announcement", message: { title: "T" }, recipients: [{ userId: "u1" }] });
+    expect(emailCalls()[0].target).toBe("ada@example.com");
+  });
+
+  it("falls back to the old address chain when User.email is empty", async () => {
+    mockPrisma.user.findMany.mockResolvedValue([user("u1", { email: null })]);
+    await notify({ eventType: "education.announcement", message: { title: "T" }, recipients: [{ userId: "u1" }] });
+    expect(emailCalls()[0].target).toBe("u1@dali.dartmouth.edu");
+  });
+
+  it("selects User.email so the chosen address is available", async () => {
+    mockPrisma.user.findMany.mockResolvedValue([user("u1")]);
+    await notify({ eventType: "education.announcement", message: { title: "T" }, recipients: [{ userId: "u1" }] });
+    expect(mockPrisma.user.findMany.mock.calls[0][0].select).toMatchObject({ email: true });
+  });
+
+  it("ccDartmouth ignores User.email and keeps both work addresses", async () => {
+    mockPrisma.user.findMany.mockResolvedValue([
+      user("u1", { email: "ada@example.com", dartmouthEmail: "ada@dartmouth.edu" }),
+    ]);
+    await notify({
+      eventType: "education.announcement",
+      message: { title: "T", ccDartmouth: true },
+      recipients: [{ userId: "u1" }],
+    });
+    expect(emailCalls()[0].target).toBe("u1@dali.dartmouth.edu, ada@dartmouth.edu");
+  });
+
   it("ccDartmouth: emails both the DALI and Dartmouth addresses in one message", async () => {
     mockPrisma.user.findMany.mockResolvedValue([
       user("u1", { dartmouthEmail: "ada@dartmouth.edu" }),

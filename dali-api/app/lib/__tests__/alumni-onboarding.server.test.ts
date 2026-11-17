@@ -13,7 +13,6 @@ import {
   openToPatch,
   saveAbout,
   saveBasedIn,
-  savePreferredEmail,
   saveStudy,
   saveWorkSlot,
 } from "../alumni-onboarding.server";
@@ -225,12 +224,11 @@ describe("loadOnboarding", () => {
     });
   });
 
-  it("loads the study lists, based in, emails, links and event details", async () => {
+  it("loads the study lists, based in, links and event details", async () => {
     expect(await loadOnboarding("u1")).toMatchObject({
       majors: ["Computer Science", "Studio Art"],
       minors: ["Economics"],
       basedIn: { currentLocation: "Brooklyn, New York", currentLocationGeonameId: 5110302 },
-      emails: { onFile: ["ada@dali.dartmouth.edu"], personal: "ada@example.com", preferred: null },
       linkedinUrl: "",
       personalSite: "https://ada.example.com",
       birthday: "2001-06-05",
@@ -298,29 +296,4 @@ describe("profile saves", () => {
     expect(updateProfileFields).toHaveBeenCalledWith("u1", about, { allowNetId: false });
   });
 
-  it("rejects a malformed primary email without writing", async () => {
-    await expect(savePreferredEmail("u1", "not an email")).rejects.toMatchObject({ status: 400 });
-    expect(db.user.update).not.toHaveBeenCalled();
-  });
-
-  it("stores an institutional address as primary without touching the personal email", async () => {
-    db.user.findUniqueOrThrow.mockResolvedValue({
-      daliEmail: "ada@dali.dartmouth.edu",
-      dartmouthEmail: null,
-    } as never);
-    await savePreferredEmail("u1", " Ada@dali.dartmouth.edu ");
-    expect(db.user.update).toHaveBeenCalledWith({
-      where: { id: "u1" },
-      data: { preferredEmail: "ada@dali.dartmouth.edu" },
-    });
-  });
-
-  it("stores a new address as both primary and personal", async () => {
-    db.user.findUniqueOrThrow.mockResolvedValue({ daliEmail: null, dartmouthEmail: null } as never);
-    await savePreferredEmail("u1", "ada@example.com");
-    expect(db.user.update).toHaveBeenCalledWith({
-      where: { id: "u1" },
-      data: { preferredEmail: "ada@example.com", personalEmail: "ada@example.com" },
-    });
-  });
 });

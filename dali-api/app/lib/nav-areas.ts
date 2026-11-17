@@ -35,6 +35,7 @@ import {
   Mail,
   MapPinned,
   Newspaper,
+  Receipt,
   RotateCw,
   Megaphone,
   Settings,
@@ -227,6 +228,7 @@ const ONBOARDING_NAV_ITEM: SubTab = { label: "Journeys", href: "/journeys", icon
 const REFER_NAV_ITEM: SubTab = { label: "Refer a partner", href: "/refer", icon: Handshake };
 const CORE_TASKBOARD_NAV_ITEM: SubTab = { label: "Taskboard", href: "/core", icon: ListTodo };
 const CORE_MILESTONES_NAV_ITEM: SubTab = { label: "Milestones", href: "/core/milestones", icon: Flag };
+const EXPENSES_NAV_ITEM: SubTab = { label: "Expenses", href: "/expenses", icon: Receipt, gate: (r) => !r.isAlumni };
 
 const REGROUPED_AREAS: NavArea[] = [
   {
@@ -244,6 +246,7 @@ const REGROUPED_AREAS: NavArea[] = [
       // Lab-wide Attendance: every meeting/event you're invited to, with each
       // event's roster (invited-scoped, see app/routes/attendance.tsx).
       { label: "Attendance", href: "/attendance", icon: ClipboardCheck, gate: (r) => !r.isAlumni },
+      EXPENSES_NAV_ITEM,
       REFER_NAV_ITEM,
       ONBOARDING_NAV_ITEM,
     ],
@@ -378,6 +381,7 @@ export function areasFor(flags: Partial<FeatureFlagMap> = {}): NavArea[] {
   if (flags.community) hidden.add("/community");
   if (!flags["onboarding-journeys"]) hidden.add(ONBOARDING_NAV_ITEM.href);
   if (!flags["refer-a-partner"]) hidden.add(REFER_NAV_ITEM.href);
+  if (!flags.expenses) hidden.add(EXPENSES_NAV_ITEM.href);
   if (!flags["core-taskboard"]) {
     hidden.add(CORE_TASKBOARD_NAV_ITEM.href);
     hidden.add(CORE_MILESTONES_NAV_ITEM.href);

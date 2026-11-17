@@ -6,7 +6,6 @@ import { Avatar } from "~/components/ui/Avatar";
 import { Button, buttonClasses } from "~/components/ui/Button";
 import { DateField } from "~/components/ui/DateField";
 import { FormField } from "~/components/ui/FormField";
-import { Radio } from "~/components/ui/Radio";
 import { Toggle } from "~/components/ui/Toggle";
 import { ToggleChip } from "~/components/ui/ToggleChip";
 import { useOsChrome } from "~/components/os-chrome";
@@ -14,6 +13,7 @@ import { BasedInField, structuredPlace } from "~/members/components/BasedInField
 import { cn } from "~/lib/cn";
 import type { AuthTile } from "~/components/auth/auth-tiles";
 import { BlockTile, BlockWall } from "~/components/alumni-onboarding/Wall";
+import { ContactEmailPicker } from "~/components/contact-email/ContactEmailPicker";
 import {
   ASK_ME_ABOUT_SUGGESTIONS,
   OPEN_TO_CHOICES,
@@ -29,8 +29,9 @@ import {
   MAX_STUDY_LENGTH,
 } from "~/members/lib/profile-limits";
 import type { OnboardingData } from "~/lib/alumni-onboarding.server";
+import type { ContactEmailOptions } from "~/lib/contact-email.server";
 
-export type OnboardingView = OnboardingData;
+export type OnboardingView = OnboardingData & { contactEmail: ContactEmailOptions };
 
 type ActionData = { ok?: boolean; error?: string };
 
@@ -215,40 +216,6 @@ function BasedInEditor({ data, close }: { data: OnboardingView; close: () => voi
   );
 }
 
-function primaryEmail(data: OnboardingView): string | null {
-  return data.emails.preferred ?? data.emails.personal ?? data.emails.onFile[0] ?? null;
-}
-
-function EmailEditor({ data, close }: { data: OnboardingView; close: () => void }) {
-  const fetcher = useRowSave(close);
-  const { formClass } = useOsChrome();
-  const known = [...data.emails.onFile, ...(data.emails.personal ? [data.emails.personal] : [])];
-  const current = primaryEmail(data);
-  const [picked, setPicked] = useState<string>(current && known.includes(current) ? current : "other");
-  const [other, setOther] = useState("");
-  return (
-    <fetcher.Form method="post" className={cn(formClass, "flex flex-col gap-2.5")}>
-      <input type="hidden" name="intent" value="save-email" />
-      <input type="hidden" name="email" value={picked === "other" ? other : picked} />
-      {known.map((email) => (
-        <Radio
-          key={email}
-          name="emailPick"
-          label={email}
-          checked={picked === email}
-          onChange={() => setPicked(email)}
-        />
-      ))}
-      <Radio name="emailPick" label="Another address" checked={picked === "other"} onChange={() => setPicked("other")} />
-      {picked === "other" ? (
-        <FormField label="Email" labelHidden type="email" value={other} onChange={setOther} placeholder="you@example.com" />
-      ) : null}
-      <EditorError error={fetcher.data?.error} />
-      <EditorActions saving={fetcher.state !== "idle"} onCancel={close} />
-    </fetcher.Form>
-  );
-}
-
 function WorkEditor({
   slot,
   job,
@@ -327,6 +294,21 @@ function workLine(job: OnboardingView["now"], withYear: boolean): string {
   return withYear && job.year ? `${base}, ${job.year}` : base;
 }
 
+function ContactStep({ data, next }: { data: OnboardingView; next: () => void }) {
+  return (
+    <>
+      <StepHeader
+        eyebrow="First, a quick one"
+        title="Your email"
+        sub="Sign-in codes and DALI OS updates go to this address. It can be changed later in settings."
+      />
+      <div className="pb-8">
+        <ContactEmailPicker data={data.contactEmail} onDone={next} />
+      </div>
+    </>
+  );
+}
+
 function studyLine(data: OnboardingView): string | null {
   const majors = data.majors.join(" and ");
   const minors = data.minors.length > 0 ? `${data.minors.join(" and ")} ${data.minors.length === 1 ? "minor" : "minors"}` : "";
@@ -395,7 +377,6 @@ function DaliRecord({ data }: { data: OnboardingView }) {
 }
 
 function DetailsStep({ data, next }: { data: OnboardingView; next: () => void }) {
-  const email = primaryEmail(data);
   const place = structuredPlace(data.basedIn);
   return (
     <>
@@ -424,12 +405,6 @@ function DetailsStep({ data, next }: { data: OnboardingView; next: () => void })
           value={place || "Not added yet"}
           editLabel={place ? "Edit" : "Add"}
           editor={(close) => <BasedInEditor data={data} close={close} />}
-        />
-        <DetailRow
-          tileId="t16"
-          label="Email"
-          value={email ?? "Not added yet"}
-          editor={(close) => <EmailEditor data={data} close={close} />}
         />
         <DetailRow
           tileId="t12"
@@ -721,7 +696,7 @@ function FinishLater() {
 }
 
 export function AlumniOnboarding({ data }: { data: OnboardingView }) {
-  const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
+  const [step, setStep] = useState<0 | 1 | 2 | 3 | 4>(0);
   const fetcher = useFetcher<ActionData>();
   const advanceTo = useRef<2 | 3 | 4 | null>(null);
   const handled = useRef<unknown>(null);
@@ -741,9 +716,10 @@ export function AlumniOnboarding({ data }: { data: OnboardingView }) {
   };
 
   const error = fetcher.data?.error;
+  const brandStep = Math.max(step, 1) as 1 | 2 | 3 | 4;
   const brand = {
-    lines: brandLines(step, data.firstName),
-    sub: BRAND[step].sub,
+    lines: brandLines(brandStep, data.firstName),
+    sub: BRAND[brandStep].sub,
     visual: step === 4 ? <FinishedBlock data={data} /> : <BlockWall filled={wallFilledForStep(step)} />,
   };
 
@@ -757,6 +733,7 @@ export function AlumniOnboarding({ data }: { data: OnboardingView }) {
       wide
       hideLegal
     >
+      {step === 0 && <ContactStep data={data} next={() => setStep(1)} />}
       {step === 1 && <DetailsStep data={data} next={() => setStep(2)} />}
       {step === 2 && (
         <AboutStep

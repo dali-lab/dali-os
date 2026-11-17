@@ -46,12 +46,22 @@ const NON_PROJECT_GROUP_NAME = "Non-project (Core / Instructor / External / unma
  * lines (no BudgetEntry) appear with revenue 0. An empty term returns zeroed
  * totals with no groups — never throws.
  */
-export async function getBudgetData(termId: string): Promise<BudgetData> {
-  const [entries, notes, expenses, projects] = await Promise.all([
+export async function getBudgetData(
+  termId: string,
+  opts: { purchases?: boolean } = {},
+): Promise<BudgetData> {
+  const [entries, notes, expenses, projects, purchaseSums] = await Promise.all([
     prisma.budgetEntry.findMany({ where: { termId } }),
     prisma.budgetNote.findMany({ where: { termId } }),
     computeExpensesByProjectChartTerm(termId),
     prisma.project.findMany({ select: { id: true, name: true } }),
+    opts.purchases
+      ? prisma.expense.groupBy({
+          by: ["projectId", "chartString"],
+          where: { termId, status: { in: ["APPROVED", "PAID"] }, chartString: { not: null } },
+          _sum: { total: true },
+        })
+      : Promise.resolve([]),
   ]);
 
   const projectName = new Map(projects.map((p) => [p.id, p.name]));
@@ -79,6 +89,7 @@ export async function getBudgetData(termId: string): Promise<BudgetData> {
       revenue,
       adjustedRevenue,
       expense: 0,
+      purchases: 0,
       net: adjustedRevenue,
       note: note?.note ?? null,
       isPateo: e.projectType === "DALI PATEO",
@@ -102,11 +113,41 @@ export async function getBudgetData(termId: string): Promise<BudgetData> {
         revenue: 0,
         adjustedRevenue: 0,
         expense: x.earnings,
+        purchases: 0,
         net: roundCents(-x.earnings),
         note: note?.note ?? null,
         isPateo: false,
       });
     }
+  }
+
+  for (const p of purchaseSums) {
+    const amount = decimalToNumber(p._sum.total);
+    if (!p.chartString || amount === 0) continue;
+    const key = mergeKey(p.projectId, p.chartString);
+    const existing = rowByKey.get(key);
+    if (existing) {
+      existing.purchases = amount;
+    } else {
+      const note = noteByKey.get(key) ?? null;
+      rowByKey.set(key, {
+        entryId: null,
+        noteId: note?.id ?? null,
+        projectId: p.projectId,
+        chartString: p.chartString,
+        projectType: null,
+        revenue: 0,
+        adjustedRevenue: 0,
+        expense: 0,
+        purchases: amount,
+        net: 0,
+        note: note?.note ?? null,
+        isPateo: false,
+      });
+    }
+  }
+  for (const row of rowByKey.values()) {
+    row.net = roundCents(row.adjustedRevenue - row.expense - row.purchases);
   }
 
   // Group by project; null projectId → the shared non-project bucket.
@@ -125,6 +166,7 @@ export async function getBudgetData(termId: string): Promise<BudgetData> {
       rows.reduce((s, r) => s + r.adjustedRevenue, 0),
     );
     const totalExpense = roundCents(rows.reduce((s, r) => s + r.expense, 0));
+    const totalPurchases = roundCents(rows.reduce((s, r) => s + r.purchases, 0));
     groups.push({
       projectId,
       projectName:
@@ -135,7 +177,8 @@ export async function getBudgetData(termId: string): Promise<BudgetData> {
       totalRevenue,
       totalAdjustedRevenue,
       totalExpense,
-      totalNet: roundCents(totalAdjustedRevenue - totalExpense),
+      totalPurchases,
+      totalNet: roundCents(totalAdjustedRevenue - totalExpense - totalPurchases),
     });
   }
 
@@ -155,13 +198,19 @@ export async function getBudgetData(termId: string): Promise<BudgetData> {
   const grandTotalExpense = roundCents(
     groups.reduce((s, g) => s + g.totalExpense, 0),
   );
+  const grandTotalPurchases = roundCents(
+    groups.reduce((s, g) => s + g.totalPurchases, 0),
+  );
 
   return {
     groups,
     grandTotalRevenue,
     grandTotalAdjustedRevenue,
     grandTotalExpense,
-    grandTotalNet: roundCents(grandTotalAdjustedRevenue - grandTotalExpense),
+    grandTotalPurchases,
+    grandTotalNet: roundCents(
+      grandTotalAdjustedRevenue - grandTotalExpense - grandTotalPurchases,
+    ),
   };
 }
 

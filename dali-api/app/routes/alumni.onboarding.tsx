@@ -12,11 +12,11 @@ import {
   saveAbout,
   saveBasedIn,
   saveHometown,
-  savePreferredEmail,
   saveStudy,
   saveWorkSlot,
 } from "~/lib/alumni-onboarding.server";
 import { reportHistoryCorrection } from "~/lib/alumni-history.server";
+import { listContactEmailOptions, runContactEmailIntent } from "~/lib/contact-email.server";
 import { parseJsonList } from "~/lib/alumni-onboarding";
 import { ProfileConflictError, ProfileValidationError } from "~/members/lib/profile-update.server";
 import { AlumniOnboarding } from "~/components/alumni-onboarding/AlumniOnboarding";
@@ -31,7 +31,8 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!roles.isAlumni) return redirect("/");
   if (!(await isFeatureEnabled("alumni-onboarding", userId, roles, request))) return redirect("/");
 
-  return loadOnboarding(userId);
+  const [data, contactEmail] = await Promise.all([loadOnboarding(userId), listContactEmailOptions(userId)]);
+  return { ...data, contactEmail };
 }
 
 const text = (form: FormData, key: string) => String(form.get(key) ?? "");
@@ -47,6 +48,8 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   const form = await request.formData();
+  const contact = await runContactEmailIntent(text(form, "intent"), form, userId, request);
+  if (contact) return Response.json(contact, { status: "error" in contact ? 400 : 200 });
   try {
     switch (text(form, "intent")) {
       case "save-class":
@@ -61,9 +64,6 @@ export async function action({ request }: Route.ActionArgs) {
           currentLocation: text(form, "currentLocation"),
           currentLocationGeonameId: text(form, "currentLocationGeonameId"),
         });
-        break;
-      case "save-email":
-        await savePreferredEmail(userId, text(form, "email"));
         break;
       case "report-history":
         if (text(form, "note").trim() === "") throw new BadRequestError("The note is empty.");

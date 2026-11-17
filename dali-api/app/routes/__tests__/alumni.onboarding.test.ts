@@ -12,11 +12,14 @@ vi.mock("~/lib/alumni-onboarding.server", () => ({
   saveAbout: vi.fn(),
   saveBasedIn: vi.fn(),
   saveHometown: vi.fn(),
-  savePreferredEmail: vi.fn(),
   saveStudy: vi.fn(),
   saveWorkSlot: vi.fn(),
 }));
 vi.mock("~/lib/alumni-history.server", () => ({ reportHistoryCorrection: vi.fn() }));
+vi.mock("~/lib/contact-email.server", () => ({
+  listContactEmailOptions: vi.fn(),
+  runContactEmailIntent: vi.fn(),
+}));
 vi.mock("~/members/lib/profile-update.server", async () => {
   const { BadRequestError, ConflictError } = await import("~/lib/http-error");
   class ProfileValidationError extends BadRequestError {
@@ -44,13 +47,13 @@ import { getUserRoles } from "~/lib/roles";
 import { readOnlyRoles } from "~/lib/read-only-roles.server";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { BadRequestError } from "~/lib/http-error";
+import { listContactEmailOptions, runContactEmailIntent } from "~/lib/contact-email.server";
 import {
   finishOnboarding,
   loadOnboarding,
   saveAbout,
   saveBasedIn,
   saveHometown,
-  savePreferredEmail,
   saveStudy,
   saveWorkSlot,
 } from "~/lib/alumni-onboarding.server";
@@ -79,6 +82,8 @@ beforeEach(() => {
   vi.mocked(getUserRoles).mockResolvedValue({ isAlumni: true } as never);
   flags(true);
   vi.mocked(loadOnboarding).mockResolvedValue({ firstName: "Ada" } as never);
+  vi.mocked(listContactEmailOptions).mockResolvedValue({ options: [], preselected: null });
+  vi.mocked(runContactEmailIntent).mockResolvedValue(null);
 });
 
 describe("loader", () => {
@@ -103,8 +108,11 @@ describe("loader", () => {
     expect(loadOnboarding).not.toHaveBeenCalled();
   });
 
-  it("returns the profile data", async () => {
-    expect(await runLoader()).toEqual({ firstName: "Ada" });
+  it("returns the profile data with the contact email options", async () => {
+    const contactEmail = { options: [{ address: "ada@example.com", proven: true, current: true }], preselected: "ada@example.com" };
+    vi.mocked(listContactEmailOptions).mockResolvedValue(contactEmail);
+    expect(await runLoader()).toEqual({ firstName: "Ada", contactEmail });
+    expect(listContactEmailOptions).toHaveBeenCalledWith("u1");
   });
 });
 
@@ -123,6 +131,19 @@ describe("action", () => {
     expect(finishOnboarding).not.toHaveBeenCalled();
   });
 
+  it("hands the contact email intents to the shared handler and returns its reply", async () => {
+    vi.mocked(runContactEmailIntent).mockResolvedValue({ ok: true, status: "code_sent", address: "ada@example.com" });
+    const res = await post({ intent: "choose-contact-email", address: "ada@example.com" });
+    expect(await res.json()).toEqual({ ok: true, status: "code_sent", address: "ada@example.com" });
+    expect(runContactEmailIntent).toHaveBeenCalledWith("choose-contact-email", expect.any(FormData), "u1", expect.any(Request));
+
+    vi.mocked(runContactEmailIntent).mockResolvedValue({ error: "That code didn't match." });
+    const bad = await post({ intent: "confirm-contact-email", address: "ada@example.com", code: "1" });
+    expect(bad.status).toBe(400);
+    expect(await bad.json()).toEqual({ error: "That code didn't match." });
+    expect(finishOnboarding).not.toHaveBeenCalled();
+  });
+
   it("rejects an unknown intent", async () => {
     expect((await post({ intent: "nope" })).status).toBe(400);
   });
@@ -134,14 +155,12 @@ describe("action", () => {
     expect(saveHometown).toHaveBeenCalledWith("u1", "Portland");
   });
 
-  it("saves based in with the picked city id, and the primary email", async () => {
+  it("saves based in with the picked city id", async () => {
     await post({ intent: "save-based-in", currentLocation: "Brooklyn, New York", currentLocationGeonameId: "5110302" });
     expect(saveBasedIn).toHaveBeenCalledWith("u1", {
       currentLocation: "Brooklyn, New York",
       currentLocationGeonameId: "5110302",
     });
-    await post({ intent: "save-email", email: "ada@example.com" });
-    expect(savePreferredEmail).toHaveBeenCalledWith("u1", "ada@example.com");
   });
 
   it("sends a history report to Core and refuses an empty one", async () => {
