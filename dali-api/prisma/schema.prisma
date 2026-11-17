@@ -20,12 +20,12 @@ enum MembershipStatus {
 
 model User {
   // unique identifier
-  id                    String               @id @default(cuid())
-  slidePresentations    SlidePresentation[]
+  id String @id @default(cuid())
+  slidePresentations SlidePresentation[]
   hostedCommunityEvents CommunityEvent[]     @relation("CommunityEventHost")
   communityEventRsvps   CommunityEventRsvp[]
-  slidePollVotes        SlidePollVote[]
-  slideTemplates        SlideTemplate[]
+  slidePollVotes     SlidePollVote[]
+  slideTemplates     SlideTemplate[]
 
   // Term-by-term PI assignments, and applications this person is PI of.
   piProjectTerms        ProjectTerm[]        @relation("ProjectTermPi")
@@ -365,15 +365,15 @@ model User {
   customEmoji      CustomEmoji[]
 
   // ─── Page documentation (per-page guides) ─────────────────────────────────
-  pageDocsMaintained     PageDoc[]           @relation("PageDocMaintainer")
-  blogPosts              BlogPost[]
-  blogReactions          BlogReaction[]
-  blogComments           BlogComment[]
-  pageDocsCreated        PageDoc[]           @relation("PageDocCreatedBy")
-  pageDocsLastEdited     PageDoc[]           @relation("PageDocLastEditedBy")
-  resourceHubPages       ResourceHubPage[]
-  critSubmissions        CritSubmission[]    @relation("CritSubmissionAuthor")
-  domainReferences       DomainReference[]   @relation("DomainReferenceAuthor")
+  pageDocsMaintained PageDoc[]  @relation("PageDocMaintainer")
+  blogPosts          BlogPost[]
+  blogReactions      BlogReaction[]
+  blogComments       BlogComment[]
+  pageDocsCreated    PageDoc[]  @relation("PageDocCreatedBy")
+  pageDocsLastEdited PageDoc[]  @relation("PageDocLastEditedBy")
+  resourceHubPages   ResourceHubPage[]
+  critSubmissions    CritSubmission[]  @relation("CritSubmissionAuthor")
+  domainReferences   DomainReference[] @relation("DomainReferenceAuthor")
 
   // ─── Payroll: Reconcile back-relation ─────────────────────────────────────
   timesheetImports     TimesheetImport[]
@@ -2285,29 +2285,29 @@ model MeetingRecording {
   occurrenceStart    DateTime?
 
   // Channels with at least one stored chunk: "mic" | "call".
-  channels           String[]  @default([])
+  channels       String[]  @default([])
   // Channels with at least one chunk above the silence floor. Only these are
   // sent to transcription; empty (rows from before this column) sends all.
-  voicedChannels     String[]  @default([])
+  voicedChannels String[]  @default([])
   // Segment start offsets in seconds, index = segment. Continue appends one;
   // segment 0's start is implicitly 0.
-  segmentStarts      Float[]   @default([])
+  segmentStarts  Float[]   @default([])
   // Highest seq stored per channel per segment, for the job description.
-  chunkIndex         Json      @default("{}") // { mic: [41, 12], call: [41] }
-  lastChunkAt        DateTime?
+  chunkIndex     Json      @default("{}") // { mic: [41, 12], call: [41] }
+  lastChunkAt    DateTime?
   // Reported by the client at create. Null on rows from before these columns
   // and on anything the client didn't send.
-  captureSource      String? // "desktop" | "browser"
-  appVersion         String? // the desktop shell's version, when there is one
-  clientPlatform     String?
+  captureSource  String?   // "desktop" | "browser"
+  appVersion     String?   // the desktop shell's version, when there is one
+  clientPlatform String?
   // Reported by the desktop recorder once capture starts, and micSilent again
   // whenever the mic goes quiet or comes back. systemAudioAllowed is null
   // when macOS hasn't asked yet or couldn't say.
   micDevice          String?
   systemAudioAllowed Boolean?
-  micSilent          Boolean   @default(false)
+  micSilent          Boolean  @default(false)
   // When the chunks were removed, a day after finalizedAt.
-  audioDeletedAt     DateTime?
+  audioDeletedAt DateTime?
 
   // Per-channel word arrays with absolute timestamps; lines derive from these.
   words    Json @default("{}") // { mic: [{ s, e, w, sp }], call: [...] }
@@ -2317,17 +2317,17 @@ model MeetingRecording {
 
   // Seconds recorded across finished sessions. Continue starts a new session
   // whose timeline is stamped from here, so the transcript reads as one.
-  recordedSeconds  Float     @default(0)
+  recordedSeconds Float     @default(0)
   // When the latest session went Pending → Recording. The live clock is
   // recordedSeconds + (now - this); only meaningful while status is Recording.
   sessionStartedAt DateTime?
-  error            String?
+  error           String?
   // Latest Modal progress while Processing; cleared by applyResult.
-  progress         Json?
-  insertedAt       DateTime? // notes or transcript inserted into the doc
-  finalizedAt      DateTime? // audio deleted
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  progress        Json?
+  insertedAt      DateTime? // notes or transcript inserted into the doc
+  finalizedAt     DateTime? // audio deleted
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   // Enhance (specs/meeting-notes-model.md §2): the last server-verified merge
   // plan, keyed to the editor snapshot it was computed from. A function of
@@ -3800,10 +3800,10 @@ model ExternalMentor {
 // broad access to everything; the title affords UI surfacing but does not
 // gate permissions.
 model CoreAssignment {
-  id         String  @id @default(cuid())
-  userId     String
-  termId     String
-  leadTitle  String?
+  id        String  @id @default(cuid())
+  userId    String
+  termId    String
+  leadTitle String?
   // Imported from payroll history rather than granted in the app. Excluded
   // from the public team list, which these members never opted into.
   backfilled Boolean @default(false)
@@ -3838,7 +3838,7 @@ model CoreMilestone {
   createdAt DateTime          @default(now())
   updatedAt DateTime          @updatedAt
 
-  term   Term                 @relation(fields: [termId], references: [id], onDelete: Cascade)
+  term Term @relation(fields: [termId], references: [id], onDelete: Cascade)
   // No owners means the item is for the whole lab.
   owners CoreMilestoneOwner[]
 
@@ -4057,7 +4057,7 @@ model Project {
   neonProjectIds   String[] @default([])
   flyReadTokenEnc  String? // read-only Fly token (drives the sweep), encrypted
   flyWriteTokenEnc String? // write Fly token (gates console actions), encrypted
-  infraEnabled     Boolean  @default(true) // off keeps config but skips the sweep
+  infraEnabled     Boolean @default(true) // off keeps config but skips the sweep
 
   // Private projects are excluded from every `projects:*` form reference
   // source, so they can't be picked as an answer on a bid/preference form.
@@ -5314,11 +5314,11 @@ model Form {
   // staffing-slot-bound, not education-scoped) is accepted at most once.
   // notifyOnSubmission: each submission creates an in-app Notification for
   // createdById (best-effort, after the submission transaction commits).
-  oneResponsePerMember Boolean   @default(false)
-  notifyOnSubmission   Boolean   @default(false)
+  oneResponsePerMember Boolean @default(false)
+  notifyOnSubmission   Boolean @default(false)
   // allowResponseEdit: the respondent may change their own answers while the
   // form is open. Only meaningful with oneResponsePerMember.
-  allowResponseEdit    Boolean   @default(false)
+  allowResponseEdit    Boolean @default(false)
   // remindBeforeClose: the form-reminders job nudges people who haven't
   // responded a day before closesAt. lastRemindedAt is the last MANUAL
   // reminder (the tracker modal), which limits those to one per 24 hours.
@@ -5746,9 +5746,9 @@ model Page {
   favorites UserFavorite[]
 
   // Set only when kind == Form: the form body sharing this page's id.
-  form              Form?              @relation("FormPage")
+  form      Form?      @relation("FormPage")
   // Set only when kind == Slides: the deck body sharing this page's id.
-  slideDeck         SlideDeck?
+  slideDeck SlideDeck?
   slidePresentation SlidePresentation?
 
   // Pinned to the top of the project's Documents block. Timestamp so pins can
@@ -7951,12 +7951,12 @@ model ResourceHubPage {
 // `authorId` is kept even when `anonymous` is set (ownership and moderation);
 // the serializers in app/lib/crit.server.ts never expose it for those posts.
 model CritSubmission {
-  id         String        @id @default(cuid())
+  id         String   @id @default(cuid())
   domainId   String
-  domain     Domain        @relation(fields: [domainId], references: [id], onDelete: Cascade)
+  domain     Domain   @relation(fields: [domainId], references: [id], onDelete: Cascade)
   authorId   String?
-  author     User?         @relation("CritSubmissionAuthor", fields: [authorId], references: [id], onDelete: SetNull)
-  anonymous  Boolean       @default(false)
+  author     User?    @relation("CritSubmissionAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  anonymous  Boolean  @default(false)
   // "image" | "file" (uploads) | "link" (external)
   kind       String
   url        String
@@ -7964,10 +7964,11 @@ model CritSubmission {
   fileName   String?
   title      String
   question   String?
-  createdAt  DateTime      @default(now())
-  updatedAt  DateTime      @updatedAt
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   @@index([domainId, createdAt])
+  @@index([authorId])
 }
 
 // A domain's References gallery: work and inspiration members share. One gallery per domain.
@@ -7992,6 +7993,7 @@ model DomainReference {
   updatedAt   DateTime @updatedAt
 
   @@index([domainId, createdAt])
+  @@index([authorId])
 }
 
 model BlogReaction {
@@ -8130,19 +8132,19 @@ model SlideDeck {
 // Who is presenting a slide deck right now and where they are. One row per
 // deck, reused across presentations; endedAt is null while it is live.
 model SlidePresentation {
-  id           String          @id @default(cuid())
-  pageId       String          @unique
-  page         Page            @relation(fields: [pageId], references: [id], onDelete: Cascade)
-  presenterId  String
-  presenter    User            @relation(fields: [presenterId], references: [id], onDelete: Cascade)
-  slideId      String
-  build        Int             @default(0)
-  startedAt    DateTime        @default(now())
-  endedAt      DateTime?
-  updatedAt    DateTime        @updatedAt
+  id          String    @id @default(cuid())
+  pageId      String    @unique
+  page        Page      @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  presenterId String
+  presenter   User      @relation(fields: [presenterId], references: [id], onDelete: Cascade)
+  slideId     String
+  build       Int       @default(0)
+  startedAt   DateTime  @default(now())
+  endedAt     DateTime?
+  updatedAt   DateTime  @updatedAt
   // Poll element ids the presenter closed this session, and whether followers may react.
-  closedPolls  String[]        @default([])
-  reactionsOff Boolean         @default(false)
+  closedPolls  String[]  @default([])
+  reactionsOff Boolean   @default(false)
   pollVotes    SlidePollVote[]
 }
 
@@ -8346,7 +8348,6 @@ model BannerImpression {
 
   @@unique([bannerId, userId])
 }
-
 
 // Core's free-text status note for a project or partner application, shown
 // only in the Partners > Planning popup. Exactly one owner per row.
