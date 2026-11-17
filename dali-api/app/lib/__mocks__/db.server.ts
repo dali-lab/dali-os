@@ -11,6 +11,7 @@ export const Prisma = {
 export const prisma = {
   user: {
     findUnique: vi.fn(),
+    findUniqueOrThrow: vi.fn(),
     findFirst: vi.fn(),
     findMany: vi.fn(),
     update: vi.fn(),
@@ -18,6 +19,15 @@ export const prisma = {
     upsert: vi.fn(),
     delete: vi.fn(),
     count: vi.fn(),
+  },
+  pixelAvatar: {
+    findUnique: vi.fn(),
+    upsert: vi.fn(),
+    updateMany: vi.fn(),
+  },
+  alumniChatMessage: {
+    createMany: vi.fn(),
+    findMany: vi.fn(),
   },
   userEmail: {
     findUnique: vi.fn().mockResolvedValue(null),
@@ -911,6 +921,7 @@ export const prisma = {
     findFirst: vi.fn(),
     createMany: vi.fn(),
     create: vi.fn(),
+    count: vi.fn(),
     updateMany: vi.fn(),
     deleteMany: vi.fn(),
   },
