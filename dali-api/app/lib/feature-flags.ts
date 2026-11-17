@@ -185,6 +185,12 @@ export const FEATURE_FLAGS = [
     description:
       "New alumni are invited to build a pixel avatar, then finish their profile either on the profile page or by exploring a pixel DALI lab and chatting with Tim on an in-game phone. Ships off.",
   },
+  {
+    key: "alumni-onboarding",
+    label: "Alumni: onboarding flow",
+    description:
+      "New alumni are invited on first sign-in to check their details, add a few interests and choose what they are open to, in three short steps. With the alumni onboarding game on too, the flow ends with a link into the pixel lab. Ships off.",
+  },
 ] as const satisfies readonly FeatureFlagDef[];
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[number]["key"];

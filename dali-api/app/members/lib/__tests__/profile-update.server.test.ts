@@ -255,3 +255,44 @@ describe("unique violations", () => {
     await expect(updateProfileFields("u1", { major: "x" }, opts)).rejects.toThrow("db down");
   });
 });
+
+describe("alumni profile fields", () => {
+  it("saves outsideOfWork and the topic list, trimmed and deduplicated", async () => {
+    await updateProfileFields(
+      "u1",
+      { outsideOfWork: "  Climbing  ", askMeAbout: [" Grad school ", "grad  school", "", "Startups"] },
+      opts,
+    );
+    expect(written()).toEqual({ outsideOfWork: "Climbing", askMeAbout: ["Grad school", "Startups"] });
+  });
+
+  it("rejects too many topics, a long topic and long free text", async () => {
+    const many = Array.from({ length: 11 }, (_, i) => `topic ${i}`);
+    await expect(updateProfileFields("u1", { askMeAbout: many }, opts)).rejects.toMatchObject({ field: "askMeAbout" });
+    await expect(updateProfileFields("u1", { askMeAbout: ["x".repeat(41)] }, opts)).rejects.toMatchObject({
+      field: "askMeAbout",
+    });
+    await expect(updateProfileFields("u1", { outsideOfWork: "y".repeat(301) }, opts)).rejects.toMatchObject({
+      field: "textLength",
+    });
+    await expect(updateProfileFields("u1", { funFact: "y".repeat(301) }, opts)).rejects.toMatchObject({
+      field: "textLength",
+    });
+    expect(db.user.update).not.toHaveBeenCalled();
+  });
+
+  it("maps open-to keys onto their columns and ignores keys left out", async () => {
+    await updateProfileFields(
+      "u1",
+      { openTo: { coffeeChats: false, partnerReferrals: true, mentoring: true, speaking: false, portfolioReviews: true } },
+      opts,
+    );
+    expect(written()).toEqual({
+      openToCoffeeChats: false,
+      openToPartnerReferrals: true,
+      openToMentoring: true,
+      openToSpeaking: false,
+      openToPortfolioReviews: true,
+    });
+  });
+});
