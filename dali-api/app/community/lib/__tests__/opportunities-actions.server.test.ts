@@ -309,7 +309,7 @@ describe("offer-chat", () => {
     expect(n.message.vars.itemDetail).not.toContain("@");
 
     expect(outbound.enqueueOutbound).toHaveBeenCalledTimes(1);
-    const mail = outbound.enqueueOutbound.mock.calls[0][0] as Record<string, string>;
+    const mail = (outbound.enqueueOutbound.mock.calls as unknown as [Record<string, string>][])[0][0];
     expect(mail.channel).toBe("email");
     expect(mail.dedupKey).toBe("opportunities.chat_intro:r1");
     expect(mail.dedupKey).not.toContain("@");
