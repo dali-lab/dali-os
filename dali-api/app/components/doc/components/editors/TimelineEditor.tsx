@@ -3,6 +3,14 @@ import { useEffect, useRef, useState } from "react";
 import { useDialog } from "~/components/ui/dialog";
 import { useOutsideDismiss } from "~/components/ui/floating";
 import { TONES, type ComponentData } from "../kinds";
+import { startItemDrag, reorderDirection, focusGrip } from "./reorder";
+
+function followCurrent(d: ComponentData, items: ComponentData["items"]): ComponentData {
+  const step = d.items[Number.parseInt(d.fields.current ?? "", 10) - 1];
+  if (!step) return { ...d, items };
+  const at = items.indexOf(step);
+  return { ...d, items, fields: { ...d.fields, current: at < 0 ? "" : String(at + 1) } };
+}
 
 export function TimelineEditor({
   draft,
@@ -20,6 +28,7 @@ export function TimelineEditor({
   const [dragFrom, setDragFrom] = useState<number | null>(null);
   const [dragReady, setDragReady] = useState<number | null>(null);
   const [noteOpen, setNoteOpen] = useState(!!draft.fields.note);
+  const listRef = useRef<HTMLOListElement>(null);
   const nameRefs = useRef<(HTMLInputElement | null)[]>([]);
   const [focusLast, setFocusLast] = useState(false);
 
@@ -41,7 +50,7 @@ export function TimelineEditor({
       const items = [...d.items];
       const [it] = items.splice(from, 1);
       items.splice(to, 0, it!);
-      return { ...d, items };
+      return followCurrent(d, items);
     });
     closeFan();
   };
@@ -78,7 +87,7 @@ export function TimelineEditor({
         )}
       </div>
 
-      <ol className="dali-cmp-steps dali-cmp-steps--edit">
+      <ol ref={listRef} className="dali-cmp-steps dali-cmp-steps--edit">
         {draft.items.map((it, i) => {
           const n = i + 1;
           const state = n < current ? "done" : n === current ? "current" : "next";
@@ -88,15 +97,15 @@ export function TimelineEditor({
               draggable={dragReady === i}
               className={`dali-cmp-step dali-cmp-step--${state}${it.tone ? ` dali-cmp-step--toned dali-cmp-tone--${it.tone}` : ""}${dragFrom === i ? " dali-cmp-step--dragging" : ""}`}
               onKeyDown={(e) => {
-                if (e.altKey && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+                const dir = reorderDirection(e, ["ArrowLeft", "ArrowRight"]);
+                if (dir) {
                   e.preventDefault();
-                  const to = i + (e.key === "ArrowLeft" ? -1 : 1);
-                  move(i, to);
-                  requestAnimationFrame(() => nameRefs.current[to]?.focus());
+                  move(i, i + dir);
+                  focusGrip(listRef.current, i + dir);
                 }
               }}
               onDragStart={(e) => {
-                e.dataTransfer.setData("text/plain", String(i));
+                startItemDrag(e, i);
                 setDragFrom(i);
               }}
               onDragOver={(e) => {
@@ -126,6 +135,7 @@ export function TimelineEditor({
               >
                 <button
                   type="button"
+                  data-reorder-grip
                   className="dali-cmp-step__num dali-cmp-step__num--btn"
                   title="Color and current step"
                   aria-label={`Step ${n} options`}
@@ -195,7 +205,7 @@ export function TimelineEditor({
                       confirmLabel: "Delete",
                       tone: "destructive",
                     });
-                    if (ok) setDraft((d) => ({ ...d, items: d.items.filter((_, j) => j !== i) }));
+                    if (ok) setDraft((d) => followCurrent(d, d.items.filter((_, j) => j !== i)));
                     requestAnimationFrame(() => nameRefs.current[ok ? Math.min(i, draft.items.length - 2) : i]?.focus());
                   }}
                 >
@@ -237,7 +247,7 @@ export function TimelineEditor({
         <button type="button" className="dali-cmp-mini dali-cmp-cancel" onClick={onClose}>
           Cancel
         </button>
-        <button type="button" className="os-btn-primary os-btn-primary--sm dali-cmp-done" onClick={() => onSave({ ...draft, items: draft.items.filter((it) => (it.label ?? "").trim() || (it.details ?? "").trim()) })}>
+        <button type="button" className="os-btn-primary os-btn-primary--sm dali-cmp-done" onClick={() => onSave(followCurrent(draft, draft.items.filter((it) => (it.label ?? "").trim() || (it.details ?? "").trim())))}>
           Done
         </button>
       </div>

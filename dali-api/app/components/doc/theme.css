@@ -2021,6 +2021,7 @@ a.dali-cmp-coll__tile:focus-visible { outline: none; box-shadow: 0 0 0 2px color
 @media (hover: none) { .dali-cmp-card__tools { opacity: 0.85; pointer-events: auto; } }
 .dali-cmp-card__tool { display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--color-os-grey); cursor: pointer; transition: color 0.14s ease-out, background-color 0.14s ease-out; }
 .dali-cmp-card__tool:hover, .dali-cmp-card__tool[aria-expanded="true"] { color: var(--color-foreground); background: var(--color-os-hover-strong); }
+.dali-cmp-card__grip { cursor: grab; }
 .dali-cmp-card__tool--on { color: var(--os-accent-ink); }
 .dali-cmp-card__tool--del:hover { color: var(--os-danger-ink); }
 .dali-cmp-card__tool:focus-visible { outline: none; box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--os-accent-ink) 60%, transparent); }

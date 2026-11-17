@@ -5,6 +5,7 @@ import { Button } from "~/components/ui/Button";
 import { FormField } from "~/components/ui/FormField";
 import { useOutsideDismiss } from "~/components/ui/floating";
 import { safeHref, type ComponentData } from "../kinds";
+import { startItemDrag, reorderDirection, focusGrip } from "./reorder";
 import { EditPopover, PopoverActions, PopoverError, ToneSwatches, useTriggerAnchor } from "./EditPopover";
 import { IMAGE_UPLOAD_ACCEPT, uploadEditorImage } from "../../upload";
 
@@ -29,6 +30,7 @@ export function GalleryEditor({
   const [focusNew, setFocusNew] = useState(false);
   const titleRefs = useRef<(HTMLInputElement | null)[]>([]);
   const { ref: pieceRef, anchor } = useTriggerAnchor<HTMLDivElement>(sel);
+  const gridRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const toast = useToast();
 
@@ -88,7 +90,7 @@ export function GalleryEditor({
         </button>
       </div>
 
-      <div className="dali-cmp-grid dali-cmp-grid--edit">
+      <div ref={gridRef} className="dali-cmp-grid dali-cmp-grid--edit">
         {draft.items.map((it, i) => (
           <div
             key={i}
@@ -100,15 +102,17 @@ export function GalleryEditor({
               if (e.key === "Escape" && sel === i) {
                 e.stopPropagation();
                 select(null);
-              } else if (e.altKey && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
-                e.preventDefault();
-                const to = i + (e.key === "ArrowLeft" ? -1 : 1);
-                move(i, to);
-                requestAnimationFrame(() => titleRefs.current[to]?.focus());
+              } else {
+                const dir = reorderDirection(e, ["ArrowLeft", "ArrowRight"]);
+                if (dir) {
+                  e.preventDefault();
+                  move(i, i + dir);
+                  focusGrip(gridRef.current, i + dir);
+                }
               }
             }}
             onDragStart={(e) => {
-              e.dataTransfer.setData("text/plain", String(i));
+              startItemDrag(e, i);
               setDragFrom(i);
             }}
             onDragOver={(e) => {
@@ -146,6 +150,7 @@ export function GalleryEditor({
             </button>
             <button
               type="button"
+              data-reorder-grip
               className="dali-cmp-piece__grip"
               aria-label={`Reorder ${it.title || "piece"}. Drag, or use the left and right arrow keys.`}
               onMouseDown={() => setDragReady(i)}

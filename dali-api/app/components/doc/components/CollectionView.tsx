@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import {
   BookOpen,
   ChevronDown,
@@ -86,6 +86,7 @@ export function CollectionFilters({
 type Preview = { image: string | null; title: string | null; description: string | null };
 
 function ResourceOverlay({ item, onClose }: { item: Record<string, string>; onClose: () => void }) {
+  const titleId = useId();
   const href = safeHref(item.href) ?? "";
   const internal = href.startsWith("/");
   const video = internal ? null : parseVideoEmbed(href);
@@ -118,11 +119,11 @@ function ResourceOverlay({ item, onClose }: { item: Record<string, string>; onCl
     <Modal
       open
       onClose={onClose}
-      labelledBy="coll-overlay-title"
+      labelledBy={titleId}
       containerClassName={modalCardClass("max-w-4xl")}
     >
       <ModalHeader
-        titleId="coll-overlay-title"
+        titleId={titleId}
         title={item.title || "Resource"}
         subtitle={item.description || undefined}
         onClose={onClose}
@@ -202,6 +203,7 @@ export function CollectionView({ fields, items }: ComponentData) {
                   className="dali-cmp-coll__tile"
                   onClick={(e) => {
                     if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+                    if (!/^https?:/i.test(href) && !href.startsWith("/")) return;
                     e.preventDefault();
                     setActive(it);
                   }}

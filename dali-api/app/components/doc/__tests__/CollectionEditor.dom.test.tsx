@@ -52,7 +52,7 @@ describe("CollectionEditor", () => {
     act(() => q("input[aria-label='New category']").dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })));
     expect(chips()).toEqual(["Design", "Development"]);
     click(button("Add resource"));
-    expect(all("#dali-coll-cats option").map((o) => (o as HTMLOptionElement).value)).toEqual(["Design", "Development"]);
+    expect(all("datalist option").map((o) => (o as HTMLOptionElement).value)).toEqual(["Design", "Development"]);
   });
 
   it("ignores a duplicate category and strips commas", () => {
@@ -71,7 +71,7 @@ describe("CollectionEditor", () => {
     expect(all(".dali-cmp-coll__form button").find((b) => b.textContent === "Add resource")!.hasAttribute("disabled")).toBe(true);
     type(q<HTMLInputElement>('.dali-cmp-coll__form input[placeholder="https://..."]'), "https://example.com");
     type(q<HTMLInputElement>('.dali-cmp-coll__form input[placeholder="e.g. Figma"]'), "Example");
-    type(q<HTMLInputElement>('.dali-cmp-coll__form input[list="dali-coll-cats"]'), "Writing");
+    type(q<HTMLInputElement>('.dali-cmp-coll__form input[list]'), "Writing");
     click(all(".dali-cmp-coll__form button").find((b) => b.textContent === "Add resource")!);
     expect(all(".dali-cmp-coll__open").map((b) => b.getAttribute("aria-label"))).toEqual(["Edit Figma", "Edit Example"]);
     expect(chips()).toEqual(["Design", "Writing"]);

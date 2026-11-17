@@ -1,4 +1,4 @@
-import { Link2, Palette, Plus, Trash2 } from "lucide-react";
+import { GripVertical, Link2, Palette, Plus, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useToast } from "~/components/ui/toast";
 import { FormField } from "~/components/ui/FormField";
@@ -6,6 +6,7 @@ import { useOutsideDismiss } from "~/components/ui/floating";
 import { safeHref, type ComponentData } from "../kinds";
 import { EditPopover, PopoverError, ToneSwatches, useTriggerAnchor } from "./EditPopover";
 import { linkLabel } from "./LinksEditor";
+import { startItemDrag, reorderDirection, focusGrip } from "./reorder";
 
 export function CardsEditor({
   draft,
@@ -25,7 +26,9 @@ export function CardsEditor({
   const { ref: toolRef, anchor } = useTriggerAnchor<HTMLButtonElement>(linkOpen ? "link" : paletteOpen ? "palette" : null);
   const [dragFrom, setDragFrom] = useState<number | null>(null);
   const [dragOver, setDragOver] = useState<number | null>(null);
+  const [dragReady, setDragReady] = useState<number | null>(null);
   const toast = useToast();
+  const gridRef = useRef<HTMLDivElement>(null);
   const titleRefs = useRef<(HTMLInputElement | null)[]>([]);
   const [focusTitle, setFocusTitle] = useState(false);
 
@@ -72,26 +75,26 @@ export function CardsEditor({
         onChange={(e) => setDraft((d) => ({ ...d, fields: { ...d.fields, title: e.target.value } }))}
         className="dali-cmp-title dali-cmp-bare"
       />
-      <div className="dali-cmp-grid dali-cmp-grid--edit" onDragLeave={() => setDragOver(null)}>
+      <div ref={gridRef} className="dali-cmp-grid dali-cmp-grid--edit" onDragLeave={() => setDragOver(null)}>
         {draft.items.map((it, i) => (
           <div
             key={i}
             role="group"
             aria-label={`Card ${i + 1}. Alt plus arrow keys reorder.`}
-            draggable
+            draggable={dragReady === i}
             className={`dali-cmp-card dali-cmp-card--edit${!it.title && !it.tag && !it.meta ? " dali-cmp-card--blank" : ""} dali-cmp-tone--${it.tone || "neutral"}${sel === i ? " dali-cmp-card--selected" : ""}${dragOver === i && dragFrom !== i ? " dali-cmp-card--over" : ""}${dragFrom === i ? " dali-cmp-card--dragging" : ""}`}
             onClick={() => setSel(i)}
             onFocusCapture={() => setSel(i)}
             onKeyDown={(e) => {
-              if (e.altKey && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+              const dir = reorderDirection(e, ["ArrowLeft", "ArrowRight"]);
+              if (dir) {
                 e.preventDefault();
-                const to = i + (e.key === "ArrowLeft" ? -1 : 1);
-                move(i, to);
-                requestAnimationFrame(() => titleRefs.current[to]?.focus());
+                move(i, i + dir);
+                focusGrip(gridRef.current, i + dir);
               }
             }}
             onDragStart={(e) => {
-              e.dataTransfer.setData("text/plain", String(i));
+              startItemDrag(e, i);
               setDragFrom(i);
             }}
             onDragOver={(e) => {
@@ -110,6 +113,7 @@ export function CardsEditor({
             onDragEnd={() => {
               setDragFrom(null);
               setDragOver(null);
+              setDragReady(null);
             }}
           >
             <input
@@ -138,6 +142,16 @@ export function CardsEditor({
               className="dali-cmp-meta dali-cmp-card__field"
             />
             <div className="dali-cmp-card__tools">
+              <button
+                type="button"
+                data-reorder-grip
+                className="dali-cmp-card__tool dali-cmp-card__grip"
+                aria-label={`Reorder card ${i + 1}. Drag, or use Alt plus the left and right arrow keys.`}
+                onMouseDown={() => setDragReady(i)}
+                onMouseUp={() => setDragReady(null)}
+              >
+                <GripVertical size={13} strokeWidth={1.5} aria-hidden />
+              </button>
               {sel === i && (
                 <button
                   type="button"
@@ -175,7 +189,8 @@ export function CardsEditor({
                 className="dali-cmp-card__tool dali-cmp-card__tool--del"
                 aria-label={`Delete card ${i + 1}`}
                 title="Delete card"
-                onClick={() => {
+                onClick={(e) => {
+                  e.stopPropagation();
                   setSel(null);
                   setDraft((d) => ({ ...d, items: d.items.filter((_, j) => j !== i) }));
                   toast.error(<span className="font-medium text-destructive">Card deleted</span>, {
