@@ -2,6 +2,7 @@ import { Check, GripVertical, Plus, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useOutsideDismiss } from "~/components/ui/floating";
 import { TONES, type ComponentData } from "../kinds";
+import { startItemDrag, reorderDirection, focusGrip } from "./reorder";
 
 export function StatsEditor({
   draft,
@@ -18,6 +19,7 @@ export function StatsEditor({
   const [dragFrom, setDragFrom] = useState<number | null>(null);
   const [dragReady, setDragReady] = useState<number | null>(null);
   const [focusNew, setFocusNew] = useState(false);
+  const gridRef = useRef<HTMLDivElement>(null);
   const valueRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   useEffect(() => {
@@ -44,7 +46,7 @@ export function StatsEditor({
 
   return (
     <div className="dali-cmp-stats-edit">
-      <div className="dali-cmp-grid dali-cmp-grid--edit">
+      <div ref={gridRef} className="dali-cmp-grid dali-cmp-grid--edit">
         {draft.items.map((it, i) => (
           <div
             key={i}
@@ -53,15 +55,15 @@ export function StatsEditor({
             onFocusCapture={() => setSel(i)}
             onClick={() => setSel(i)}
             onKeyDown={(e) => {
-              if (e.altKey && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+              const dir = reorderDirection(e, ["ArrowLeft", "ArrowRight"]);
+              if (dir) {
                 e.preventDefault();
-                const to = i + (e.key === "ArrowLeft" ? -1 : 1);
-                move(i, to);
-                requestAnimationFrame(() => valueRefs.current[to]?.focus());
+                move(i, i + dir);
+                focusGrip(gridRef.current, i + dir);
               }
             }}
             onDragStart={(e) => {
-              e.dataTransfer.setData("text/plain", String(i));
+              startItemDrag(e, i);
               setDragFrom(i);
             }}
             onDragOver={(e) => {
@@ -101,6 +103,7 @@ export function StatsEditor({
             />
             <button
               type="button"
+              data-reorder-grip
               className="dali-cmp-stat__tool dali-cmp-stat__grip"
               aria-label={`Reorder stat ${i + 1}. Drag, or use Alt plus the arrow keys.`}
               onMouseDown={() => setDragReady(i)}
@@ -121,7 +124,8 @@ export function StatsEditor({
                 className="dali-cmp-stat__tool dali-cmp-stat__del"
                 aria-label={`Delete stat ${i + 1}`}
                 title="Delete stat"
-                onClick={() => {
+                onClick={(e) => {
+                  e.stopPropagation();
                   setSel(null);
                   setDraft((d) => ({ ...d, items: d.items.filter((_, j) => j !== i) }));
                 }}

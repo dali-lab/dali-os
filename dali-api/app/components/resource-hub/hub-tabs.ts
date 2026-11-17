@@ -1,8 +1,6 @@
 import { BookOpen, Bookmark, MessagesSquare } from "lucide-react";
 import type { SegmentedTab } from "~/components/ui/SegmentedTabs";
 
-export type HubOutletContext = { leaveGuard: { current: (() => boolean) | null } };
-
 export function hubTabs(hubId: string, hasDomain: boolean, pathname: string): SegmentedTab[] {
   const base = `/resource-hub/${hubId}`;
   const all = [

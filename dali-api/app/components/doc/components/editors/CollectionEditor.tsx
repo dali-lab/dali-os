@@ -1,8 +1,9 @@
 import { GripVertical, Plus, Trash2, X, ChevronDown } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useToast } from "~/components/ui/toast";
 import { safeHref, collectionCategories, type ComponentData } from "../kinds";
 import { COLLECTION_ICONS, CollectionTileBody } from "../CollectionView";
+import { applyForm, focusGrip, reorderDirection, startItemDrag, type FormCommit, type FormCommitRef } from "./reorder";
 
 type CollectionFields = { title: string; description: string; category: string; icon: string; href: string };
 const EMPTY_TILE: CollectionFields = { title: "", description: "", category: "", icon: "link", href: "" };
@@ -13,13 +14,16 @@ function CollectionForm({
   submitLabel,
   onSubmit,
   onCancel,
+  commitRef,
 }: {
   initial: CollectionFields;
   categories: string[];
   submitLabel: string;
   onSubmit: (fields: CollectionFields) => void;
   onCancel: () => void;
+  commitRef: FormCommitRef<CollectionFields>;
 }) {
+  const catsId = useId();
   const [f, setF] = useState(initial);
   const [error, setError] = useState<string | null>(null);
   const looked = useRef(initial.href.trim());
@@ -47,12 +51,29 @@ function CollectionForm({
       /* the link still works without a preview */
     }
   };
+  const check = (): { fields: CollectionFields } | { error: string } => {
+    const href = f.href.trim();
+    if (!f.title.trim()) return { error: "Add a resource name." };
+    if (!href) return { error: "Add a link." };
+    if (!safeHref(href)) return { error: "Enter a valid link, like https://… or a path starting with /" };
+    return { fields: { ...f, title: f.title.trim(), description: f.description.trim(), category: f.category.replace(/,/g, " ").trim(), href } };
+  };
   const submit = () => {
     if (!canSubmit) return;
-    const href = f.href.trim();
-    if (!safeHref(href)) return setError("Enter a valid link, like https://… or a path starting with /");
-    onSubmit({ ...f, title: f.title.trim(), description: f.description.trim(), category: f.category.replace(/,/g, " ").trim(), href });
+    const r = check();
+    if ("error" in r) return setError(r.error);
+    onSubmit(r.fields);
   };
+  commitRef.current = () => {
+    if (JSON.stringify(f) === JSON.stringify(initial)) return { kind: "skip" };
+    const r = check();
+    if ("error" in r) {
+      setError(r.error);
+      return { kind: "blocked" };
+    }
+    return { kind: "apply", fields: r.fields };
+  };
+  useEffect(() => () => void (commitRef.current = null), [commitRef]);
 
   return (
     <div
@@ -84,8 +105,8 @@ function CollectionForm({
       </label>
       <label className="dali-cmp-pop-field">
         <span>Category <em>Optional</em></span>
-        <input value={f.category} list="dali-coll-cats" placeholder="Pick or type a new one" onChange={(e) => set({ category: e.target.value })} />
-        <datalist id="dali-coll-cats">
+        <input value={f.category} list={catsId} placeholder="Pick or type a new one" onChange={(e) => set({ category: e.target.value })} />
+        <datalist id={catsId}>
           {categories.map((c) => (
             <option key={c} value={c} />
           ))}
@@ -135,6 +156,8 @@ export function CollectionEditor({
   const [dragFrom, setDragFrom] = useState<number | null>(null);
   const [dragReady, setDragReady] = useState<number | null>(null);
   const toast = useToast();
+  const commitRef = useRef<(() => FormCommit<CollectionFields>) | null>(null);
+  const gridRef = useRef<HTMLDivElement>(null);
   const categories = collectionCategories(draft.fields, draft.items);
   const startsOpen = draft.fields.open !== "0";
   const setField = (patch: Record<string, string>) => setDraft((d) => ({ ...d, fields: { ...d.fields, ...patch } }));
@@ -158,6 +181,18 @@ export function CollectionEditor({
       return { ...d, items };
     });
   };
+  const done = () => {
+    const commit = commitRef.current?.() ?? { kind: "skip" as const };
+    if (commit.kind === "blocked") return;
+    if (commit.kind === "skip") return onSave(draft);
+    const cat = commit.fields.category;
+    const known = !cat || categories.some((c) => c.toLowerCase() === cat.toLowerCase());
+    onSave({
+      ...draft,
+      fields: known ? draft.fields : { ...draft.fields, categories: [...categories, cat].join(", ") },
+      items: applyForm(draft.items, form, commit.fields),
+    });
+  };
   const withCategory = (category: string) => {
     if (category && !categories.some((c) => c.toLowerCase() === category.toLowerCase())) setCategories([...categories, category]);
   };
@@ -174,7 +209,7 @@ export function CollectionEditor({
         <button type="button" className="dali-cmp-mini dali-cmp-cancel" onClick={onClose}>
           Cancel
         </button>
-        <button type="button" className="os-btn-primary os-btn-primary--sm dali-cmp-done" onClick={() => onSave(draft)}>
+        <button type="button" className="os-btn-primary os-btn-primary--sm dali-cmp-done" onClick={done}>
           Done
         </button>
       </div>
@@ -211,7 +246,7 @@ export function CollectionEditor({
 
       <div className={`dali-cmp-coll__body${expanded ? "" : " dali-cmp-coll__body--shut"}`} inert={!expanded}>
         <div className="dali-cmp-coll__inner">
-          <div className="dali-cmp-coll__grid">
+          <div ref={gridRef} className="dali-cmp-coll__grid">
             {draft.items.map((it, i) =>
               form === i ? (
                 <CollectionForm
@@ -219,6 +254,7 @@ export function CollectionEditor({
                   initial={{ title: it.title ?? "", description: it.description ?? "", category: it.category ?? "", icon: it.icon || "link", href: it.href ?? "" }}
                   categories={categories}
                   submitLabel="Save"
+                  commitRef={commitRef}
                   onCancel={() => setForm(null)}
                   onSubmit={(f) => {
                     withCategory(f.category);
@@ -232,13 +268,15 @@ export function CollectionEditor({
                   draggable={dragReady === i}
                   className={`dali-cmp-coll__tile dali-cmp-coll__tile--edit${dragFrom === i ? " dali-cmp-coll__tile--dragging" : ""}`}
                   onKeyDown={(e) => {
-                    if (e.altKey && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+                    const dir = reorderDirection(e, ["ArrowLeft", "ArrowRight"]);
+                    if (dir) {
                       e.preventDefault();
-                      move(i, i + (e.key === "ArrowLeft" ? -1 : 1));
+                      move(i, i + dir);
+                      focusGrip(gridRef.current, i + dir);
                     }
                   }}
                   onDragStart={(e) => {
-                    e.dataTransfer.setData("text/plain", String(i));
+                    startItemDrag(e, i);
                     setDragFrom(i);
                   }}
                   onDragOver={(e) => {
@@ -259,7 +297,7 @@ export function CollectionEditor({
                     setDragReady(null);
                   }}
                 >
-                  <button type="button" className="dali-cmp-row__tool dali-cmp-coll__grip" aria-label={`Reorder ${it.title || "resource"}. Drag, or use Alt plus the left and right arrow keys.`} onMouseDown={() => setDragReady(i)} onMouseUp={() => setDragReady(null)} onKeyDown={(e) => {
+                  <button type="button" data-reorder-grip className="dali-cmp-row__tool dali-cmp-coll__grip" aria-label={`Reorder ${it.title || "resource"}. Drag, or use Alt plus the left and right arrow keys.`} onMouseDown={() => setDragReady(i)} onMouseUp={() => setDragReady(null)} onKeyDown={(e) => {
                     if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
                       e.preventDefault();
                       e.stopPropagation();
@@ -291,6 +329,7 @@ export function CollectionEditor({
                 initial={EMPTY_TILE}
                 categories={categories}
                 submitLabel="Add resource"
+                commitRef={commitRef}
                 onCancel={() => setForm(null)}
                 onSubmit={(f) => {
                   withCategory(f.category);

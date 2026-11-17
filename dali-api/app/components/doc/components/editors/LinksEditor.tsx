@@ -1,7 +1,8 @@
 import { Check, GripVertical, ImagePlus, Link2, Pencil, Plus, Trash2 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useToast } from "~/components/ui/toast";
 import { TONES, safeHref, type ComponentData } from "../kinds";
+import { applyForm, focusGrip, reorderDirection, startItemDrag, type FormCommit, type FormCommitRef } from "./reorder";
 import { IMAGE_UPLOAD_ACCEPT, uploadEditorImage } from "../../upload";
 
 export function linkLabel(href: string): string {
@@ -31,11 +32,13 @@ function ResourceForm({
   submitLabel,
   onSubmit,
   onCancel,
+  commitRef,
 }: {
   initial: ResourceFields;
   submitLabel: string;
   onSubmit: (fields: ResourceFields) => void;
   onCancel: () => void;
+  commitRef: FormCommitRef<ResourceFields>;
 }) {
   const [f, setF] = useState(initial);
   const detailOpen = !!initial.meta;
@@ -73,12 +76,29 @@ function ResourceForm({
     }
   };
 
+  const check = (): { fields: ResourceFields } | { error: string } => {
+    const href = f.href.trim();
+    if (!f.title.trim()) return { error: "Add a resource name." };
+    if (!href) return { error: "Add a link." };
+    if (!safeHref(href)) return { error: "Enter a valid link, like https://… or mailto:…" };
+    return { fields: { ...f, title: f.title.trim(), description: f.description.trim(), meta: f.meta.trim(), href } };
+  };
   const submit = () => {
     if (!canSubmit) return;
-    const href = f.href.trim();
-    if (!safeHref(href)) return setError("Enter a valid link, like https://… or mailto:…");
-    onSubmit({ ...f, title: f.title.trim(), description: f.description.trim(), meta: f.meta.trim(), href });
+    const r = check();
+    if ("error" in r) return setError(r.error);
+    onSubmit(r.fields);
   };
+  commitRef.current = () => {
+    if (JSON.stringify(f) === JSON.stringify(initial)) return { kind: "skip" };
+    const r = check();
+    if ("error" in r) {
+      setError(r.error);
+      return { kind: "blocked" };
+    }
+    return { kind: "apply", fields: r.fields };
+  };
+  useEffect(() => () => void (commitRef.current = null), [commitRef]);
 
   return (
     <div
@@ -226,8 +246,8 @@ export function LinksEditor({
   const [dragFrom, setDragFrom] = useState<number | null>(null);
   const [dragReady, setDragReady] = useState<number | null>(null);
   const toast = useToast();
-  const [needLink, setNeedLink] = useState(false);
-  const missingLink = draft.items.findIndex((it) => !(it.href ?? "").trim());
+  const commitRef = useRef<(() => FormCommit<ResourceFields>) | null>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   const addRef = useRef<HTMLButtonElement | null>(null);
   const openRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
@@ -249,7 +269,7 @@ export function LinksEditor({
   };
 
   return (
-    <div className="dali-cmp-panel dali-cmp-panel--flush dali-cmp-links-edit">
+    <div ref={listRef} className="dali-cmp-panel dali-cmp-panel--flush dali-cmp-links-edit">
       <div className="dali-cmp-head">
         <input
           aria-label="Section title"
@@ -280,6 +300,7 @@ export function LinksEditor({
             key={i}
             initial={{ title: it.title ?? "", description: it.description ?? "", meta: it.meta ?? "", href: it.href ?? "", image: it.image ?? "", tone: it.tone ?? "" }}
             submitLabel="Save"
+            commitRef={commitRef}
             onCancel={() => closeForm(i)}
             onSubmit={(f) => {
               setDraft((d) => ({ ...d, items: d.items.map((x, j) => (j === i ? { ...x, ...f } : x)) }));
@@ -292,15 +313,15 @@ export function LinksEditor({
             draggable={dragReady === i}
             className={`dali-cmp-row dali-cmp-row--edit${dragFrom === i ? " dali-cmp-row--dragging" : ""}`}
             onKeyDown={(e) => {
-              if (e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+              const dir = reorderDirection(e, ["ArrowUp", "ArrowDown"]);
+              if (dir) {
                 e.preventDefault();
-                const to = i + (e.key === "ArrowUp" ? -1 : 1);
-                move(i, to);
-                requestAnimationFrame(() => openRefs.current[to]?.focus());
+                move(i, i + dir);
+                focusGrip(listRef.current, i + dir);
               }
             }}
             onDragStart={(e) => {
-              e.dataTransfer.setData("text/plain", String(i));
+              startItemDrag(e, i);
               setDragFrom(i);
             }}
             onDragOver={(e) => {
@@ -323,6 +344,7 @@ export function LinksEditor({
           >
             <button
               type="button"
+              data-reorder-grip
               className="dali-cmp-row__tool dali-cmp-row__grip"
               aria-label={`Reorder ${it.title || "resource"}. Drag, or use Alt plus the up and down arrow keys.`}
               onMouseDown={() => setDragReady(i)}
@@ -355,9 +377,7 @@ export function LinksEditor({
                     <Link2 size={12} strokeWidth={1.5} aria-hidden />
                     {linkLabel(it.href)}
                   </span>
-                ) : (
-                  <span className="dali-cmp-row__linkind dali-cmp-row__linkind--missing">Link required</span>
-                )}
+                ) : null}
               </span>
             </button>
             <div className="dali-cmp-row__tools">
@@ -399,6 +419,7 @@ export function LinksEditor({
         <ResourceForm
           initial={EMPTY_RESOURCE}
           submitLabel="Add resource"
+          commitRef={commitRef}
           onCancel={() => closeForm()}
           onSubmit={(f) => {
             setDraft((d) => ({ ...d, items: [...d.items, f] }));
@@ -415,11 +436,6 @@ export function LinksEditor({
       )}
 
       <div className="dali-cmp-foot" aria-live="polite">
-        {needLink && missingLink >= 0 && (
-          <span role="alert" className="dali-cmp-pop-error">
-            Every resource needs a link.
-          </span>
-        )}
         <button type="button" className="dali-cmp-mini dali-cmp-cancel" onClick={onClose}>
           Cancel
         </button>
@@ -427,12 +443,9 @@ export function LinksEditor({
           type="button"
           className="os-btn-primary os-btn-primary--sm dali-cmp-done"
           onClick={() => {
-            if (missingLink >= 0) {
-              setNeedLink(true);
-              setForm(missingLink);
-              return;
-            }
-            onSave(draft);
+            const commit = commitRef.current?.() ?? { kind: "skip" as const };
+            if (commit.kind === "blocked") return;
+            onSave(commit.kind === "apply" ? { ...draft, items: applyForm(draft.items, form, commit.fields) } : draft);
           }}
         >
           Done

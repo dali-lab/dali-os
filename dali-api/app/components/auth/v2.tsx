@@ -7,14 +7,31 @@ import { AnimatedTileCluster } from "~/components/auth/AnimatedTileCluster";
 // The dali.os auth dress: a dark os-shell split screen — brand panel with the
 // animated tile cluster on the left, a step-animated form column on the right.
 
+export type AuthShellBrand = {
+  lines: [string, string];
+  sub: string;
+  /** Replaces the tile cluster at the foot of the brand panel. */
+  visual: ReactNode;
+};
+
 export function AuthShellV2({
   title,
   stepKey,
   error,
   notice,
+  brand,
+  header,
+  wide,
+  hideLegal,
   children,
 }: {
   title: string;
+  /** Swaps the headline, sub line and tile cluster on the brand panel. */
+  brand?: AuthShellBrand;
+  /** Replaces the plain title heading above the form. */
+  header?: ReactNode;
+  wide?: boolean;
+  hideLegal?: boolean;
   /** Changing this re-runs the form column's entrance, so steps read as advancing. */
   stepKey?: string;
   error?: string | null;
@@ -30,32 +47,38 @@ export function AuthShellV2({
           </span>
           <h2 className="font-os text-4xl font-extrabold leading-[1.1] tracking-tight text-foreground lg:text-5xl">
             <span className="block motion-safe:animate-auth-rise" style={{ animationDelay: "80ms" }}>
-              Welcome to
+              {brand?.lines[0] ?? "Welcome to"}
             </span>
             <span className="block text-os-accent motion-safe:animate-auth-rise" style={{ animationDelay: "160ms" }}>
-              DALI OS
+              {brand?.lines[1] ?? "DALI OS"}
             </span>
           </h2>
           <p
             className="max-w-sm text-base leading-relaxed text-os-grey motion-safe:animate-auth-rise"
             style={{ animationDelay: "260ms" }}
           >
-            Dartmouth&apos;s experiential learning lab — where students build real products for real partners.
+            {brand?.sub ?? "Dartmouth's experiential learning lab — where students build real products for real partners."}
           </p>
         </div>
-        <div className="relative w-full">
-          <AnimatedTileCluster />
-        </div>
+        {brand ? (
+          <div className="relative w-full px-12 pb-12 lg:px-16">{brand.visual}</div>
+        ) : (
+          <div className="relative w-full">
+            <AnimatedTileCluster />
+          </div>
+        )}
       </aside>
 
       <main className="flex min-h-screen w-full flex-col items-center justify-center px-6 py-12 md:w-1/2 md:px-12 lg:px-16">
-        <div className="w-full max-w-sm">
+        <div className={cn("w-full", wide ? "max-w-[460px]" : "max-w-sm")}>
           <span className="mb-8 block font-os-logo text-2xl font-semibold text-os-accent md:hidden">dali.os</span>
 
           <div key={stepKey ?? title} className="motion-safe:animate-auth-rise">
-            <h1 className="mb-6 font-os text-[28px] font-extrabold leading-tight tracking-tight text-foreground">
-              {title}
-            </h1>
+            {header ?? (
+              <h1 className="mb-6 font-os text-[28px] font-extrabold leading-tight tracking-tight text-foreground">
+                {title}
+              </h1>
+            )}
             <AuthNotice message={error ?? null} />
             <AuthNotice message={notice ?? null} tone="success" />
             {children}
@@ -64,7 +87,7 @@ export function AuthShellV2({
           {/* Public policy links. The login page doubles as the app's public
               home page for Google OAuth verification, which requires the home
               page to link to the privacy policy. */}
-          <footer className="mt-10 flex items-center gap-4 text-xs text-os-muted">
+          <footer className={cn("mt-10 flex items-center gap-4 text-xs text-os-muted", hideLegal && "hidden")}>
             <a href="/privacy" className="underline transition-colors hover:text-foreground">
               Privacy Policy
             </a>

@@ -18,6 +18,7 @@ import { GalleryEditor } from "../components/editors/GalleryEditor";
 import { LinksEditor } from "../components/editors/LinksEditor";
 import { StatsEditor } from "../components/editors/StatsEditor";
 import { TimelineEditor } from "../components/editors/TimelineEditor";
+import { startItemDrag } from "../components/editors/reorder";
 import { componentConfig } from "./configs";
 import { onFreshComponent, takeFreshComponent } from "./fresh-components";
 
@@ -202,8 +203,7 @@ export function ComponentBlock({
           const i = cardIndex(e.target);
           if (i < 0) return;
           dragIdx.current = i;
-          e.dataTransfer.effectAllowed = "move";
-          e.dataTransfer.setData("text/plain", String(i));
+          startItemDrag(e, i);
           setLive([...saved.items]);
         },
         onDragOver: (e: React.DragEvent) => {
@@ -225,7 +225,7 @@ export function ComponentBlock({
           const items = live;
           dragIdx.current = null;
           setLive(null);
-          if (items && items.some((it, i) => it !== saved.items[i])) onSave({ ...saved, items });
+          if (items && JSON.stringify(items) !== JSON.stringify(saved.items)) onSave({ ...saved, items });
         },
       }
     : {};

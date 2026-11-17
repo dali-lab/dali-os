@@ -39,8 +39,8 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const expectDefaultLayer = (labelledBy: string) => {
-  const own = modalProps.filter((p) => p.labelledBy === labelledBy);
+const expectDefaultLayer = (labelledBy?: string) => {
+  const own = labelledBy ? modalProps.filter((p) => p.labelledBy === labelledBy) : modalProps;
   expect(own.length).toBeGreaterThan(0);
   for (const p of own) {
     expect(p.className).toBeUndefined();
@@ -70,7 +70,7 @@ describe("hub overlays use the default modal layer", () => {
     mount(createElement(CollectionView, { fields: { title: "Kit" }, items: [{ title: "Figma", description: "", category: "", icon: "link", href: "https://www.figma.com" }] }));
     const tile = container.querySelector(".dali-cmp-coll__name")!;
     act(() => tile.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 })));
-    expectDefaultLayer("coll-overlay-title");
+    expectDefaultLayer();
   });
 });
 

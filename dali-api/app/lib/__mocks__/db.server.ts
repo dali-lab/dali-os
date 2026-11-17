@@ -17,6 +17,7 @@ export const prisma = {
     updateMany: vi.fn(),
     upsert: vi.fn(),
     delete: vi.fn(),
+    count: vi.fn(),
   },
   userEmail: {
     findUnique: vi.fn().mockResolvedValue(null),
@@ -907,6 +908,7 @@ export const prisma = {
     updateMany: vi.fn(),
   },
   workExperience: {
+    findFirst: vi.fn(),
     createMany: vi.fn(),
     create: vi.fn(),
     updateMany: vi.fn(),

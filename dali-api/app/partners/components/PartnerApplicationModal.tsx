@@ -8,11 +8,13 @@
 // (see partner-detail-fetch.ts) rather than a <Form>/useFetcher — a
 // cross-route redirect from a fetcher would navigate the whole app there.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router";
 import {
   Activity,
   CalendarDays,
+  CalendarRange,
+  FolderKanban,
   ClipboardCheck,
   FileText,
   Mail,
@@ -42,6 +44,7 @@ import { EmailTab } from "./application/EmailTab";
 import { PropertyRail } from "./application/PropertyRail";
 import { STAGE_TONE } from "./application/rail";
 import { StageActions } from "./application/StageActions";
+import { DeleteApplicationButton } from "./application/DeleteApplicationButton";
 import { SowTab } from "./application/SowTab";
 import { ScheduleInterviewModal } from "./ScheduleInterviewModal";
 import { ProjectIcon } from "~/components/ProjectIcon";
@@ -49,7 +52,8 @@ import { ProjectIconPicker } from "~/projects/components/ProjectIconPicker";
 
 const TAB_ROW_LIMIT = 8;
 
-type Tab = "activity" | "details" | "sow" | "meetings" | "evaluation" | "email";
+type Tab = "planning" | "activity" | "details" | "sow" | "meetings" | "evaluation" | "email";
+const PLANNING_TAB = { key: "planning" as const, label: "Planning", icon: CalendarRange };
 const TABS: { key: Tab; label: string; icon: LucideIcon }[] = [
   { key: "activity", label: "Activity", icon: Activity },
   { key: "details", label: "Details", icon: FileText },
@@ -73,19 +77,24 @@ export function PartnerApplicationModal({
   termOptions,
   onClose,
   onChanged,
+  planningTab,
+  projectId,
 }: {
   /** null = create mode. */
-  card: PartnerCardModel | null;
+  card: Pick<PartnerCardModel, "id"> | null;
   canEdit: boolean;
   domainOptions: { id: string; name: string }[];
   termOptions: { id: string; code: string }[];
   onClose: () => void;
   /** Called after any save/move/create the caller should refresh the board for. */
   onChanged: () => void;
+  planningTab?: ReactNode;
+  projectId?: string | null;
 }) {
   const isCreate = !card;
   const dialog = useDialog();
-  const [tab, setTab] = useState<Tab>("activity");
+  const [tab, setTab] = useState<Tab>(planningTab ? "planning" : "activity");
+  const tabs = planningTab ? [PLANNING_TAB, ...TABS] : TABS;
   const [detail, setDetail] = useState<ApplicationDetailResponse | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState(false);
@@ -290,15 +299,24 @@ export function PartnerApplicationModal({
           </div>
           <div className="flex flex-shrink-0 items-center gap-1.5">
             {!isCreate && detail && (
-              <Tooltip content="Open full page">
-                <Link
-                  to={`/core/partners/applications/${detail.application.id}`}
-                  className="os-icon-btn"
-                  aria-label="Open full page"
-                >
-                  <Maximize2 className="h-4 w-4" aria-hidden />
-                </Link>
-              </Tooltip>
+              <>
+                {projectId && (
+                  <Tooltip content="Open project">
+                    <Link to={`/projects/${projectId}`} className="os-icon-btn" aria-label="Open project">
+                      <FolderKanban className="h-4 w-4" aria-hidden />
+                    </Link>
+                  </Tooltip>
+                )}
+                <Tooltip content="Open full page">
+                  <Link
+                    to={`/core/partners/applications/${detail.application.id}`}
+                    className="os-icon-btn"
+                    aria-label="Open full page"
+                  >
+                    <Maximize2 className="h-4 w-4" aria-hidden />
+                  </Link>
+                </Tooltip>
+              </>
             )}
             {!isCreate && !editingTitle && canEdit && detail && (
               <button
@@ -312,6 +330,16 @@ export function PartnerApplicationModal({
               >
                 <Pencil className="h-4 w-4" aria-hidden />
               </button>
+            )}
+            {!isCreate && !editingTitle && canEdit && detail && !detail.application.resultingProjectId && (
+              <DeleteApplicationButton
+                applicationId={detail.application.id}
+                title={detail.application.title}
+                onDeleted={() => {
+                  onClose();
+                  onChanged();
+                }}
+              />
             )}
             <button type="button" onClick={() => void guardedClose()} className="os-icon-btn" aria-label="Close">
               <X className="h-5 w-5" aria-hidden />
@@ -407,18 +435,20 @@ export function PartnerApplicationModal({
           ) : !detail ? (
             <p className="text-sm text-muted-foreground">Loading…</p>
           ) : (
-            <div className="min-w-0 md:grid md:grid-cols-[minmax(0,1fr)_280px] md:gap-8">
+            <>
+            <PageTabRow
+              label="Application sections"
+              tabs={tabs.map((t) => ({
+                label: t.label,
+                icon: t.icon,
+                active: tab === t.key,
+                onClick: () => setTab(t.key),
+              }))}
+            />
+            <div className="mt-5 min-w-0 md:grid md:grid-cols-[minmax(0,1fr)_280px] md:gap-8">
               <div className="min-w-0">
-                <PageTabRow
-                  label="Application sections"
-                  tabs={TABS.map((t) => ({
-                    label: t.label,
-                    icon: t.icon,
-                    active: tab === t.key,
-                    onClick: () => setTab(t.key),
-                  }))}
-                />
-                <div className="mt-5">
+                <div>
+                  {tab === "planning" && planningTab}
                   {tab === "activity" && (
                     <ActivityTab
                       applicationId={detail.application.id}
@@ -511,6 +541,7 @@ export function PartnerApplicationModal({
                 />
               </aside>
             </div>
+            </>
           )}
         </div>
 

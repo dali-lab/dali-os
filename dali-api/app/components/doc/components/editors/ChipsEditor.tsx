@@ -1,8 +1,8 @@
 import { Columns2, Rows2, Plus } from "lucide-react";
 import { useState } from "react";
-import { useToast } from "~/components/ui/toast";
 import { FormField } from "~/components/ui/FormField";
 import { safeHref, type ComponentData } from "../kinds";
+import { startItemDrag } from "./reorder";
 import { EditPopover, PopoverActions, PopoverError, ToneSwatches, useTriggerAnchor } from "./EditPopover";
 
 const NAME_ERROR = "Add a name.";
@@ -19,7 +19,6 @@ export function ChipsEditor({
   onSave: (data: ComponentData) => void;
   onClose: () => void;
 }) {
-  const toast = useToast();
   const [urlOpen, setUrlOpen] = useState<number | null>(null);
   const [snapshot, setSnapshot] = useState<ComponentData["items"][number] | null>(null);
   const [popError, setPopError] = useState<string | null>(null);
@@ -93,7 +92,7 @@ export function ChipsEditor({
               className={`dali-cmp-chip dali-cmp-chip--edit${it.tone ? ` dali-cmp-tone--${it.tone}` : ""}${dragOver === i && dragFrom !== i ? " dali-cmp-chip--over" : ""}${dragFrom === i ? " dali-cmp-chip--dragging" : ""}`}
               draggable={urlOpen !== i}
               onDragStart={(e) => {
-                e.dataTransfer.setData("text/plain", String(i));
+                startItemDrag(e, i);
                 setDragFrom(i);
               }}
               onDragOver={(e) => {

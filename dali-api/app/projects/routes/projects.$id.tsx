@@ -53,9 +53,15 @@ export const handle = {
     return [{ label: p.name, to: `/projects/${p.id}`, icon: <ProjectIcon iconEmoji={p.iconEmoji} />, emoji: p.iconEmoji }];
   },
   headerAction: (data: unknown) => {
-    const d = data as { project?: { id: string } } | undefined;
+    const d = data as { project?: { id: string }; showcasePublished?: boolean } | undefined;
     if (!d?.project) return null;
-    return <ProjectViewSwitch projectId={d.project.id} current="internal" />;
+    return (
+      <ProjectViewSwitch
+        projectId={d.project.id}
+        current="internal"
+        showcasePublished={d.showcasePublished === true}
+      />
+    );
   },
   favoriteRoute: true,
 };

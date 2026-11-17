@@ -48,12 +48,11 @@ const HUB: HubRow = {
   createdById: "lead",
   domain: { displayName: "Design" },
 };
-const access = (over: Partial<{ canEdit: boolean; canModerate: boolean; core: boolean; viewerId: string; hub: HubRow }> = {}) => ({
+const access = (over: Partial<{ canEdit: boolean; core: boolean; viewerId: string; hub: HubRow }> = {}) => ({
   hub: HUB,
   viewerId: "me",
   core: false,
   canEdit: false,
-  canModerate: false,
   ...over,
 });
 
