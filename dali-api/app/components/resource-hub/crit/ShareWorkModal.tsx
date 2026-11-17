@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FileText, Upload, X } from "lucide-react";
 import { modalCardClass } from "~/components/os-chrome";
 import { Modal, ModalFooter, ModalHeader } from "~/components/Modal";
@@ -6,6 +6,7 @@ import { uploadFileToS3 } from "~/lib/upload-client";
 import { rawUploadUrl } from "~/components/doc";
 import { safeHref } from "~/components/doc/components/kinds";
 import { FormField } from "~/components/ui/FormField";
+import { IconButton } from "~/components/ui/IconButton";
 import { Radio } from "~/components/ui/Radio";
 
 const ACCEPT = "image/*,.pdf,.doc,.docx,.ppt,.pptx,.key,.xls,.xlsx,.txt";
@@ -40,10 +41,18 @@ export function ShareWorkModal({
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const alive = useRef(true);
   const href = safeHref(link);
   const validLink = !!href && /^https?:\/\//i.test(href);
   const ready = !!file || validLink;
   const working = busy || uploading;
+
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
 
   const submit = async () => {
     if (!ready || working) return;
@@ -52,14 +61,15 @@ export function ShareWorkModal({
       if (file) {
         setUploading(true);
         const meta = await uploadFileToS3(file, "crit-wall", ACCEPT);
+        if (!alive.current) return;
         onSubmit({ kind: file.type.startsWith("image/") ? "image" : "file", url: rawUploadUrl(meta.s3Key), fileName: file.name, title, question, anonymous });
       } else {
         onSubmit({ kind: "link", url: href!, fileName: "", title, question, anonymous });
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Upload failed.");
+      if (alive.current) setError(e instanceof Error ? e.message : "Upload failed.");
     } finally {
-      setUploading(false);
+      if (alive.current) setUploading(false);
     }
   };
 
@@ -71,7 +81,7 @@ export function ShareWorkModal({
       disableEscape={working}
       containerClassName={modalCardClass("max-w-lg")}
     >
-      <ModalHeader titleId="share-work-title" title="Share work" subtitle="Post something you're working on and ask for thoughts." onClose={onClose} className="!mb-4" />
+      <ModalHeader titleId="share-work-title" title="Share work" subtitle="Post something you're working on and ask for thoughts." onClose={onClose} hideClose={working} className="!mb-4" />
       <form
         className="os-form flex flex-col gap-4"
         onSubmit={(e) => {
@@ -85,9 +95,7 @@ export function ShareWorkModal({
             <div className="flex items-center gap-2 rounded-lg border border-os-container bg-os-bg px-3 py-2 text-sm text-foreground">
               <FileText className="h-4 w-4 shrink-0 text-os-grey" aria-hidden />
               <span className="min-w-0 flex-1 truncate">{file.name}</span>
-              <button type="button" aria-label="Remove file" onClick={() => setFile(null)} className="rounded p-1 text-os-grey hover:text-foreground">
-                <X className="h-4 w-4" aria-hidden />
-              </button>
+              <IconButton label="Remove file" icon={X} onClick={() => setFile(null)} disabled={working} />
             </div>
           ) : (
             <button

@@ -7,7 +7,8 @@ import { createRoot, type Root } from "react-dom/client";
 
 vi.mock("~/components/Modal", () => ({
   Modal: ({ children }: { children: React.ReactNode }) => createElement("div", { role: "dialog" }, children),
-  ModalHeader: ({ title }: { title: string }) => createElement("h2", null, title),
+  ModalHeader: ({ title, hideClose, onClose }: { title: string; hideClose?: boolean; onClose: () => void }) =>
+    createElement("div", null, createElement("h2", null, title), !hideClose && createElement("button", { type: "button", "aria-label": "Close", onClick: onClose })),
   ModalFooter: ({ children, onCancel }: { children: React.ReactNode; onCancel: () => void }) =>
     createElement("div", null, createElement("button", { type: "button", onClick: onCancel }, "Cancel"), children),
 }));
@@ -140,6 +141,35 @@ describe("adding a reference", () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
+  it("hides the close button while the upload runs and ignores a result that arrives after the modal is gone", async () => {
+    let finish!: (v: { s3Key: string }) => void;
+    vi.mocked(uploadFileToS3).mockReturnValueOnce(new Promise((r) => (finish = r)) as never);
+    mount();
+    const input = q<HTMLInputElement>("input[type='file']");
+    URL.createObjectURL = vi.fn(() => "blob:preview");
+    URL.revokeObjectURL = vi.fn();
+    Object.defineProperty(input, "files", { value: [new File(["x"], "a.png", { type: "image/png" })], configurable: true });
+    act(() => void input.dispatchEvent(new Event("change", { bubbles: true })));
+    expect(q("[aria-label='Close']")).not.toBeNull();
+    await submit();
+    expect(q("[aria-label='Close']")).toBeNull();
+    act(() => root.unmount());
+    await act(async () => finish({ s3Key: "uploads/references/a.png" }));
+    expect(onSubmit).not.toHaveBeenCalled();
+    root = createRoot(container);
+  });
+
+  it("removes a picked file with the shared icon button", () => {
+    mount();
+    const input = q<HTMLInputElement>("input[type='file']");
+    URL.createObjectURL = vi.fn(() => "blob:preview");
+    URL.revokeObjectURL = vi.fn();
+    Object.defineProperty(input, "files", { value: [new File(["x"], "a.pdf", { type: "application/pdf" })], configurable: true });
+    act(() => void input.dispatchEvent(new Event("change", { bubbles: true })));
+    click(q("[aria-label='Remove file']"));
+    expect(q("input[type='url']")).not.toBeNull();
+  });
+
   it("shows the server's error", () => {
     mount({ serverError: "Enter a web link, like https://…" });
     expect(container.querySelector("[role='alert']")?.textContent).toContain("Enter a web link");
@@ -163,6 +193,14 @@ describe("editing a reference", () => {
     mount({ reference: { ...reference, daliMade: true, creatorName: null } });
     expect(madeThis().checked).toBe(true);
     expect(creatorInput()).toBeNull();
+  });
+
+  it("does not carry the sharer's own name into the creator field when unchecking I made this", async () => {
+    mount({ reference: { title: "Mine", daliMade: true, creatorName: "Ada Lovelace", note: null } });
+    click(madeThis());
+    expect(creatorInput()!.value).toBe("");
+    await submit();
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ creator: "other", creatorName: "" }));
   });
 
   it("saves the changes without touching the attachment", async () => {

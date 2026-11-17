@@ -3,6 +3,7 @@ import { FileText, Upload, X } from "lucide-react";
 import { Modal, ModalFooter, ModalHeader } from "~/components/Modal";
 import { modalCardClass, useOsChrome } from "~/components/os-chrome";
 import { FormField } from "~/components/ui/FormField";
+import { IconButton } from "~/components/ui/IconButton";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { uploadFileToS3 } from "~/lib/upload-client";
 import { rawUploadUrl } from "~/components/doc";
@@ -62,18 +63,26 @@ export function ReferenceModal({
   const [title, setTitle] = useState(reference?.title ?? "");
   const [titleEdited, setTitleEdited] = useState(editing);
   const [creator, setCreator] = useState<Creator>(reference ? (reference.daliMade ? "mine" : "other") : "other");
-  const [creatorName, setCreatorName] = useState(reference?.creatorName ?? "");
+  const [creatorName, setCreatorName] = useState(reference?.daliMade ? "" : (reference?.creatorName ?? ""));
   const [note, setNote] = useState(reference?.note ?? "");
   const [linkPreview, setLinkPreview] = useState<{ image: string | null; title: string | null } | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const alive = useRef(true);
   const href = safeHref(link);
   const validLink = isWebLink(href);
   const ready = editing ? !!title.trim() : !!file || validLink;
   const working = busy || uploading;
   const imageFile = file?.type.startsWith("image/") ? file : null;
   const filePreview = useMemo(() => (imageFile ? URL.createObjectURL(imageFile) : null), [imageFile]);
+
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
 
   useEffect(() => () => void (filePreview && URL.revokeObjectURL(filePreview)), [filePreview]);
 
@@ -117,14 +126,15 @@ export function ReferenceModal({
       if (file) {
         setUploading(true);
         const meta = await uploadFileToS3(file, "references", REFERENCE_ACCEPT);
+        if (!alive.current) return;
         onSubmit({ ...shared, kind: imageFile ? "image" : "file", url: rawUploadUrl(meta.s3Key), fileName: file.name });
       } else {
         onSubmit({ ...shared, kind: "link", url: href!, fileName: "" });
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Upload failed.");
+      if (alive.current) setError(e instanceof Error ? e.message : "Upload failed.");
     } finally {
-      setUploading(false);
+      if (alive.current) setUploading(false);
     }
   };
 
@@ -132,7 +142,7 @@ export function ReferenceModal({
 
   return (
     <Modal open onClose={onClose} labelledBy="reference-modal-title" disableEscape={working} containerClassName={modalCardClass("max-w-lg os-form")}>
-      <ModalHeader titleId="reference-modal-title" title={editing ? "Edit reference" : "Add reference"} onClose={onClose} className="!mb-5" />
+      <ModalHeader titleId="reference-modal-title" title={editing ? "Edit reference" : "Add reference"} onClose={onClose} hideClose={working} className="!mb-5" />
       <form
         className="flex flex-col gap-5"
         onSubmit={(e) => {
@@ -147,22 +157,13 @@ export function ReferenceModal({
               <div className="flex items-center gap-2 rounded-lg border border-os-container bg-os-bg px-3 py-2 text-sm text-foreground">
                 <FileText className="h-4 w-4 shrink-0 text-os-grey" aria-hidden />
                 <span className="min-w-0 flex-1 truncate">{file.name}</span>
-                <button type="button" aria-label="Remove file" onClick={() => setFile(null)} className="rounded p-1 text-os-grey hover:text-foreground">
-                  <X className="h-4 w-4" aria-hidden />
-                </button>
+                <IconButton label="Remove file" icon={X} onClick={() => setFile(null)} disabled={working} />
               </div>
             ) : (
               <div className="flex gap-2">
-                <input
-                  type="url"
-                  aria-label="Link"
-                  value={link}
-                  inputMode="url"
-                  autoFocus
-                  placeholder="Paste a link"
-                  onChange={(e) => setLink(e.target.value)}
-                  className="min-w-0 flex-1"
-                />
+                <div className="min-w-0 flex-1">
+                  <FormField label="Link" labelHidden type="url" value={link} inputMode="url" autoFocus placeholder="Paste a link" onChange={setLink} />
+                </div>
                 <button type="button" onClick={() => fileRef.current?.click()} className="os-btn-ghost inline-flex shrink-0 items-center gap-1.5 text-sm">
                   <Upload className="h-4 w-4" aria-hidden />
                   Upload
