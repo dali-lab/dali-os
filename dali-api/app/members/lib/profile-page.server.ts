@@ -27,6 +27,8 @@ import {
   achievementsForMember,
   type Achievement,
 } from "~/members/lib/achievements.server";
+import { saveAbout, openToPatch } from "~/lib/alumni-onboarding.server";
+import { parseAskMeAbout, type OpenToChoices } from "~/lib/alumni-onboarding";
 import { groupAssignmentsByTerm, type TermGroup } from "./project-history";
 import { listMemberStaffingForms, type MemberStaffingForm } from "~/projects/lib/member-staffing.server";
 import { listMySignedDocuments } from "~/signing/lib/state.server";
@@ -105,6 +107,9 @@ export type ProfileMember = {
   createdAt: string;
   onboardedAt: string | null;
   dietaryRestrictions: string | null;
+  funFact: string | null;
+  outsideOfWork: string | null;
+  askMeAbout: string[];
   domainEligibilities: Array<{
     id: string;
     level: Level;
@@ -151,8 +156,8 @@ export type ProfilePageData = {
    *  Never reflects invites this member sent. */
   coffeeChatSent: boolean;
   resumeReviewSent: boolean;
-  /** Which request buttons this member takes (their "I'm open to"). */
-  openTo: { coffeeChats: boolean; resumeReviews: boolean };
+  /** Their "I'm open to" toggles; the first two also gate the request buttons. */
+  openTo: OpenToChoices & { portfolioReviews: boolean };
   canEdit: boolean;
   canManageEligibility: boolean;
   /** Personal notes shown in the profile's right-hand rail. On someone else's
@@ -258,6 +263,8 @@ const PROFILE_ERRORS: Record<ProfileField, string> = {
     "That NetID is already on another account — contact ops to merge or correct the duplicate.",
   unique:
     "That NetID is already on another account — contact ops to merge or correct the duplicate.",
+  askMeAbout: "Pick up to 10 topics, 40 characters each.",
+  textLength: "Keep it under 300 characters.",
 };
 
 const TEXT_FIELDS = [
@@ -510,6 +517,13 @@ export async function loadProfilePage({
       currentLocationLat: true,
       openToCoffeeChats: true,
       openToResumeReviews: true,
+      openToPortfolioReviews: true,
+      openToPartnerReferrals: true,
+      openToMentoring: true,
+      openToSpeaking: true,
+      funFact: true,
+      outsideOfWork: true,
+      askMeAbout: true,
       workExperiences: {
         // Current jobs first, then most recent.
         orderBy: [{ endDate: { sort: "desc", nulls: "first" } }, { startDate: "desc" }],
@@ -674,6 +688,10 @@ export async function loadProfilePage({
     resumeUploadedAt,
     openToCoffeeChats,
     openToResumeReviews,
+    openToPortfolioReviews,
+    openToPartnerReferrals,
+    openToMentoring,
+    openToSpeaking,
     ...memberFields
   } = member;
 
@@ -711,7 +729,14 @@ export async function loadProfilePage({
         : null,
     coffeeChatSent,
     resumeReviewSent,
-    openTo: { coffeeChats: openToCoffeeChats, resumeReviews: openToResumeReviews },
+    openTo: {
+      coffeeChats: openToCoffeeChats,
+      resumeReviews: openToResumeReviews,
+      portfolioReviews: openToPortfolioReviews,
+      partnerReferrals: openToPartnerReferrals,
+      mentoring: openToMentoring,
+      speaking: openToSpeaking,
+    },
     canEdit,
     canManageEligibility,
     notes,
@@ -874,6 +899,36 @@ export async function runProfileAction({
       });
     } else {
       await prisma.workExperience.create({ data: { ...parsed.value, userId: targetId } });
+    }
+    return null;
+  }
+
+  if (intent === "update-alumni-details") {
+    try {
+      await saveAbout(targetId, {
+        funFact: String(form.get("funFact") ?? ""),
+        outsideOfWork: String(form.get("outsideOfWork") ?? ""),
+        askMeAbout: parseAskMeAbout(String(form.get("askMeAbout") ?? "")),
+      });
+      const on = (key: string) => form.get(key) === "on";
+      await updateProfileFields(
+        targetId,
+        {
+          openTo: openToPatch({
+            coffeeChats: on("coffeeChats"),
+            resumeReviews: on("resumeReviews"),
+            partnerReferrals: on("partnerReferrals"),
+            mentoring: on("mentoring"),
+            speaking: on("speaking"),
+          }),
+        },
+        { allowNetId: false },
+      );
+    } catch (e) {
+      if (e instanceof ProfileValidationError || e instanceof ProfileConflictError) {
+        return { error: PROFILE_ERRORS[e.field] };
+      }
+      throw e;
     }
     return null;
   }

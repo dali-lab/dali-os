@@ -328,6 +328,56 @@ describe("wallet pass revocation", () => {
   });
 });
 
+describe("alumni details", () => {
+  const details = {
+    intent: "update-alumni-details",
+    funFact: "Biked every road",
+    outsideOfWork: "Climbing",
+    askMeAbout: '["Grad school"," Startups "]',
+    coffeeChats: "on",
+    resumeReviews: "on",
+    speaking: "on",
+  };
+
+  it("saves interests and the open-to toggles, with resume reviews setting both columns", async () => {
+    await run(details);
+    const writes = db.user.update.mock.calls.map((c: any) => c[0].data);
+    expect(writes).toContainEqual({
+      funFact: "Biked every road",
+      outsideOfWork: "Climbing",
+      askMeAbout: ["Grad school", "Startups"],
+    });
+    expect(writes).toContainEqual({
+      openToCoffeeChats: true,
+      openToResumeReviews: true,
+      openToPortfolioReviews: true,
+      openToPartnerReferrals: false,
+      openToMentoring: false,
+      openToSpeaking: true,
+    });
+  });
+
+  it("does not touch the other profile fields", async () => {
+    await run(details);
+    for (const call of db.user.update.mock.calls) {
+      expect(Object.keys(call[0].data)).not.toContain("firstName");
+      expect(Object.keys(call[0].data)).not.toContain("hometown");
+    }
+  });
+
+  it("returns the validation message and writes nothing when the topics are too long", async () => {
+    const result = await run({ ...details, askMeAbout: JSON.stringify(["x".repeat(41)]) });
+    expect(result).toEqual({ error: "Pick up to 10 topics, 40 characters each." });
+    expect(db.user.update).not.toHaveBeenCalled();
+  });
+
+  it("is refused for someone else's profile", async () => {
+    const result = await run(details, { targetId: OTHER });
+    expect(result).toEqual({ error: "You don't have permission to edit this member." });
+    expect(db.user.update).not.toHaveBeenCalled();
+  });
+});
+
 describe("coffee chats", () => {
   it("sends a coffee chat or resume review invite as the viewer", async () => {
     vi.mocked(sendCoffeeChatInvite).mockResolvedValue(null as never);

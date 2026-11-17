@@ -81,6 +81,8 @@ const MESSAGES: Record<ProfileField, string> = {
   birthday: "birthday must be a valid date in YYYY-MM-DD format",
   handle: "That handle is already taken",
   netId: "A unique constraint was violated",
+  askMeAbout: "askMeAbout takes up to 10 topics of 40 characters each",
+  textLength: "Text must be 300 characters or fewer",
   unique: "A unique constraint was violated",
 };
 
