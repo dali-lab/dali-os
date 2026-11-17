@@ -225,6 +225,16 @@ export function zonedDayStartUtc(
   return zonedWallTimeUtc(year, month, day, 0, 0, timezone);
 }
 
+export function ymdDayStartUtc(ymd: string, timezone: string): Date | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd);
+  if (!match) return null;
+  const instant = zonedDayStartUtc(Number(match[1]), Number(match[2]), Number(match[3]), timezone);
+  if (Number.isNaN(instant.getTime())) return null;
+  const { year, month, day } = getZonedYMD(instant, timezone);
+  const roundTrip = `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  return roundTrip === ymd ? instant : null;
+}
+
 /**
  * Inverse of a `datetime-local` / `date` input: read the literal wall-clock
  * string ("YYYY-MM-DDTHH:mm", or "YYYY-MM-DD" → local midnight) as a wall time

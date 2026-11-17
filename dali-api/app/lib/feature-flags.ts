@@ -130,6 +130,14 @@ export const FEATURE_FLAGS = [
     defaultEveryone: true,
   },
   {
+    key: "website-meeting-requests",
+    label: "Website meeting requests",
+    description:
+      "When a partner asks to meet on the website's support plan finder (dali.dartmouth.edu/support-plans), dali.website calls api/public/partner-meeting-requests and DALI OS emails partners@dali.dartmouth.edu with their details. Turning this off makes that endpoint return 404; the website still files the request to its form. Only the whole-lab setting counts. Ships on.",
+    defaultEnabled: true,
+    defaultEveryone: true,
+  },
+  {
     key: "ask-dali",
     label: "Ask DALI",
     description:
@@ -176,6 +184,12 @@ export const FEATURE_FLAGS = [
     label: "Project band header",
     description:
       "Project pages show a band header: the emoji, title, partner and terms, roles and team on the left and the cover image on the right. Off keeps the current header. Ships off.",
+  },
+  {
+    key: "alumni-game",
+    label: "Alumni: onboarding game",
+    description:
+      "New alumni are invited to build a pixel avatar, then finish their profile either on the profile page or by exploring a pixel DALI lab and chatting with Tim on an in-game phone. Ships off.",
   },
 ] as const satisfies readonly FeatureFlagDef[];
 

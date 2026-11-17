@@ -12,6 +12,10 @@ vi.mock("~/lib/shell-user.server", () => ({ loadShellUser: vi.fn(async () => ({ 
 vi.mock("~/lib/tasks.server", () => ({ listMyProjectTasks: vi.fn(async () => []), listOpenTasks: vi.fn(async () => []) }));
 vi.mock("~/lib/roles", () => ({ currentTermStrict: vi.fn(async () => null), getUserRoles: vi.fn(async () => ({})) }));
 vi.mock("~/components/CommandPalette", () => ({ resultIcon: vi.fn() }));
+vi.mock("~/members/lib/home-timeline.server", () => ({
+  loadHomeEvents: vi.fn(async () => [{ id: "e1" }]),
+  loadTermProjects: vi.fn(async () => ({ count: 4, oldProject: null })),
+}));
 vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn(async () => false) }));
 
 import { requireAuth } from "~/lib/auth";
@@ -36,6 +40,22 @@ describe("home loader", () => {
     const res = await loader({ request: new Request("http://localhost/"), params: {}, context: {} } as never);
     expect(res).toMatchObject({ alumniHome: true });
     expect(isFeatureEnabled).toHaveBeenCalledWith("alumni-home", "u1", { isAlumni: true }, expect.any(Request));
+  });
+
+  it("loads the coming-up timeline only for the alumni home", async () => {
+    vi.mocked(isFeatureEnabled).mockResolvedValueOnce(true);
+    vi.mocked(currentTermStrict).mockResolvedValue({
+      id: "t1",
+      code: "26F",
+      startDate: new Date(Date.UTC(2026, 8, 14)),
+    } as never);
+    const on = await loader({ request: new Request("http://localhost/"), params: {}, context: {} } as never);
+    expect(on).toMatchObject({
+      timeline: { events: [{ id: "e1" }], term: { term: "26F", startLabel: "Sep 14", projects: { count: 4 } } },
+    });
+    const off = await loader({ request: new Request("http://localhost/"), params: {}, context: {} } as never);
+    vi.mocked(currentTermStrict).mockResolvedValue(null);
+    expect(off).toMatchObject({ timeline: null });
   });
 
   it("keeps alumni on the usual home while the flag is off", async () => {

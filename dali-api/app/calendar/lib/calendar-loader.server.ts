@@ -3,6 +3,7 @@ import { prisma } from "~/lib/db.server";
 import { cachedExternalRead } from "~/calendar/lib/external-cache.server";
 import { isImpersonating, redirectNonMemberToPortal, requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
+import { readOnlyRoles } from "~/lib/read-only-roles.server";
 import { canViewForms, currentTerm, getUserRoleInstances, isCore, isLabMemberOrAlum } from "~/lib/roles";
 import { resolveTermFilter } from "~/lib/terms";
 import { buildClassDestinations, toMemberClassDTO } from "~/lib/member-class.server";
@@ -118,6 +119,7 @@ export async function loadCalendarData(
   if (!opts.portal) {
     const portalRedirect = await redirectNonMemberToPortal(auth, request);
     if (portalRedirect) return portalRedirect;
+    if ((await readOnlyRoles(auth.user.sub, request)).isAlumni) return redirect("/community");
     const meetingPage = await meetingLinkRedirect(new URL(request.url));
     if (meetingPage) return meetingPage;
   }

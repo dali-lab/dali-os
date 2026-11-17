@@ -21,7 +21,7 @@
 // model — there is no meeter to assign.
 
 import { prisma } from "~/lib/db.server";
-import { logAuditEvent } from "~/lib/audit";
+import { deletePartnerApplication } from "~/partners/lib/partner-application-delete.server";
 import { startProjectReturn } from "~/partners/lib/partner-returns.server";
 import { isCore } from "~/lib/roles";
 import {
@@ -231,22 +231,12 @@ export async function runManagePartnerApplication(
   // ── delete ────────────────────────────────────────────────────────────────
   if (action === "delete") {
     const applicationId = input.applicationId as string;
-    const existing = await prisma.partnerApplication.findUnique({
-      where: { id: applicationId },
-      select: { id: true, title: true, stage: true, resultingProjectId: true },
-    });
-    if (!existing) throw new McpNotFoundError(`Partner application ${applicationId} not found`);
-    if (existing.resultingProjectId) {
-      throw new McpInvalidError("This application became a project, so it can't be deleted.");
+    const result = await deletePartnerApplication(applicationId, callerId);
+    if (!result.ok) {
+      if (result.reason === "not-found") throw new McpNotFoundError(`Partner application ${applicationId} not found`);
+      throw new McpInvalidError(result.message);
     }
-    await prisma.partnerApplication.delete({ where: { id: applicationId } });
-    await logAuditEvent({
-      action: "partner.application.delete",
-      userId: callerId,
-      targetId: applicationId,
-      metadata: { title: existing.title, stage: existing.stage },
-    });
-    return { deleted: true, id: applicationId, title: existing.title };
+    return { deleted: true, id: result.id, title: result.title };
   }
 
   // ── create ────────────────────────────────────────────────────────────────

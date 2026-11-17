@@ -227,6 +227,7 @@ export function LayoutOS({
     'resource-hub': useFeatureFlag('resource-hub'),
     'refer-a-partner': useFeatureFlag('refer-a-partner'),
     'core-taskboard': useFeatureFlag('core-taskboard'),
+    'alumni-game': useFeatureFlag('alumni-game'),
   }
   const releaseNotesEnabled = useFeatureFlag('release-notes')
   const askEnabled = useFeatureFlag('ask-dali')

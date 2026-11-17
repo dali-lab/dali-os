@@ -16,6 +16,7 @@ import {
   FileText,
   FolderCog,
   FolderKanban,
+  Gamepad2,
   Gavel,
   Globe,
   GraduationCap,
@@ -406,19 +407,23 @@ export const HOME_NAV_ITEM: SubTab = { label: "Home", href: "/", icon: Home };
 
 const ALUMNI_COMMUNITY_NAV_ITEM: SubTab = { label: "Community", href: "/community", icon: MapPinned, owns: "/members" };
 
+// The pixel lab game. Its route blocks play until an avatar exists (the lab
+// loader bounces avatar-less visitors to the creator at /alumni/welcome).
+const ALUMNI_GAME_NAV_ITEM: SubTab = { label: "Pixel lab", href: "/alumni/lab", icon: Gamepad2, owns: "/alumni" };
+
 // Alumni get one area, so the sidebar shows no section switcher for them.
 const ALUMNI_AREAS: NavArea[] = [
   {
     key: "projects",
     label: "Lab",
     icon: FolderKanban,
-    hubPath: "/projects",
+    hubPath: "/currently",
     subtabs: [
-      { label: "Projects", href: "/projects", icon: FolderKanban },
+      // Projects, Stories and the Gallery are reached from this page's links.
+      { label: "Currently at DALI", href: "/currently", icon: Sparkles },
+      ALUMNI_GAME_NAV_ITEM,
       ALUMNI_COMMUNITY_NAV_ITEM,
       { label: "Opportunities", href: "/community/opportunities", icon: Lightbulb },
-      { label: "Gallery", href: "/community/gallery", icon: Images },
-      { label: "Stories", href: "/resources", icon: Newspaper },
       REFER_NAV_ITEM,
     ],
   },
@@ -460,6 +465,7 @@ export function areasForViewer(
           .filter((href) => href !== ALUMNI_COMMUNITY_NAV_ITEM.href),
   );
   if (!flags["refer-a-partner"]) hidden.add(REFER_NAV_ITEM.href);
+  if (!flags["alumni-game"]) hidden.add(ALUMNI_GAME_NAV_ITEM.href);
   return ALUMNI_AREAS.map((a) => ({
     ...a,
     subtabs: a.subtabs.filter((t) => !hidden.has(t.href)),

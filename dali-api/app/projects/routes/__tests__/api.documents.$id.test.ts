@@ -30,9 +30,9 @@ vi.mock("~/calendar/lib/notebooks.server", () => {
       throw err;
     },
     trashNotebook: vi.fn(),
-    loadManageableNotebook: vi.fn(),
   };
 });
+vi.mock("~/drive/lib/notebook-access.server", () => ({ loadManageableNotebook: vi.fn() }));
 vi.mock("~/drive/lib/page-names.server", async (importActual) => ({
   ...(await importActual<typeof import("~/drive/lib/page-names.server")>()),
   findNameConflict: vi.fn(),
@@ -46,7 +46,8 @@ vi.mock("~/lib/cors", () => ({
 import { prisma } from "~/lib/db.server";
 import { requireMemberSession, requireProjectEditAccess } from "~/lib/auth";
 import { getPageAccess } from "~/lib/pageAccess.server";
-import { NotebookError, loadManageableNotebook, trashNotebook } from "~/calendar/lib/notebooks.server";
+import { NotebookError, trashNotebook } from "~/calendar/lib/notebooks.server";
+import { loadManageableNotebook } from "~/drive/lib/notebook-access.server";
 import { findNameConflict } from "~/drive/lib/page-names.server";
 import { action } from "../api.documents.$id";
 

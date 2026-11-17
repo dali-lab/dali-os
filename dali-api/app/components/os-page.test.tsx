@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act } from "react";
 import { Download, List, Plus, Search, LayoutGrid } from "lucide-react";
 import { renderDom, click } from "~/test-utils/render";
+import { Modal } from "./Modal";
 import {
   PageRowControls,
   PageRowControlsScope,
@@ -310,6 +311,34 @@ describe("custom controls", () => {
 });
 
 describe("PageRowControls", () => {
+  it("stays out of a tab row inside a modal opened over the page", () => {
+    renderDom(
+      <PageRowControlsScope>
+        <PageTabRow label="Sections" tabs={TABS} />
+        <PageRowControls controls={[{ key: "up", label: "Upload", icon: Download, onClick: () => {} }]} />
+        <Modal open onClose={() => {}} labelledBy="t">
+          <PageTabRow label="Record sections" tabs={TABS} />
+        </Modal>
+      </PageRowControlsScope>,
+    );
+    const dialog = document.body.querySelector("[role='dialog']")!;
+    expect(dialog.textContent).not.toContain("Upload");
+    const pageRow = Array.from(document.body.querySelectorAll("[data-density]")).find((el) => !dialog.contains(el))!;
+    expect(pageRow.textContent).toContain("Upload");
+  });
+
+  it("does not hand a modal's own PageRowControls to the page row", () => {
+    renderDom(
+      <PageRowControlsScope>
+        <PageTabRow label="Sections" tabs={TABS} />
+        <Modal open onClose={() => {}} labelledBy="t">
+          <PageRowControls controls={[{ key: "x", label: "Modal action", icon: Download, onClick: () => {} }]} />
+        </Modal>
+      </PageRowControlsScope>,
+    );
+    expect(document.body.textContent).not.toContain("Modal action");
+  });
+
   it("renders into the row, outside the page content", () => {
     const { container } = renderDom(
       <PageRowControlsScope>

@@ -18,11 +18,14 @@ export function ColorField({
   onChange,
   label = "Color",
   className,
+  icon,
 }: {
   value: string;
   onChange: (hex: string) => void;
   label?: string;
   className?: string;
+  /** Replaces the color-filled well on the trigger (e.g. an eyedropper icon). */
+  icon?: React.ReactNode;
 }) {
   return (
     <Popover
@@ -33,7 +36,9 @@ export function ColorField({
           aria-label={label}
           className={cn("inline-flex h-7 w-7 items-center justify-center rounded-md border border-os-container p-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-os-accent", className)}
         >
-          <span className="h-full w-full rounded-[3px] border border-os-container" style={{ backgroundColor: value }} />
+          {icon ?? (
+            <span className="h-full w-full rounded-[3px] border border-os-container" style={{ backgroundColor: value }} />
+          )}
         </button>
       }
     >
