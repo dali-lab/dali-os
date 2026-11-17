@@ -26,8 +26,7 @@ export function normalizeEmailAddress(raw: string): string {
  * Falls through to the normalized input when the address resolves to nobody,
  * which keeps the caller's anti-enumeration behaviour intact: the downstream
  * emailOTP no-op (disableSignUp) stays neutral and never reveals whether an
- * account exists. A user row with a null `email` also falls through rather than
- * returning null, so the caller always has something to hand BetterAuth.
+ * account exists.
  */
 export async function resolveLoginIdentifier(typed: string): Promise<string> {
   const address = normalizeEmailAddress(typed);
@@ -35,13 +34,10 @@ export async function resolveLoginIdentifier(typed: string): Promise<string> {
 
   const owned = await prisma.userEmail.findUnique({
     where: { address },
-    select: { user: { select: { email: true } } },
+    select: { user: { select: { id: true, email: true } } },
   });
-  if (owned?.user?.email) return normalizeEmailAddress(owned.user.email);
+  if (owned?.user) return canonicalFor(owned.user, address);
 
-  // Not in the alias table yet. Fall back to the legacy columns so resolution
-  // still works for any row written between the migration's backfill and this
-  // code path taking over every write site.
   const user = await prisma.user.findFirst({
     where: {
       OR: [
@@ -51,9 +47,9 @@ export async function resolveLoginIdentifier(typed: string): Promise<string> {
         { personalEmail: address },
       ],
     },
-    select: { email: true },
+    select: { id: true, email: true },
   });
-  if (user?.email) return normalizeEmailAddress(user.email);
+  if (user) return canonicalFor(user, address);
 
   const healed = await healDartmouthAddress(address);
   return healed ?? address;
@@ -104,24 +100,27 @@ async function healDartmouthAddress(address: string): Promise<string | null> {
   }
 
   if (owner.email) return normalizeEmailAddress(owner.email);
+  return (await adoptCanonical(owner.id, address)) ? address : null;
+}
 
-  // No canonical email, so there is nothing to hand BetterAuth and an alias
-  // alone cannot help — resolution returns this column. Dartmouth has just
-  // attested that this address is theirs, so adopt it. Safe precisely because
-  // the column is empty: nothing is overwritten, and a row that could never
-  // sign in becomes one that can. Attestation still only decides where the
-  // code goes; entering it is what proves the mailbox.
+// A row with no User.email (admin-created members who never signed in) can't be
+// found by BetterAuth, which would sign the person up as a second account.
+async function canonicalFor(
+  user: { id: string; email: string | null },
+  address: string,
+): Promise<string> {
+  if (user.email) return normalizeEmailAddress(user.email);
+  await adoptCanonical(user.id, address);
+  return address;
+}
+
+async function adoptCanonical(userId: string, address: string): Promise<boolean> {
   try {
-    await prisma.user.update({
-      where: { id: owner.id },
-      data: { email: address },
-    });
-    return address;
+    await prisma.user.update({ where: { id: userId }, data: { email: address } });
+    return true;
   } catch (err) {
-    // Unique violation: another row already claims it as canonical. That is a
-    // duplicate-account conflict to settle by hand, not to resolve by force.
     console.warn(`[user-email] could not adopt ${address} as canonical:`, err);
-    return null;
+    return false;
   }
 }
 
