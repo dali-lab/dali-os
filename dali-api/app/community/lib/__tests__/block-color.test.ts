@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BLOCK_PALETTE, blockBase, blockShades, dominantColor, paletteFor } from "~/community/lib/block-color";
+import { BLOCK_PALETTE, blockBase, blockShades, dominantColor, letterInk, paletteFor } from "~/community/lib/block-color";
 
 const px = (...rgba: number[][]) => rgba.flat();
 
@@ -36,5 +36,13 @@ describe("dominantColor", () => {
 
   it("returns null for no pixels", () => {
     expect(dominantColor([])).toBeNull();
+  });
+});
+
+describe("letterInk", () => {
+  it("uses dark ink on the light palette colors and white elsewhere", () => {
+    expect(letterInk("var(--color-accent-yellow)")).toBe("var(--color-navy-deep)");
+    expect(letterInk("var(--color-accent-green)")).toBe("var(--color-navy-deep)");
+    expect(letterInk("var(--color-navy)")).toBe("white");
   });
 });

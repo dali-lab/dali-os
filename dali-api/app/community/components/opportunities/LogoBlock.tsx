@@ -1,4 +1,4 @@
-import { blockBase, blockShades } from "~/community/lib/block-color";
+import { blockBase, blockShades, letterInk } from "~/community/lib/block-color";
 
 type LogoBlockProps = {
   name: string;
@@ -9,7 +9,8 @@ type LogoBlockProps = {
 };
 
 export function LogoBlock({ name, logoUrl, color, size = 64, drop = false }: LogoBlockProps) {
-  const shades = blockShades(blockBase(name, color));
+  const base = blockBase(name, color);
+  const shades = blockShades(base);
   const letter = name.trim().charAt(0).toUpperCase();
   return (
     <svg
@@ -38,7 +39,7 @@ export function LogoBlock({ name, logoUrl, color, size = 64, drop = false }: Log
           />
         </>
       ) : (
-        <text x="32" y="33" textAnchor="middle" dominantBaseline="central" fontSize="26" fontWeight="700" fill="white">
+        <text x="32" y="33" textAnchor="middle" dominantBaseline="central" fontSize="26" fontWeight="700" fill={letterInk(base)}>
           {letter}
         </text>
       )}

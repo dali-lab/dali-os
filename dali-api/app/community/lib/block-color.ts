@@ -23,6 +23,12 @@ export function blockBase(name: string, color?: string | null): string {
   return color && isBlockColor(color) ? color : paletteFor(name);
 }
 
+const LIGHT_PALETTE: readonly string[] = ["var(--color-accent-yellow)", "var(--color-accent-green)"];
+
+export function letterInk(base: string): string {
+  return LIGHT_PALETTE.includes(base) ? "var(--color-navy-deep)" : "white";
+}
+
 export function blockShades(base: string): { light: string; face: string; dark: string } {
   return {
     light: `color-mix(in srgb, ${base} 62%, white)`,
