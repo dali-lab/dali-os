@@ -5,7 +5,13 @@ import { getCity } from "~/lib/places/cities.server";
 import { normalizeHandle } from "~/lib/handle.server";
 import { uniqueViolationFields } from "~/lib/prisma-errors";
 import { isValidTimezone } from "~/lib/timezone";
-import { MAX_ASK_ME_ABOUT, MAX_ASK_ME_ABOUT_LENGTH, MAX_LONG_TEXT } from "~/members/lib/profile-limits";
+import {
+  MAX_ASK_ME_ABOUT,
+  MAX_ASK_ME_ABOUT_LENGTH,
+  MAX_LONG_TEXT,
+  MAX_STUDY_ITEMS,
+  MAX_STUDY_LENGTH,
+} from "~/members/lib/profile-limits";
 
 export type ProfileField =
   | "name"
@@ -16,6 +22,7 @@ export type ProfileField =
   | "handle"
   | "netId"
   | "askMeAbout"
+  | "study"
   | "textLength"
   | "unique";
 
@@ -41,14 +48,12 @@ export class ProfileConflictError extends ConflictError {
 
 const NULLABLE_TEXT = [
   "pronouns",
-  "major",
   "hometown",
   "currentLocation",
   "linkedinUrl",
   "githubUsername",
   "personalSite",
   "dietaryRestrictions",
-  "minors",
   "funFact",
   "outsideOfWork",
   "phoneNumber",
@@ -67,7 +72,7 @@ export const OPEN_TO_COLUMNS = {
 export type OpenToKey = keyof typeof OPEN_TO_COLUMNS;
 
 
-export function normalizeAskMeAbout(raw: readonly string[]): string[] {
+export function normalizeList(raw: readonly string[]): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
   for (const item of raw) {
@@ -96,6 +101,8 @@ export type ProfilePatch = Partial<
 > & {
   classYear?: number | string | null;
   askMeAbout?: string[];
+  majors?: string[];
+  minors?: string[];
   openTo?: Partial<Record<OpenToKey, boolean>>;
 };
 
@@ -188,7 +195,7 @@ export async function updateProfileFields(
   }
 
   if (patch.askMeAbout !== undefined) {
-    const topics = normalizeAskMeAbout(patch.askMeAbout);
+    const topics = normalizeList(patch.askMeAbout);
     if (topics.length > MAX_ASK_ME_ABOUT || topics.some((t) => t.length > MAX_ASK_ME_ABOUT_LENGTH)) {
       throw new ProfileValidationError(
         "askMeAbout",
@@ -196,6 +203,20 @@ export async function updateProfileFields(
       );
     }
     data.askMeAbout = updated.askMeAbout = topics;
+  }
+
+  for (const field of ["majors", "minors"] as const) {
+    const raw = patch[field];
+    if (raw === undefined) continue;
+    const items = normalizeList(raw);
+    if (items.length > MAX_STUDY_ITEMS || items.some((t) => t.length > MAX_STUDY_LENGTH)) {
+      throw new ProfileValidationError(
+        "study",
+        `Add up to ${MAX_STUDY_ITEMS} ${field}, ${MAX_STUDY_LENGTH} characters each.`,
+      );
+    }
+    data[field] = updated[field] = items;
+    if (field === "majors") data.major = items.length > 0 ? items.join(", ") : null;
   }
 
   if (patch.openTo !== undefined) {

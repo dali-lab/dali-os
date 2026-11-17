@@ -1,4 +1,5 @@
 import { prisma } from "~/lib/db.server";
+import { splitList } from "~/members/lib/list-input";
 import { addOrUpdateEligibility } from "~/admin/lib/eligibility.server";
 import type { Level } from "~/admin/lib/eligibility";
 import { assignHandleIfMissing } from "~/lib/handle.server";
@@ -143,6 +144,7 @@ export async function createOrPromoteMember(
     const raw = input[field]?.trim() ?? "";
     if (raw !== "") profile[field] = raw;
   }
+  const majors = profile.major ? splitList(profile.major) : null;
   const identityEntries = IDENTITY_COLUMNS.flatMap((c) =>
     identity[c] ? [[c, identity[c] as string] as const] : [],
   );
@@ -198,7 +200,7 @@ export async function createOrPromoteMember(
   if (existing) {
     await promoteToMember({ userId: existing.id, actorId });
     const held = new Set(EMAIL_COLUMNS.map((c) => existing[c]).filter(Boolean));
-    const fill: Record<string, string | number | Date> = {};
+    const fill: Record<string, string | string[] | number | Date> = {};
     for (const [column, value] of identityEntries) {
       if (existing[column] != null) continue;
       if (column !== "netId" && held.has(value)) continue;
@@ -208,6 +210,7 @@ export async function createOrPromoteMember(
     for (const [field, value] of Object.entries(profile)) {
       if ((existing as Record<string, unknown>)[field] == null) fill[field] = value;
     }
+    if (majors && existing.major == null) fill.majors = majors;
     if (classYear !== undefined && existing.classYear == null) fill.classYear = classYear;
     if (birthday && existing.birthday == null) fill.birthday = birthday;
     if (loginEmail && existing.email == null && (await isLoginEmailFree(loginEmail))) {
@@ -227,6 +230,7 @@ export async function createOrPromoteMember(
       ...(loginEmail ? { email: loginEmail } : {}),
       ...identity,
       ...profile,
+      ...(majors ? { majors } : {}),
       classYear,
       birthday,
       daliMember: { create: {} },

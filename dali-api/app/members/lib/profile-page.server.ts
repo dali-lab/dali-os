@@ -11,6 +11,7 @@ import {
 } from "./profile-update.server";
 import { redirect } from "react-router";
 import { prisma } from "~/lib/db.server";
+import { splitList } from "~/members/lib/list-input";
 import { requireAuth, redirectNonMemberToPortal, isImpersonating } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { resolvePhotoUrl } from "~/lib/photo";
@@ -87,8 +88,8 @@ export type ProfileMember = {
   /** Grad/professional school label ("Thayer" | "Guarini" | "Geisel" | "Tuck")
    *  for enrolled grad students; null for undergrads and employees. */
   gradProgram: string | null;
-  major: string | null;
-  minors: string | null;
+  majors: string[];
+  minors: string[];
   funFact: string | null;
   hometown: string | null;
   /** Where they live now ("Based in"); pins them on the Community map. */
@@ -268,6 +269,7 @@ const PROFILE_ERRORS: Record<ProfileField, string> = {
   unique:
     "That NetID is already on another account — contact ops to merge or correct the duplicate.",
   askMeAbout: "Pick up to 10 topics, 40 characters each.",
+  study: "Add up to 4 majors or minors, 60 characters each.",
   textLength: "Keep it under 300 characters.",
 };
 
@@ -275,7 +277,6 @@ const TEXT_FIELDS = [
   "firstName",
   "lastName",
   "pronouns",
-  "major",
   "hometown",
   "currentLocation",
   "linkedinUrl",
@@ -288,8 +289,6 @@ const TEXT_FIELDS = [
   "handle",
   "personalEmail",
   "preferredEmail",
-  "minors",
-  "funFact",
 ] as const;
 
 async function loadProjectAssignments(
@@ -515,7 +514,7 @@ export async function loadProfilePage({
       pronouns: true,
       classYear: true,
       dartmouthDepartmentClass: true,
-      major: true,
+      majors: true,
       minors: true,
       funFact: true,
       hometown: true,
@@ -897,21 +896,6 @@ export async function runProfileAction({
     return { error: "You don't have permission to edit this member." };
   }
 
-  if (intent === "open-to") {
-    const OPEN_TO_COLUMNS = {
-      coffeeChats: "openToCoffeeChats",
-      resumeReviews: "openToResumeReviews",
-      portfolioReviews: "openToPortfolioReviews",
-    } as const;
-    const column = OPEN_TO_COLUMNS[String(form.get("field")) as keyof typeof OPEN_TO_COLUMNS];
-    if (!column) return { error: "Unknown open-to field." };
-    await prisma.user.update({
-      where: { id: targetId },
-      data: { [column]: form.get("value") === "on" },
-    });
-    return null;
-  }
-
   if (intent === "save-experience") {
     const parsed = parseWorkExperience((f) => String(form.get(f) ?? ""));
     if (!parsed.ok) return { error: parsed.error };
@@ -971,6 +955,8 @@ export async function runProfileAction({
       targetId,
       {
         ...Object.fromEntries(TEXT_FIELDS.map((f) => [f, text(f)])),
+        majors: splitList(text("majors")),
+        minors: splitList(text("minors")),
         classYear: text("classYear"),
         birthday: text("birthday"),
         currentLocationGeonameId: text("currentLocationGeonameId"),

@@ -7,7 +7,7 @@
 // plus classYear and birthday):
 //   firstName, lastName, pronouns, handle, timezone, photoUrl,
 //   classYear, linkedinUrl, githubUsername, personalSite,
-//   major, hometown, birthday, dietaryRestrictions, phoneNumber, personalEmail
+//   majors, minors, hometown, birthday, dietaryRestrictions, phoneNumber, personalEmail
 //
 // Excluded:
 //   bio — lives in a Yjs/BlockNote collab doc; edit via the collab layer.
@@ -42,7 +42,8 @@ export const UPDATE_PROFILE_DEF = {
       linkedinUrl: { type: "string", description: "LinkedIn profile URL. Empty string clears." },
       githubUsername: { type: "string", description: "GitHub username. Empty string clears." },
       personalSite: { type: "string", description: "Personal website URL. Empty string clears." },
-      major: { type: "string", description: "Field of study / major. Empty string clears." },
+      majors: { type: "array", items: { type: "string" }, maxItems: 4, description: "Majors, replacing the current list. Empty array clears." },
+      minors: { type: "array", items: { type: "string" }, maxItems: 4, description: "Minors, replacing the current list. Empty array clears." },
       hometown: { type: "string", description: "Hometown. Empty string clears." },
       birthday: { type: "string", description: "Birthday in YYYY-MM-DD format. Empty string clears." },
       dietaryRestrictions: { type: "string", description: "Dietary restrictions / allergies. Empty string clears." },
@@ -65,7 +66,8 @@ type Input = {
   linkedinUrl?: string;
   githubUsername?: string;
   personalSite?: string;
-  major?: string;
+  majors?: string[];
+  minors?: string[];
   hometown?: string;
   birthday?: string;
   dietaryRestrictions?: string;
@@ -82,6 +84,7 @@ const MESSAGES: Record<ProfileField, string> = {
   handle: "That handle is already taken",
   netId: "A unique constraint was violated",
   askMeAbout: "askMeAbout takes up to 10 topics of 40 characters each",
+  study: "majors and minors take up to 4 entries of 60 characters each",
   textLength: "Text must be 300 characters or fewer",
   unique: "A unique constraint was violated",
 };
