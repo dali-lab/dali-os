@@ -937,31 +937,30 @@ html.dark .dali-find-match--current {
 .dali-cmp {
   position: relative;
   width: 100%;
-  --cmp-border: var(--bn-colors-border, rgba(120, 120, 120, 0.25));
-  --cmp-tone: var(--color-os-grey, #6b7280);
+  --cmp-border: var(--bn-colors-border, var(--color-os-container-hi));
+  --cmp-tone: var(--color-os-grey);
+  --cmp-solid: var(--color-os-grey);
+  --cmp-on: var(--color-os-bg);
 }
 .dali-cmp a { color: inherit; text-decoration: none; }
+.dali-doc .dali-cmp a[href], .dali-doc .dali-cmp a[href]:hover { color: inherit; text-decoration: none; }
 .dali-cmp--unknown { padding: 12px; border: 1px dashed var(--cmp-border); border-radius: 10px; opacity: 0.7; }
 
-.dali-cmp-tone--neutral { --cmp-tone: var(--color-os-grey, #6b7280); }
-.dali-cmp-tone--accent { --cmp-tone: var(--color-os-accent, #3b6cf6); }
-.dali-cmp-tone--success { --cmp-tone: #1f9d8a; }
-.dali-cmp-tone--warning { --cmp-tone: #d99a1c; }
-.dali-cmp-tone--danger { --cmp-tone: #e0475b; }
+.dali-cmp-tone--neutral { --cmp-tone: var(--os-status-backlog-edge); --cmp-solid: var(--os-status-backlog-fill); --cmp-on: var(--os-status-backlog-ink); }
+.dali-cmp-tone--accent { --cmp-tone: var(--os-accent-ink); --cmp-solid: var(--os-accent-ink); --cmp-on: var(--color-os-bg); }
+.dali-cmp-tone--success { --cmp-tone: var(--os-status-done-edge); --cmp-solid: var(--os-status-done-fill); --cmp-on: var(--os-status-done-ink); }
+.dali-cmp-tone--warning { --cmp-tone: var(--os-status-review-edge); --cmp-solid: var(--os-status-review-fill); --cmp-on: var(--os-status-review-ink); }
+.dali-cmp-tone--danger { --cmp-tone: var(--os-danger-ink); --cmp-solid: var(--os-danger-ink); --cmp-on: var(--color-os-bg); }
 
 .dali-cmp-edit {
-  position: absolute; top: 8px; right: 8px; z-index: 2;
-  display: inline-flex; align-items: center; gap: 4px;
-  padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600;
-  background: var(--color-foreground, #111); color: var(--color-card, #fff);
-  opacity: 0; transition: opacity 0.15s; cursor: pointer;
+  position: absolute; top: 0; right: 0; z-index: 2; font-size: 12px; font-weight: 500; color: var(--color-os-grey); cursor: pointer;
 }
-.dali-cmp:hover .dali-cmp-edit, .dali-cmp-edit:focus-visible { opacity: 1; }
+.dali-cmp-edit:hover { color: var(--color-foreground); }
 .dali-cmp-swatch {
-  width: 24px; height: 24px; border-radius: 999px; background: var(--cmp-tone);
+  width: 24px; height: 24px; border-radius: 999px; background: var(--cmp-solid);
   border: 2px solid transparent; cursor: pointer;
 }
-.dali-cmp-swatch[aria-checked="true"] { border-color: var(--color-foreground, #111); }
+.dali-cmp-swatch[aria-checked="true"] { border-color: var(--color-foreground); }
 
 .dali-cmp-head { margin-bottom: 10px; }
 .dali-cmp-title { font-weight: 700; font-size: 1.1em; }
@@ -970,18 +969,17 @@ html.dark .dali-find-match--current {
 .dali-cmp-eyebrow { font-size: 0.72em; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; opacity: 0.65; }
 
 .dali-cmp-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
-.dali-cmp-panel { border: 1px solid var(--cmp-border); border-radius: 14px; padding: 16px; }
+.dali-cmp-panel { background: color-mix(in srgb, var(--cmp-tone) 12%, transparent); border-radius: 14px; padding: 16px; }
 .dali-cmp-panel--flush { padding: 0; overflow: hidden; }
 .dali-cmp-panel--flush .dali-cmp-head { padding: 14px 16px 0; }
 
 .dali-cmp-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.dali-cmp-chip { padding: 5px 14px; border: 1px solid var(--cmp-border); border-radius: 999px; font-size: 0.9em; font-weight: 600; }
-a.dali-cmp-chip:hover, a.dali-cmp-row:hover { background: color-mix(in srgb, currentColor 6%, transparent); }
+.dali-cmp-chip { padding: 5px 14px; background: color-mix(in srgb, var(--cmp-tone) 16%, transparent); border-radius: 999px; font-size: 0.9em; font-weight: 600; }
+a.dali-cmp-chip:hover, a.dali-cmp-row:hover { background: var(--color-os-hover); }
 
 .dali-cmp-card {
-  display: flex; flex-direction: column; gap: 8px; padding: 14px; min-width: 0; overflow-wrap: anywhere;
-  border: 1px solid color-mix(in srgb, var(--cmp-tone) 35%, var(--cmp-border)); border-radius: 14px;
-  background: color-mix(in srgb, var(--cmp-tone) 7%, transparent);
+  display: flex; flex-direction: column; min-width: 0; overflow-wrap: anywhere;
+  background: color-mix(in srgb, var(--cmp-tone) 22%, transparent);
 }
 .dali-cmp-card__title { font-weight: 700; line-height: 1.3; }
 .dali-cmp-card .dali-cmp-meta { white-space: normal; }
@@ -990,31 +988,33 @@ a.dali-cmp-chip:hover, a.dali-cmp-row:hover { background: color-mix(in srgb, cur
   background: color-mix(in srgb, var(--cmp-tone) 20%, transparent);
 }
 
-.dali-cmp-steps { display: flex; list-style: none; margin: 8px 0 0; padding: 0; overflow-x: auto; }
-.dali-cmp-step { position: relative; flex: 1; min-width: 84px; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 4px 6px 0; font-size: 0.85em; text-align: center; opacity: 0.6; }
+.dali-cmp-steps { display: flex; list-style: none; margin: 8px 0 0; padding: 10px 0 4px; overflow-x: auto; }
+.dali-cmp-step { position: relative; flex: 1 0 96px; min-width: 96px; display: flex; flex-direction: column; gap: 8px; font-size: 0.85em; }
 /* Connector: from this circle's centre to the next one's. */
-.dali-cmp-step::before { content: ""; position: absolute; top: 15px; left: 50%; width: 100%; height: 1px; background: var(--cmp-border); }
+.dali-cmp-step::before { content: ""; position: absolute; top: 15px; height: 1px; transform: translateY(-50%); background: var(--cmp-border); }
 .dali-cmp-step:last-child::before { display: none; }
 .dali-cmp-step__num {
   position: relative; z-index: 1; width: 22px; height: 22px; border-radius: 999px; display: grid; place-items: center;
-  font-size: 11px; font-weight: 700; border: 1px solid var(--cmp-border); background: var(--color-card, #fff);
+  font-size: 11px; font-weight: 700; line-height: 1; padding: 0; background: var(--color-os-container);
 }
 .dali-cmp-step--done, .dali-cmp-step--current { opacity: 1; }
-.dali-cmp-step--done::before { background: #1f9d8a; }
-.dali-cmp-step--done .dali-cmp-step__num { background: #1f9d8a; border-color: #1f9d8a; color: #fff; }
-.dali-cmp-step--current .dali-cmp-step__num { background: #e0475b; border-color: #e0475b; color: #fff; box-shadow: 0 0 0 4px color-mix(in srgb, #e0475b 22%, transparent); }
+.dali-cmp-step--done::before { background: var(--os-status-done-edge); }
+.dali-cmp-step--done .dali-cmp-step__num { background: var(--os-status-done-fill); color: var(--os-status-done-ink); }
+.dali-cmp-step--current .dali-cmp-step__num { background: var(--os-accent-ink); color: var(--color-os-bg); box-shadow: 0 0 0 4px color-mix(in srgb, var(--os-accent-ink) 28%, transparent); }
+.dali-cmp-step--toned .dali-cmp-step__num { background: var(--cmp-solid); color: var(--cmp-on); }
+.dali-cmp-step--toned.dali-cmp-step--current .dali-cmp-step__num { box-shadow: 0 0 0 4px color-mix(in srgb, var(--cmp-tone) 28%, transparent); }
 .dali-cmp-step--current .dali-cmp-step__label { font-weight: 700; }
 
-.dali-cmp-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; border-top: 1px solid var(--cmp-border); }
+.dali-cmp-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; border-top: 1px solid var(--color-os-container); }
 .dali-cmp-row__main { display: flex; flex-direction: column; min-width: 0; }
 .dali-cmp-row__title { font-weight: 600; }
 
-.dali-cmp-stat { display: flex; flex-direction: column; gap: 2px; padding: 16px; border: 1px solid var(--cmp-border); border-radius: 14px; }
-.dali-cmp-stat__value { font-size: 2.4em; font-weight: 800; line-height: 1; color: var(--cmp-tone); }
+.dali-cmp-stat { display: flex; flex-direction: column; gap: 2px; padding: 16px; background: color-mix(in srgb, var(--cmp-tone) 22%, transparent); border-radius: 14px; }
+.dali-cmp-stat__value { font-size: 2.4em; font-weight: 800; line-height: 1; color: color-mix(in srgb, var(--cmp-tone) 55%, var(--color-foreground)); }
 
 .dali-cmp-bars { display: flex; flex-direction: column; gap: 8px; }
 .dali-cmp-bar { display: grid; grid-template-columns: minmax(70px, 20%) 1fr auto; align-items: center; gap: 10px; font-size: 0.9em; }
-.dali-cmp-bar__track { height: 14px; border-radius: 999px; background: color-mix(in srgb, currentColor 8%, transparent); overflow: hidden; }
+.dali-cmp-bar__track { height: 14px; border-radius: 999px; background: var(--color-os-hover-strong); overflow: hidden; }
 .dali-cmp-bar__fill { display: block; height: 100%; border-radius: 999px; background: var(--cmp-tone); }
 .dali-cmp-bar__value { font-weight: 700; font-variant-numeric: tabular-nums; }
 
@@ -1022,11 +1022,11 @@ a.dali-cmp-chip:hover, a.dali-cmp-row:hover { background: color-mix(in srgb, cur
 .dali-cmp-piece__art { display: block; width: 100%; aspect-ratio: 16 / 10; object-fit: cover; border-radius: 6px; background: var(--cmp-tone); margin-bottom: 4px; }
 a.dali-cmp-piece:hover .dali-cmp-row__title { text-decoration: underline; }
 
-.dali-cmp-feature { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); border: 1px solid var(--cmp-border); border-radius: 14px; overflow: hidden; }
+.dali-cmp-feature { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); background: color-mix(in srgb, var(--cmp-tone) 18%, transparent); border-radius: 14px; overflow: hidden; }
 .dali-cmp-feature__art { display: block; width: 100%; height: 100%; min-height: 160px; object-fit: cover; background: var(--cmp-tone); }
 .dali-cmp-feature__body { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 20px; }
 .dali-cmp-feature__title { font-size: 1.7em; font-weight: 800; line-height: 1.15; }
-.dali-cmp-cta { margin-top: 4px; padding: 8px 16px; border-radius: 8px; font-weight: 700; background: var(--cmp-tone); color: #fff !important; }
+.dali-cmp-cta { margin-top: 4px; padding: 8px 16px; border-radius: 8px; font-weight: 700; background: var(--cmp-solid); color: var(--cmp-on) !important; }
 
 /* Breathing room, so stacked components never touch. */
 .dali-cmp { margin-block: 8px; }
@@ -1155,6 +1155,412 @@ body[data-modal-open] .bn-side-menu {
   @keyframes enhance-edge-out-b { from { opacity: 1; } to { opacity: 0; } }
 }
 
+/* Inline editing: the component turns into its own form, in place. */
+.dali-cmp-inline { display: flex; flex-direction: column; gap: 12px; }
+.dali-cmp-inline input, .dali-cmp-inline textarea {
+  width: 100%; padding: 6px 10px; border-radius: 8px; border: 0; outline: none; font: inherit;
+  background: color-mix(in srgb, var(--color-card) 70%, transparent); color: inherit;
+}
+.dali-cmp-inline input:focus, .dali-cmp-inline textarea:focus { box-shadow: 0 0 0 2px color-mix(in srgb, var(--os-accent-ink) 60%, transparent); }
+.dali-cmp-mini { font-size: 12px; font-weight: 500; padding: 2px 8px; border-radius: 6px; color: var(--color-os-grey); cursor: pointer; }
+.dali-cmp-mini:hover { color: var(--color-foreground); background: var(--color-os-hover-strong); }
+
+.dali-cmp-step__label { max-width: 100%; overflow-wrap: anywhere; }
+.dali-cmp-step__addbtn:focus-visible { outline: 2px solid color-mix(in srgb, var(--os-accent-ink) 70%, transparent); outline-offset: 2px; border-radius: 8px; }
+.dali-cmp-step--add { opacity: 0.7; }
+.dali-cmp-step--add:hover { opacity: 1; }
+.dali-cmp-timeline-edit { display: flex; flex-direction: column; gap: 4px; }
+.dali-cmp-head--edit { display: flex; flex-direction: column; gap: 2px; margin-bottom: 4px; }
+.dali-cmp-bare { border: 0; outline: none; background: transparent; color: inherit; font: inherit; border-radius: 6px; transition: background-color 0.15s ease-out, box-shadow 0.15s ease-out; cursor: text; }
+.dali-cmp-bare:hover { background: var(--color-os-hover); }
+.dali-cmp-bare:focus { background: color-mix(in srgb, var(--color-card) 70%, transparent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--os-accent-ink) 55%, transparent); }
+.dali-cmp-title.dali-cmp-bare { font-weight: 700; font-size: 1.1em; }
+.dali-cmp-sub.dali-cmp-bare { font-size: 0.875em; opacity: 0.7; }
+.dali-cmp-mini:disabled { opacity: 0.5; cursor: default; }
+
+/* Quick links: label above (default) or beside the pills. */
+.dali-cmp-chips--stacked { flex-direction: column; align-items: flex-start; gap: 8px; }
+.dali-cmp-chips__row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.dali-cmp-chips-edit { display: flex; flex-direction: column; gap: 10px; }
+.dali-cmp-chip--edit { display: inline-flex; align-items: center; gap: 2px; transition: box-shadow 0.15s ease-out, opacity 0.15s ease-out; }
+.dali-cmp-chip--over { box-shadow: 0 0 0 2px var(--os-accent-ink); }
+.dali-cmp-chip--dragging { opacity: 0.5; }
+.dali-cmp-chip--add { display: inline-flex; align-items: center; gap: 4px; background: transparent; color: inherit; font: inherit; font-size: 0.9em; font-weight: 600; opacity: 0.7; cursor: pointer; transition: opacity 0.15s ease-out, background-color 0.15s ease-out; }
+.dali-cmp-chip--add:hover { opacity: 1; background: var(--color-os-hover-strong); }
+.dali-cmp-chips-edit__foot { display: flex; align-items: center; gap: 8px; }
+
+/* Timeline editor: every milestone is its own set of quiet fields. */
+.dali-cmp-steps--edit .dali-cmp-step { opacity: 1; }
+.dali-cmp-step__num--btn { align-self: center; border: 0; cursor: pointer; }
+.dali-cmp-step__num--btn:hover { box-shadow: 0 0 0 3px var(--color-os-container); }
+.dali-cmp-step__input, .dali-cmp-step__details {
+  width: 100%; min-width: 0; padding: 4px 6px; border: 0; border-radius: 6px; outline: none; font: inherit; font-size: 0.95em; color: inherit;
+  text-align: center; background: transparent; transition: background-color 0.15s ease-out, box-shadow 0.15s ease-out;
+}
+.dali-cmp-step__details { text-align: left; font-size: 0.85em; resize: vertical; background: var(--color-os-hover); }
+.dali-cmp-step__input:hover { background: var(--color-os-hover); }
+.dali-cmp-step__input:focus, .dali-cmp-step__details:focus { background: color-mix(in srgb, var(--color-card) 70%, transparent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--os-accent-ink) 55%, transparent); }
+
+/* Timeline editor: color fan above the number, italic always-on details, icon delete. */
+.dali-cmp-steps--edit .dali-cmp-step { position: relative; }
+.dali-cmp-fan {
+  position: absolute;
+  display: flex; align-items: center; border-radius: 999px; white-space: nowrap;
+  background: var(--color-card); box-shadow: 0 4px 14px var(--color-os-shadow), 0 0 0 1px var(--color-os-container);
+}
+@keyframes dali-fan-in { from { opacity: 0; transform: translateX(-50%) translateY(4px); } }
+@media (prefers-reduced-motion: reduce) { .dali-cmp-fan { animation: none; } }
+.dali-cmp-fan .dali-cmp-swatch { padding: 0; }
+.dali-cmp-fan .dali-cmp-swatch[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--color-card), 0 0 0 3.5px color-mix(in srgb, var(--cmp-tone) 80%, var(--color-os-fg)); }
+.dali-cmp-steps--edit .dali-cmp-step__details { text-align: center; min-height: 1.6em; background: transparent;
+}
+.dali-cmp-steps--edit .dali-cmp-step__details:hover { background: var(--color-os-hover); }
+.dali-cmp-steps--edit .dali-cmp-step__details::placeholder { opacity: 0.45; }
+.dali-cmp-step__del {
+  align-self: center; display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 6px;
+  background: transparent; color: inherit; opacity: 0.3; cursor: pointer; transition: opacity 0.15s ease-out, color 0.15s ease-out;
+}
+.dali-cmp-step:hover .dali-cmp-step__del, .dali-cmp-step__del:focus-visible { opacity: 0.7; }
+.dali-cmp-step__del:hover { opacity: 1; color: var(--os-danger-ink); }
+.dali-cmp-steps--edit .dali-cmp-step__details { font-style: normal; }
+.dali-cmp-step--add { align-self: flex-start; }
+.dali-cmp-steps--edit::-webkit-scrollbar { height: 4px; }
+.dali-cmp-steps--edit::-webkit-scrollbar-thumb { background: var(--color-os-container-hi); border-radius: 999px; }
+.dali-cmp-steps--edit::-webkit-scrollbar-track { background: transparent; margin: 0 4px; }
+.dali-cmp-chips-edit__label { display: block; width: auto; min-width: 8ch; padding: 0; border: 0; outline: none; background: transparent; color: inherit; }
+.dali-cmp-chip--edit { cursor: grab; padding: 0; }
+.dali-cmp-chip__btn { padding: 5px 14px; border: 0; background: transparent; color: inherit; font: inherit; cursor: inherit; }
+
+/* Pinned cards editor: the real cards, one selected at a time. */
+.dali-cmp-cards-edit { display: flex; flex-direction: column; }
+.dali-cmp-card--edit:focus-visible, .dali-cmp-card--selected { outline: none; box-shadow: 0 0 0 2px color-mix(in srgb, var(--cmp-tone) 90%, var(--color-os-fg)); }
+.dali-cmp-card--over { box-shadow: 0 0 0 2px var(--os-accent-ink); }
+.dali-cmp-card--dragging { opacity: 0.45; }
+.dali-cmp-card--add {
+  align-items: center; justify-content: center; flex-direction: row; gap: 6px;
+  background: transparent; color: inherit; font: inherit; font-weight: 600; font-size: 0.9em; cursor: pointer; transition: opacity 0.15s ease-out, background-color 0.15s ease-out;
+}
+.dali-cmp-card--add:hover { opacity: 1; background: var(--color-os-hover); }
+.dali-cmp-swatch--pick { padding: 0; }
+@media (prefers-reduced-motion: reduce) { .dali-cmp-card--edit { transition: none; } .dali-cmp-card--edit:hover { transform: none; } }
+.dali-cmp-pop-field { display: flex; flex-direction: column; min-width: 0; }
+/* Editing: a quiet grey dotted frame around whichever editor is open. */
+.dali-cmp-timeline-edit, .dali-cmp-chips-edit, .dali-cmp-cards-edit, .dali-cmp-inline { border-radius: 14px; }
+.dali-cmp-swatch--pick { border: 0; }
+
+/* Block side menu: the + and the drag grip share one box and size, centered on
+   the block's first line, so they read as one matched pair. */
+.dali-doc .bn-side-menu { align-items: center; gap: 2px; }
+.dali-doc .bn-side-menu .bn-button { display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border-radius: 6px; color: var(--bn-colors-side-menu); }
+.dali-doc .bn-side-menu .bn-button svg { width: 18px; height: 18px; }
+
+/* Quick links popover, refined (overrides the earlier block). */
+.dali-cmp-pop-field { gap: 4px; }
+.dali-cmp-pop-field > span { font-size: 11px; font-weight: 500; line-height: 1; color: var(--color-os-grey); }
+.dali-cmp-pop-error { margin: -4px 0 0; color: var(--os-danger-ink); }
+.dali-doc .ProseMirror-selectednode:has(.dali-cmp), .dali-doc .ProseMirror-selectednode:has(.dali-cmp) > .bn-block-content,
+.dali-doc .bn-block-content.ProseMirror-selectednode:has(> .dali-cmp), .dali-doc .bn-block-content:has(> .ProseMirror-selectednode .dali-cmp) { outline: none !important; box-shadow: none; }
+.dali-cmp-chips .dali-cmp-eyebrow, .dali-cmp-chips-edit__label.dali-cmp-eyebrow { font-size: calc(0.72em + 2.67px); }
+.dali-cmp-cards-edit, .dali-cmp-chips-edit, .dali-cmp-timeline-edit { padding: 14px; }
+.dali-cmp-card--edit, .dali-cmp-grid > * { transition: opacity 0.18s ease-out, transform 0.18s ease-out, box-shadow 0.18s ease-out; }
+.dali-cmp[data-component="cards"] .dali-cmp-grid > * { cursor: grab; }
+
+/* Pinned cards, refined (supersedes earlier card-editor rules). */
+.dali-cmp-card { padding: 12px 14px; gap: 6px; border-radius: 12px; }
+.dali-cmp-card__title { font-size: 0.95em; font-weight: 700; }
+.dali-cmp-tag { padding: 1px 8px; font-size: 0.7em; font-weight: 600; }
+.dali-cmp-meta { opacity: 0.6; font-size: 0.82em; }
+.dali-cmp-card--edit { transition: box-shadow 0.16s ease-out, background-color 0.16s ease-out, opacity 0.16s ease-out; }
+.dali-cmp-card--edit:hover { transform: none; box-shadow: 0 0 0 1px var(--color-os-container-hi); }
+.dali-cmp-card--edit:focus-visible { outline: none; box-shadow: 0 0 0 2px color-mix(in srgb, var(--os-accent-ink) 45%, transparent); }
+.dali-cmp-card--blank { background: transparent; box-shadow: 0 0 0 1px var(--color-os-container) inset; }
+.dali-cmp-card--add { min-height: 0; align-self: stretch; padding: 12px 14px; border-radius: 12px; opacity: 0.55; }
+.dali-cmp-cards-edit { gap: 14px; }
+@keyframes dali-cards-panel-in { from { opacity: 0; transform: translateY(-3px); } }
+.dali-cmp-swatch--pick { display: grid; place-items: center; width: 22px; height: 22px; box-shadow: none; transition: box-shadow 0.15s ease-out; }
+.dali-cmp-ico { width: 9px; height: 9px; flex: none; }
+
+/* Selecting a component block: a soft shade instead of BlockNote's blue outline. */
+.dali-doc .bn-block-content.ProseMirror-selectednode > .dali-cmp, .dali-doc .ProseMirror-selectednode > .bn-block-content > .dali-cmp { outline: none; border-radius: 14px;
+}
+
+/* Cancel / Done sit where Edit does. */
+.dali-cmp-foot { position: absolute; right: 0; z-index: 3; display: flex; align-items: center; gap: 6px; }
+.dali-cmp-foot .os-btn-primary--sm, .dali-cmp-cancel { height: 28px; padding: 0 14px; font-size: 13px; line-height: 1; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; }
+.dali-cmp-cancel { font-weight: 500; }
+
+/* Vertical / Horizontal toggle. */
+.dali-cmp-toggle button { border: 0; background: transparent; color: inherit; font: inherit; font-weight: 500; cursor: pointer; transition: background-color 0.15s ease-out, opacity 0.15s ease-out; }
+.dali-cmp-toggle button[aria-checked="true"] { box-shadow: 0 1px 2px var(--color-os-shadow); }
+
+/* Popovers open just below their pill / card so the source stays visible. */
+.dali-cmp-grid--edit { position: relative; }
+
+/* Selected card: a deeper shade of its own pastel. */
+.dali-cmp-swatch--pick { color: var(--cmp-on); }
+.dali-cmp-swatch--pick[aria-checked="true"] { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--cmp-on) 70%, transparent); }
+.dali-cmp-timeline-edit, .dali-cmp-chips-edit, .dali-cmp-cards-edit { padding: 0; outline-offset: 10px; }
+.dali-cmp-foot { top: -1px; }
+.dali-cmp[data-component="timeline"] .dali-cmp-foot { top: 16px; right: 16px; }
+.dali-cmp-head--edit, .dali-cmp-cards-edit > .dali-cmp-title { padding-right: 160px; }
+.dali-cmp-toggle { display: inline-flex; gap: 0; padding: 2px; border-radius: 8px; background: var(--color-os-hover); box-shadow: none; }
+.dali-cmp-toggle button { display: grid; place-items: center; width: 31px; height: 24px; padding: 0; border-radius: 6px; font-size: 0; opacity: 0.5; box-shadow: none !important; }
+.dali-cmp-toggle button[aria-checked="true"] { background: var(--color-os-hover-strong); opacity: 0.9; }
+.dali-cmp-chips-edit__foot { justify-content: flex-start; }
+.dali-cmp-card--edit.dali-cmp-card--selected, .dali-cmp-card--edit.dali-cmp-card--selected:hover { box-shadow: 0 0 0 2px color-mix(in srgb, var(--cmp-tone) 76%, var(--color-os-fg)); }
+@supports (color: oklch(from red l c h)) {
+  .dali-cmp-card--edit.dali-cmp-card--selected, .dali-cmp-card--edit.dali-cmp-card--selected:hover { box-shadow: 0 0 0 2px oklch(from var(--cmp-tone) calc(l - 0.14) c h); }
+  .dali-cmp-swatch--pick { color: oklch(from var(--cmp-tone) calc(l - 0.3) c h); }
+  .dali-cmp-swatch--pick[aria-checked="true"] { box-shadow: inset 0 0 0 1.5px oklch(from var(--cmp-tone) calc(l - 0.16) c h); }
+}
+.dali-cmp-ico--check { width: 5px; height: 5px; stroke-width: 2.25; }
+.dali-doc { --cmp-dash-w: 1px; --cmp-dash-c: var(--color-os-container-hi); }
+.dali-cmp-timeline-edit, .dali-cmp-chips-edit, .dali-cmp-cards-edit, .dali-cmp-inline { outline: var(--cmp-dash-w) dotted var(--cmp-dash-c); }
+.dali-cmp-card--add { border: var(--cmp-dash-w) dashed var(--cmp-dash-c); }
+.dali-cmp-chip--add { border: var(--cmp-dash-w) dashed var(--cmp-dash-c); }
+.dali-doc .bn-block-content.ProseMirror-selectednode > .dali-cmp, .dali-doc .ProseMirror-selectednode > .bn-block-content > .dali-cmp { background: none; }
+.dali-doc .bn-block-content.ProseMirror-selectednode > .dali-cmp::before, .dali-doc .ProseMirror-selectednode > .bn-block-content > .dali-cmp::before {
+  content: ""; position: absolute; inset: -14px; z-index: -1; pointer-events: none; border-radius: 20px;
+  background: var(--color-os-hover);
+}
+svg.dali-cmp-ico { width: 8px; height: 8px; }
+.dali-cmp-cards-edit > .dali-cmp-title.dali-cmp-bare, .dali-cmp-head--edit > .dali-cmp-title.dali-cmp-bare { width: calc(100% - 170px); padding-right: 6px; }
+
+/* Timeline editor, minimal: editable text, not form fields. */
+.dali-cmp-steps--edit .dali-cmp-step { gap: 2px; }
+.dali-cmp-steps--edit .dali-cmp-step__namewrap { position: relative; width: 100%; }
+.dali-cmp-steps--edit .dali-cmp-step__input, .dali-cmp-steps--edit .dali-cmp-step__details {
+  display: block; width: 100%; min-width: 0; border: 0; border-bottom: 1px solid transparent; outline: none;
+  background: transparent !important; box-shadow: none; color: inherit; font: inherit; font-size: 1em;
+  transition: border-color 0.15s ease-out, box-shadow 0.15s ease-out;
+}
+.dali-cmp-steps--edit .dali-cmp-step__input { padding-inline: 18px; }
+.dali-cmp-steps--edit .dali-cmp-step__details { font-size: 0.92em; opacity: 0.8; }
+.dali-cmp-steps--edit .dali-cmp-step__details::placeholder, .dali-cmp-steps--edit .dali-cmp-step__input::placeholder { color: inherit; opacity: 0.4; }
+.dali-cmp-steps--edit .dali-cmp-step__input:hover, .dali-cmp-steps--edit .dali-cmp-step__details:hover { border-bottom-color: var(--color-os-container-hi); }
+.dali-cmp-steps--edit .dali-cmp-step__input:focus, .dali-cmp-steps--edit .dali-cmp-step__details:focus {
+  border-bottom-color: var(--os-accent-ink); box-shadow: 0 1px 0 var(--os-accent-ink);
+}
+.dali-cmp-steps--edit .dali-cmp-step__details { resize: none; field-sizing: content; }
+.dali-cmp-steps--edit .dali-cmp-step__del {
+  position: absolute; top: 50%; right: 0; transform: translateY(-50%); width: 16px; height: 16px; padding: 0; margin: 0;
+  opacity: 0; pointer-events: none; color: var(--color-os-grey);
+}
+.dali-cmp-steps--edit .dali-cmp-step:hover .dali-cmp-step__del, .dali-cmp-steps--edit .dali-cmp-step:focus-within .dali-cmp-step__del { opacity: 0.7; pointer-events: auto; }
+.dali-cmp-steps--edit .dali-cmp-step__del:hover, .dali-cmp-steps--edit .dali-cmp-step__del:focus-visible { opacity: 1; color: var(--os-danger-ink); }
+.dali-cmp-steps--edit .dali-cmp-step--add { opacity: 1; }
+.dali-cmp-step__addbtn { display: flex; flex-direction: column; width: 100%; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.dali-cmp-step__addcircle {
+  box-sizing: border-box; display: grid; place-items: center; flex: none; width: 22px; height: 22px; aspect-ratio: 1; border-radius: 50%;
+  position: relative; z-index: 1; transition: background-color 0.15s ease-out, color 0.15s ease-out;
+}
+.dali-cmp-step__addbtn:hover .dali-cmp-step__addcircle { color: var(--color-foreground); }
+.dali-cmp-step--add .dali-cmp-step__label { opacity: 0.55; }
+
+/* Block side menu keeps clear of the blocks; blocks shade on hover. */
+.dali-doc .bn-side-menu { padding-right: 16px; }
+.bn-editor[contenteditable="true"] .dali-cmp:hover::before {
+  content: ""; position: absolute; inset: -14px; z-index: -1; pointer-events: none; border-radius: 20px;
+  background: var(--color-os-hover); transition: background-color 0.15s ease-out;
+}
+.dali-cmp-timeline-edit, .dali-cmp-chips-edit, .dali-cmp-cards-edit, .dali-cmp-inline { outline-offset: 12px; }
+.dali-doc .bn-block-content.ProseMirror-selectednode > .dali-cmp::before, .dali-doc .ProseMirror-selectednode > .bn-block-content > .dali-cmp::before,
+.bn-editor[contenteditable="true"] .dali-cmp:hover::before { inset: -12px; }
+svg.lucide-plus.dali-cmp-ico { width: 11px; height: 11px; }
+.dali-cmp-toggle button svg { fill: none; }
+.dali-cmp-pop-error { font-size: 11px; font-weight: 400; }
+.dali-cmp-cancel, .dali-cmp-cancel:hover { height: 28px; padding: 0 14px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; font-size: 13px; line-height: 1; }
+.dali-cmp .os-btn-primary--sm.dali-cmp-done { height: 28px; padding: 0 14px; line-height: 1; border-radius: 999px; }
+.dali-cmp-timeline-edit { padding: 16px; }
+.dali-cmp-steps--edit { scrollbar-width: thin; padding-top: 10px; }
+.dali-cmp-step__numwrap { display: flex; }
+.dali-cmp-fan::after { content: ""; position: absolute; left: 0; right: 0; top: 100%; height: 14px; }
+.dali-cmp-steps--edit .dali-cmp-step__details:hover { border-bottom-color: transparent; }
+.dali-cmp-steps--edit .dali-cmp-step__details:focus { border-bottom-color: transparent; box-shadow: none; }
+.dali-cmp-steps--edit .dali-cmp-step__details:focus-visible { border-bottom-color: color-mix(in srgb, var(--os-accent-ink) 60%, transparent); }
+.dali-cmp-step__addcircle { border: 0; background: var(--color-os-container); color: var(--color-foreground); }
+.dali-cmp-step__addbtn:hover .dali-cmp-step__addcircle { background: var(--color-os-container); }
+
+/* Stats editor: the real stat cards, edited in place. */
+.dali-cmp-stats-edit { display: flex; flex-direction: column; gap: 14px; outline: var(--cmp-dash-w, 1px) dotted var(--cmp-dash-c); outline-offset: 12px; border-radius: 14px; }
+.dali-cmp-stat--edit { position: relative; transition: box-shadow 0.16s ease-out, opacity 0.16s ease-out; }
+.dali-cmp-stat--edit:hover { box-shadow: 0 0 0 1px var(--color-os-container); }
+.dali-cmp-stat--edit.dali-cmp-stat--selected { box-shadow: 0 0 0 2px color-mix(in srgb, var(--cmp-tone) 76%, var(--color-os-fg)); }
+@supports (color: oklch(from red l c h)) { .dali-cmp-stat--edit.dali-cmp-stat--selected { box-shadow: 0 0 0 2px oklch(from var(--cmp-tone) calc(l - 0.14) c h); } }
+.dali-cmp-stat--dragging { opacity: 0.45; }
+.dali-cmp-stat__field { display: block; width: 100%; min-width: 0; padding: 0; border: 0; border-bottom: 1px solid transparent; border-radius: 0; outline: none; background: transparent; box-shadow: none; color: inherit; font: inherit; transition: border-color 0.15s ease-out; }
+.dali-cmp-stat__value.dali-cmp-stat__field { font-size: 2.4em; font-weight: 800; line-height: 1; color: color-mix(in srgb, var(--cmp-tone) 55%, var(--color-foreground)); }
+.dali-cmp-stat__field::placeholder { opacity: 0.35; color: inherit; }
+.dali-cmp-stat__field:hover { border-bottom-color: var(--color-os-container-hi); }
+.dali-cmp-stat__field:focus { border-bottom-color: var(--os-accent-ink); box-shadow: 0 1px 0 var(--os-accent-ink); }
+.dali-cmp-stat__tools { position: absolute; right: 8px; display: flex; gap: 2px; pointer-events: none; transition: opacity 0.16s ease-out; }
+.dali-cmp-stat--edit:hover .dali-cmp-stat__tools, .dali-cmp-stat--edit:focus-within .dali-cmp-stat__tools, .dali-cmp-stat--selected .dali-cmp-stat__tools { opacity: 1; pointer-events: auto; }
+.dali-cmp-stat__tool { display: grid; place-items: center; width: 18px; height: 18px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--color-os-grey); cursor: pointer; transition: color 0.15s ease-out, background-color 0.15s ease-out; }
+.dali-cmp-stat__grip { cursor: grab; }
+.dali-cmp-stat__tool:hover { background: var(--color-os-hover-strong); color: var(--color-foreground); }
+.dali-cmp-stat__del:hover { color: var(--os-danger-ink); }
+.dali-cmp-stat__colors { position: absolute; z-index: 10; left: 0; top: calc(100% + 6px); display: flex; gap: 8px; padding: 6px 8px; border-radius: 10px; background: var(--color-os-bg); box-shadow: 0 0 0 1px var(--color-os-container), 0 6px 20px var(--color-os-shadow); animation: dali-cards-panel-in 0.16s ease-out; }
+.dali-cmp-stat--add { align-items: center; justify-content: center; flex-direction: row; gap: 6px; border: var(--cmp-dash-w, 1px) dashed var(--cmp-dash-c); background: transparent; color: inherit; font: inherit; font-size: 0.9em; font-weight: 600; opacity: 0.6; cursor: pointer; transition: opacity 0.15s ease-out, background-color 0.15s ease-out; }
+.dali-cmp-stat--add:hover { opacity: 1; background: var(--color-os-hover); }
+@media (prefers-reduced-motion: reduce) { .dali-cmp-stat__colors, .dali-cmp-stat--edit, .dali-cmp-stat__tools { animation: none; transition: none; } }
+
+/* A component with an open popup stacks above the blocks after it, so their content can't paint over it. */
+.dali-cmp:has(.dali-cmp-stat__colors), .dali-cmp:has(.dali-cmp-fan) { z-index: 40; }
+.dali-cmp-edit, .dali-cmp[data-component] .dali-cmp-foot, .dali-cmp[data-component="timeline"] .dali-cmp-foot { top: 16px; right: 16px; }
+.dali-cmp-stat__tools { top: auto; bottom: 8px; }
+.dali-cmp { isolation: isolate; background: none; }
+.dali-cmp-step__del svg.dali-cmp-ico, .dali-cmp-stat__del svg { width: 12px; height: 12px; }
+.dali-cmp-swatch--pick svg.dali-cmp-ico--check { width: 9px; height: 9px; }
+.dali-cmp-chips-edit, .dali-cmp-cards-edit, .dali-cmp-stats-edit { border-radius: 1px; }
+.dali-doc .bn-block-content.ProseMirror-selectednode > .dali-cmp::before, .dali-doc .ProseMirror-selectednode > .bn-block-content > .dali-cmp::before,
+.bn-editor[contenteditable="true"] .dali-cmp:hover::before { border-radius: 13px; }
+/* Buttons in the component editors: rounded rectangles, not pills. */
+.dali-cmp .dali-cmp-cancel, .dali-cmp .dali-cmp-cancel:hover, .dali-cmp .os-btn-primary--sm.dali-cmp-done { border-radius: 8px; }
+
+/* One hover shade for every component kind: same reach (12px), radius and tint. */
+.dali-cmp[data-component="timeline"]:hover::before { border-radius: 13px; }
+.bn-editor[contenteditable="true"] .dali-cmp[data-component]:hover::before,
+.dali-doc .ProseMirror-selectednode > .bn-block-content > .dali-cmp[data-component]::before {
+  content: ""; position: absolute; inset: -12px; z-index: -1; pointer-events: none; border-radius: 13px;
+  background: var(--color-os-hover);
+}
+
+/* Edit shows on hover or keyboard focus (always on touch screens). */
+.dali-cmp-edit { opacity: 0; transition: opacity 0.16s ease-out, color 0.15s; }
+.dali-cmp:hover .dali-cmp-edit, .dali-cmp:focus-within .dali-cmp-edit, .dali-cmp-edit:focus-visible { opacity: 1; }
+@media (hover: none) { .dali-cmp-edit { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .dali-cmp-edit { transition: none; } }
+.dali-cmp-tag { background: color-mix(in srgb, var(--cmp-tone) 42%, transparent); color: var(--color-foreground); opacity: 1; }
+.dali-cmp-edit { border: 1px solid var(--color-os-container-hi); border-radius: 8px; padding: 3px 10px; background: var(--color-card); }
+.dali-cmp-step { opacity: 1; }
+.dali-cmp-step__label, .dali-cmp-step--current .dali-cmp-step__label { color: var(--color-foreground); }
+.dali-cmp-step--next .dali-cmp-step__num { background: var(--os-status-review-fill); color: var(--os-status-review-ink); }
+.dali-cmp-step--next.dali-cmp-step--toned .dali-cmp-step__num { background: var(--cmp-solid); color: var(--cmp-on); }
+/* Timeline color picker sits in the number's own row, so the scrolling track never clips it. */
+.dali-cmp-fan { top: 1px; bottom: auto; gap: 5px; padding: 3px 7px; z-index: 6; animation: dali-fan-in2 0.14s ease-out; }
+.dali-cmp-fan::after { display: none; }
+.dali-cmp-fan .dali-cmp-swatch { width: 16px; height: 16px; }
+.dali-cmp-fan__current { display: grid; place-items: center; width: 16px; height: 16px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: inherit; cursor: pointer; }
+.dali-cmp-fan__current:hover { background: var(--color-os-hover-strong); }
+.dali-cmp-step__num { transition: opacity 0.12s; }
+.dali-cmp-steps--edit .dali-cmp-step__input:hover, .dali-cmp-steps--edit .dali-cmp-step__input:focus { border-bottom-color: transparent; box-shadow: none; }
+.dali-cmp-steps--edit .dali-cmp-step__input:focus-visible { border-bottom-color: color-mix(in srgb, var(--os-accent-ink) 60%, transparent); }
+
+/* Edit button clears the content on components without an inset panel. */
+.dali-cmp[data-component="cards"] .dali-cmp-head, .dali-cmp[data-component="gallery"] .dali-cmp-head { min-height: 40px; display: flex; flex-direction: column; justify-content: center; margin-bottom: 4px; }
+.dali-cmp[data-component="cards"] .dali-cmp-edit, .dali-cmp[data-component="gallery"] .dali-cmp-edit,
+.dali-cmp[data-component="cards"] .dali-cmp-foot { top: 8px; }
+.dali-cmp-cards-edit > .dali-cmp-title { min-height: 28px; margin-bottom: 4px; }
+
+/* Cards edited in place: the same text, now typeable. */
+.dali-cmp-card__field { display: block; width: 100%; min-width: 0; padding: 0; border: 0; border-radius: 0; outline: none; background: transparent; box-shadow: none; color: inherit; font: inherit; transition: background-color 0.15s ease-out; }
+.dali-cmp-card__field:hover { background: var(--color-os-hover); border-radius: 4px; }
+.dali-cmp-card__field:focus { background: var(--color-os-hover-strong); border-radius: 4px; }
+.dali-cmp-card__title.dali-cmp-card__field { font-weight: 700; font-size: 0.95em; line-height: 1.3; }
+.dali-cmp-meta.dali-cmp-card__field { font-size: 0.82em; opacity: 0.7; }
+.dali-cmp-tag.dali-cmp-card__field--tag { width: auto; max-width: 100%; align-self: flex-start; padding: 1px 8px; font-size: 0.7em; font-weight: 600; }
+.dali-cmp-tag.dali-cmp-card__field--tag:hover, .dali-cmp-tag.dali-cmp-card__field--tag:focus { border-radius: 999px; }
+.dali-cmp-card--edit { cursor: text; }
+.dali-cmp-card--edit .dali-cmp-card__field:focus-visible { box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--os-accent-ink) 55%, transparent); }
+
+/* The shade shows on hover only, never because the block is selected/clicked. */
+.dali-doc .ProseMirror-selectednode > .bn-block-content > .dali-cmp[data-component]::before,
+.dali-doc .bn-block-content.ProseMirror-selectednode > .dali-cmp[data-component]::before { content: none; }
+.bn-editor[contenteditable="true"] .dali-cmp[data-component]:hover::before { content: ""; }
+
+/* Checklists: simple, one line, vertically centered, quiet checkbox. */
+.dali-doc .bn-block-content[data-content-type="checkListItem"] > div:has(> input) { display: flex; align-items: center; height: auto; align-self: center; }
+.dali-doc .bn-block-content[data-content-type="checkListItem"] { align-items: center; }
+.dali-doc .bn-block-content[data-content-type="checkListItem"] > div > input[type="checkbox"] {
+  appearance: none; width: 16px; height: 16px; margin: 0 10px 0 4px; border: 1.5px solid var(--color-os-container-hi);
+  border-radius: 5px; background: transparent; cursor: pointer; display: grid; place-items: center; transition: background-color 0.15s ease-out, border-color 0.15s ease-out;
+}
+.dali-doc .bn-block-content[data-content-type="checkListItem"] > div > input[type="checkbox"]:hover { border-color: var(--color-os-container-hi); }
+.dali-doc .bn-block-content[data-content-type="checkListItem"] > div > input[type="checkbox"]:checked { background: var(--color-os-accent); border-color: var(--os-accent-ink); }
+.dali-doc .bn-block-content[data-content-type="checkListItem"] > div > input[type="checkbox"]:checked::after { content: ""; width: 4px; height: 8px; margin-top: -2px; border: solid var(--color-os-bg); border-width: 0 1.5px 1.5px 0; transform: rotate(45deg); }
+.dali-doc .bn-block-content[data-content-type="checkListItem"] > div > input[type="checkbox"]:focus-visible { outline: 2px solid color-mix(in srgb, var(--os-accent-ink) 50%, transparent); outline-offset: 2px; }
+.dali-doc .bn-block-content[data-content-type="checkListItem"][data-checked="true"] .bn-inline-content { opacity: 0.55; }
+/* Timeline editor: no clipping (steps wrap instead of scrolling), so the color picker can sit above the number. */
+.dali-cmp-steps--edit .dali-cmp-fan { top: -38px; }
+.dali-cmp-steps--edit .dali-cmp-fan::after { display: block; }
+/* No text lines in the timeline editor; keyboard focus gets a soft tint instead. */
+.dali-cmp-steps--edit .dali-cmp-step__input, .dali-cmp-steps--edit .dali-cmp-step__details,
+.dali-cmp-steps--edit .dali-cmp-step__input:hover, .dali-cmp-steps--edit .dali-cmp-step__details:hover,
+.dali-cmp-steps--edit .dali-cmp-step__input:focus, .dali-cmp-steps--edit .dali-cmp-step__details:focus,
+.dali-cmp-steps--edit .dali-cmp-step__input:focus-visible, .dali-cmp-steps--edit .dali-cmp-step__details:focus-visible { border-bottom: 0; box-shadow: none; }
+.dali-cmp-steps--edit .dali-cmp-step__input:focus-visible, .dali-cmp-steps--edit .dali-cmp-step__details:focus-visible { background: var(--color-os-hover) !important; border-radius: 6px; }
+/* Quick links keep the exact type of the finished component while editing. */
+.dali-cmp-chips-edit__label.dali-cmp-eyebrow { font-family: inherit; line-height: inherit; }
+.dali-cmp-chips-edit .dali-cmp-chip, .dali-cmp-chips-edit .dali-cmp-chip__btn { font-size: 0.9em; line-height: inherit; font-weight: 600; }
+.dali-cmp-chips-edit .dali-cmp-chip__btn { font-size: 1em; }
+
+/* Resource list, edited in place. */
+.dali-cmp-links-edit { outline: var(--cmp-dash-w, 1px) dotted var(--cmp-dash-c); outline-offset: 12px; }
+.dali-cmp-links-edit .dali-cmp-head > .dali-cmp-title.dali-cmp-bare { width: calc(100% - 170px); }
+.dali-cmp-row--edit { position: relative; transition: background-color 0.16s ease-out, opacity 0.16s ease-out; }
+.dali-cmp-row--edit:hover { background: var(--color-os-hover); }
+.dali-cmp-row--dragging { opacity: 0.45; }
+.dali-cmp-row__main { flex: 1; }
+.dali-cmp-row__tools { position: absolute; display: flex; transition: opacity 0.16s ease-out; }
+.dali-cmp-row--edit:hover .dali-cmp-row__tools, .dali-cmp-row--edit:focus-within .dali-cmp-row__tools { opacity: 1; pointer-events: auto; }
+.dali-cmp-row__tool { display: grid; place-items: center; width: 18px; height: 18px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--color-os-grey); cursor: pointer; transition: color 0.15s ease-out, background-color 0.15s ease-out; }
+.dali-cmp-row__tool:hover { background: var(--color-os-hover-strong); color: var(--color-foreground); }
+.dali-cmp-row__tool--del:hover { color: var(--os-danger-ink); }
+.dali-cmp-row__grip { left: 2px; top: 50%; cursor: grab; }
+.dali-cmp-row--edit:hover .dali-cmp-row__grip, .dali-cmp-row--edit:focus-within .dali-cmp-row__grip { opacity: 1; pointer-events: auto; }
+.dali-cmp-row--add { width: 100%; justify-content: flex-start; gap: 6px; background: transparent; border-left: 0; border-right: 0; border-bottom: 0; color: var(--color-os-grey); font: inherit; font-size: 0.9em; font-weight: 500; cursor: pointer; transition: color 0.15s ease-out, background-color 0.15s ease-out; }
+.dali-cmp-row--add:hover { color: var(--color-foreground); background: var(--color-os-hover); }
+@media (max-width: 560px) { .dali-cmp-row--edit { flex-wrap: wrap; } }
+@media (prefers-reduced-motion: reduce) { .dali-cmp-row--edit, .dali-cmp-row__tools { transition: none; animation: none; } }
+.dali-cmp-row__tools { flex-direction: column; top: 50%; transform: translateY(-50%); gap: 2px; }
+.dali-cmp-links-edit .dali-cmp-head { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+
+/* Panels (timeline, resource list, bar chart) sit on the page with no fill. */
+.dali-cmp-panel, .dali-cmp-timeline-edit, .dali-cmp-links-edit { background: transparent; padding-left: 0; padding-right: 0; }
+.dali-cmp-panel--flush .dali-cmp-head { padding: 14px 0 0; }
+.dali-cmp-row { padding-left: 0; padding-right: 0; }
+.dali-cmp-row--edit, .dali-cmp-row--add { padding-left: 8px; padding-right: 8px; margin-inline: -8px; width: calc(100% + 16px); border-radius: 8px; }
+.dali-cmp-row__tools { right: 8px; }
+.dali-cmp-row__grip { position: static; transform: none; pointer-events: auto; }
+/* Timeline: left-aligned steps. */
+.dali-cmp-steps--edit .dali-cmp-step__input, .dali-cmp-steps--edit .dali-cmp-step__details { padding-inline: 0; }
+.dali-cmp-steps--edit .dali-cmp-step__input { padding-right: 18px; }
+.dali-cmp-panel, .dali-cmp-timeline-edit, .dali-cmp-links-edit { padding-top: 0; padding-bottom: 0; }
+.dali-cmp-panel--flush .dali-cmp-head { padding-top: 0; }
+.dali-cmp-steps--edit { overflow: visible; padding-bottom: 0; }
+.dali-cmp .dali-cmp-edit, .dali-cmp[data-component] .dali-cmp-edit, .dali-cmp[data-component] .dali-cmp-foot, .dali-cmp[data-component="timeline"] .dali-cmp-foot { top: -2px !important; right: -4px !important; }
+/* Components with no title row keep a little top room so the controls never sit on content. */
+.dali-cmp-panel:not(.dali-cmp-panel--flush):not(:has(.dali-cmp-head)) { padding-top: 32px; }
+.dali-cmp-stats-edit { padding-top: 32px; }
+.dali-cmp-step { align-items: center; text-align: center; padding: 4px 6px 0; }
+.dali-cmp-step:first-child { flex: 0 0 auto; padding-left: 0; }
+.dali-cmp-step::before { left: 50%; width: 50%; }
+.dali-cmp-step::after { content: ""; position: absolute; top: 15px; right: 50%; width: 50%; height: 1px; transform: translateY(-50%); background: var(--cmp-border); }
+.dali-cmp-step:first-child::after, .dali-cmp-step:last-child::before { display: none; }
+.dali-cmp-step--done::before, .dali-cmp-step--done::after, .dali-cmp-step--current::after { background: var(--os-status-done-edge); }
+.dali-cmp-step__detail { margin-top: 2px; max-width: 20ch; font-size: 0.85em; }
+.dali-cmp-steps--edit .dali-cmp-step { flex: 1 0 140px; min-width: 140px; padding: 4px 6px 0; align-items: stretch; }
+.dali-cmp-steps--edit .dali-cmp-step:first-child { flex: 0 0 auto; min-width: 120px; padding-left: 0; }
+.dali-cmp-steps--edit .dali-cmp-step--add { flex: 0 0 96px; min-width: 96px; padding-inline: 6px; }
+.dali-cmp-step__numwrap { justify-content: center; align-self: center; }
+.dali-cmp-steps--edit .dali-cmp-step__input, .dali-cmp-steps--edit .dali-cmp-step__details { padding: 4px 18px; border-radius: 6px; }
+.dali-cmp-step__addbtn { align-items: center; }
+.dali-cmp-fan { left: 50%; transform: translateX(-50%); }
+@keyframes dali-fan-in2 { from { opacity: 0; transform: translateX(-50%) translateY(3px); } }
+.dali-cmp-step--dragging { opacity: 0.45; }
+.dali-cmp-mini--flush { align-self: flex-start; padding-left: 0; margin-left: 0; font-size: 0.875em; font-weight: 400; opacity: 0.7; }
+
+/* Pinned cards: tag keeps its tint while editing; empty tags show a tag-shaped outline; link, color and delete live in the card. */
+.dali-cmp-card--edit { position: relative; }
+
+/* Resource list: link sits under the description; the drag grip is always visible. */
+.dali-cmp-row__link { font-size: 0.78em; opacity: 0.8; }
+.dali-cmp-row__tools { opacity: 1; pointer-events: auto; }
+.dali-cmp-row__grip { opacity: 0.4; }
+.dali-cmp-row--edit:hover .dali-cmp-row__grip { opacity: 0.9; }
+.dali-cmp-row__tool--del { opacity: 0; transition: opacity 0.16s ease-out, color 0.15s ease-out; }
+.dali-cmp-row--edit:hover .dali-cmp-row__tool--del, .dali-cmp-row--edit:focus-within .dali-cmp-row__tool--del { opacity: 1; }
+
 /* ── Agent touch ───────────────────────────────────────────────────────────
  * Blocks an MCP agent just changed (agent-touch.ts). The colour and fade length
  * come inline from awareness; -a/-b alternate per batch so a re-touched block
@@ -1195,3 +1601,294 @@ body[data-modal-open] .bn-side-menu {
     box-shadow: none;
   }
 }
+
+/* Resource list editor, round 20: compact rows, discoverable fields, URL as a tertiary control. */
+.dali-cmp-links-edit .dali-cmp-row--edit { padding-top: 8px; padding-bottom: 8px; transition: background-color 0.15s ease-out, opacity 0.15s ease-out; }
+.dali-cmp-links-edit .dali-cmp-row--edit:hover { transition-duration: 0.14s; }
+.dali-cmp-links-edit .dali-cmp-row__main { padding-right: 56px; }
+.dali-cmp-links-edit .dali-cmp-row--dragging { opacity: 1; background: var(--color-os-hover); }
+.dali-cmp-links-edit .dali-cmp-row__tools { flex-direction: column; gap: 2px; }
+.dali-cmp-links-edit .dali-cmp-row__tool { width: 28px; height: 28px; }
+.dali-cmp-links-edit .dali-cmp-row--edit:hover .dali-cmp-row__grip, .dali-cmp-links-edit .dali-cmp-row--edit:focus-within .dali-cmp-row__grip { opacity: 0.9; }
+.dali-cmp-links-edit .dali-cmp-row__tool--del:focus-visible, .dali-cmp-links-edit .dali-cmp-row__grip:focus-visible { opacity: 1; outline: none; box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--os-accent-ink) 60%, transparent); }
+.dali-cmp-links-edit .dali-cmp-row--add { border-top: 0; opacity: 0.6; transition: opacity 0.14s ease-out, background-color 0.14s ease-out; }
+.dali-cmp-links-edit .dali-cmp-row--add:hover { opacity: 1; background: transparent; }
+.dali-cmp-links-edit .dali-cmp-row--add:focus-visible { outline: none; opacity: 1; box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--os-accent-ink) 60%, transparent); }
+@media (hover: none) {
+  .dali-cmp-links-edit .dali-cmp-row__tool--del, .dali-cmp-links-edit .dali-cmp-row__grip { opacity: 1; }
+  .dali-cmp-links-edit .dali-cmp-row__tool { width: 32px; height: 32px; }
+  .dali-cmp-links-edit .dali-cmp-row__main { padding-right: 72px; }
+}
+@media (max-width: 560px) { .dali-cmp-links-edit .dali-cmp-row--edit { flex-wrap: nowrap; } }
+@media (prefers-reduced-motion: reduce) { .dali-cmp-links-edit * { transition: none !important; } }
+
+/* Resource list editor, round 21: reads like the published list; only the field being edited shows anything. */
+.dali-cmp-links-edit .dali-cmp-row--edit, .dali-cmp-links-edit .dali-cmp-row--edit:hover, .dali-cmp-links-edit .dali-cmp-row--dragging { background: transparent; border-radius: 0; }
+.dali-cmp-links-edit .dali-cmp-row--dragging { box-shadow: 0 2px 10px var(--color-os-shadow); }
+.dali-cmp-links-edit .dali-cmp-row__main { gap: 0; }
+.dali-cmp-links-edit .dali-cmp-row__tools,
+.dali-cmp-links-edit .dali-cmp-row__grip,
+.dali-cmp-links-edit .dali-cmp-row__tool--del { opacity: 0; pointer-events: none; transition: opacity 0.14s ease-out, color 0.14s ease-out; }
+.dali-cmp-links-edit .dali-cmp-row--edit:hover .dali-cmp-row__tools,
+.dali-cmp-links-edit .dali-cmp-row--edit:focus-within .dali-cmp-row__tools,
+.dali-cmp-links-edit .dali-cmp-row--edit:hover .dali-cmp-row__grip,
+.dali-cmp-links-edit .dali-cmp-row--edit:focus-within .dali-cmp-row__grip,
+.dali-cmp-links-edit .dali-cmp-row--edit:hover .dali-cmp-row__tool--del,
+.dali-cmp-links-edit .dali-cmp-row--edit:focus-within .dali-cmp-row__tool--del { opacity: 0.7; pointer-events: auto; }
+.dali-cmp-links-edit .dali-cmp-row__tool:hover { opacity: 1; background: transparent; }
+@media (hover: none) {
+  .dali-cmp-links-edit .dali-cmp-row__tools, .dali-cmp-links-edit .dali-cmp-row__grip, .dali-cmp-links-edit .dali-cmp-row__tool--del { opacity: 0.7; pointer-events: auto; }
+}
+
+/* Timeline editor, round 22: Add step is one more equal cell in the row (never wraps); every cell is the same width so the margins match on both ends. */
+.dali-cmp-steps--edit { flex-wrap: nowrap; row-gap: 0; }
+.dali-cmp-steps--edit .dali-cmp-step,
+.dali-cmp-steps--edit .dali-cmp-step:first-child,
+.dali-cmp-steps--edit .dali-cmp-step--add { flex: 1 1 0; min-width: 0; padding: 4px 6px 0; align-items: stretch; }
+.dali-cmp-steps--edit .dali-cmp-step--add { align-items: center; }
+.dali-cmp-steps--edit .dali-cmp-step--add:last-child::before { display: none; }
+.dali-cmp-steps--edit .dali-cmp-step--add::after { display: block; }
+.dali-cmp-step__addbtn { gap: 2px; }
+.dali-cmp-step--add .dali-cmp-step__label { padding: 3px 0; }
+@media (max-width: 640px) {
+  .dali-cmp-steps--edit { flex-wrap: wrap; row-gap: 14px; }
+  .dali-cmp-steps--edit .dali-cmp-step, .dali-cmp-steps--edit .dali-cmp-step:first-child, .dali-cmp-steps--edit .dali-cmp-step--add { flex: 1 1 120px; min-width: 120px; }
+}
+.dali-cmp-bare, .dali-cmp-card__field, .dali-cmp-step__input, .dali-cmp-step__details, .dali-cmp-stat__field, .dali-cmp-chips-edit__label {
+  background: transparent !important; border-radius: 0 !important; border: 0; outline: none; cursor: text;
+  box-shadow: inset 0 -1px 0 transparent; padding-bottom: 4px;
+  transition: box-shadow 0.14s ease-out;
+}
+.dali-cmp-bare:hover, .dali-cmp-card__field:hover, .dali-cmp-step__input:hover, .dali-cmp-step__details:hover, .dali-cmp-stat__field:hover, .dali-cmp-chips-edit__label:hover {
+  background: transparent !important; box-shadow: inset 0 -1px 0 var(--color-os-container);
+}
+.dali-cmp-bare:focus, .dali-cmp-bare:focus-visible, .dali-cmp-card__field:focus, .dali-cmp-card__field:focus-visible, .dali-cmp-step__input:focus, .dali-cmp-step__input:focus-visible, .dali-cmp-step__details:focus, .dali-cmp-step__details:focus-visible, .dali-cmp-stat__field:focus, .dali-cmp-stat__field:focus-visible, .dali-cmp-chips-edit__label:focus, .dali-cmp-chips-edit__label:focus-visible {
+  background: transparent !important; box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--os-accent-ink) 45%, transparent);
+}
+.dali-cmp-bare { margin: 0; padding: 2px 0 4px; width: 100%; }
+.dali-cmp-links-edit .dali-cmp-head > .dali-cmp-title.dali-cmp-bare, .dali-cmp-head--edit > .dali-cmp-title.dali-cmp-bare { width: calc(100% - 170px); }
+
+/* Frame and shade share one shape: every editor frame is a 1px-radius box, so the 12px outline and the 12px shade round the same. */
+.dali-cmp-timeline-edit, .dali-cmp-links-edit, .dali-cmp-chips-edit, .dali-cmp-cards-edit, .dali-cmp-stats-edit, .dali-cmp-panel { border-radius: 1px; }
+.bn-editor[contenteditable="true"] .dali-cmp[data-component]:hover::before { inset: -12px; border-radius: 13px; }
+.dali-cmp[data-component="timeline"]:hover::before, .dali-cmp[data-component="links"]:hover::before, .dali-cmp[data-component="bars"]:hover::before { border-radius: 13px; }
+
+.dali-cmp-chips-edit__foot { margin-top: 12px; }
+.dali-cmp-chip-pop__colors { display: flex; gap: 6px; }
+.dali-cmp-steps--edit { justify-content: center; }
+.dali-cmp-steps--edit .dali-cmp-step__input, .dali-cmp-steps--edit .dali-cmp-step__details { text-align: center; }
+.dali-cmp-row__open { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 0 84px 0 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.dali-cmp-row__open:focus-visible { outline: none; box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--os-accent-ink) 60%, transparent); border-radius: 4px; }
+.dali-cmp-row__linkind { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; margin-top: 2px; outline: none; box-shadow: none; }
+.dali-cmp-links-edit .dali-cmp-row--edit { align-items: flex-start; }
+.dali-cmp-rowform { display: flex; flex-direction: column; gap: 8px; margin-inline: -8px; padding: 12px; border-radius: 10px; background: var(--color-os-hover); }
+.dali-cmp-rowform .dali-cmp-pop-field > span { display: flex; gap: 6px; align-items: baseline; font-size: 11px; font-weight: 500; line-height: 1; color: var(--color-os-grey); }
+.dali-cmp-rowform .dali-cmp-pop-field > span em { font-style: normal; opacity: 0.6; }
+.dali-cmp-rowform input { width: 100%; height: 30px; padding: 0 10px; border: 1px solid var(--color-os-container-hi); border-radius: 8px; outline: none; background: var(--color-os-bg); font: inherit; font-size: 13px; color: var(--color-foreground); transition: border-color 0.14s ease-out, box-shadow 0.14s ease-out; }
+.dali-cmp-rowform input::placeholder { font-style: normal; color: var(--color-os-grey); opacity: 0.5; }
+.dali-cmp-rowform input:focus { border-color: var(--os-accent-ink); box-shadow: 0 0 0 2px color-mix(in srgb, var(--os-accent-ink) 22%, transparent); }
+.dali-cmp-rowform input[aria-invalid="true"] { border-color: var(--os-danger-ink); }
+.dali-cmp-rowform__actions { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 4px; }
+.dali-cmp-rowform__actions button[disabled] { opacity: 0.45; cursor: not-allowed; }
+.dali-cmp-mini--flush:hover { background: transparent; opacity: 0.7; }
+
+/* Spotlight editor: the real card stays put and is edited in place; the button opens a small pop-up. */
+.dali-cmp-feature-edit { display: flex; flex-direction: column; outline: var(--cmp-dash-w, 1px) dotted var(--cmp-dash-c); outline-offset: 12px; border-radius: 1px; }
+.dali-cmp-feature-edit .dali-cmp-chip-pop__colors { display: flex; gap: 6px; align-items: center; }
+.dali-cmp-feature-edit__artwrap { position: relative; min-height: 160px; }
+.dali-cmp-feature-edit__artwrap > .dali-cmp-feature__art { position: absolute; inset: 0; width: 100%; height: 100%; }
+.dali-cmp-feature-edit__artbtns { position: absolute; right: 10px; bottom: 10px; display: flex; gap: 4px; }
+.dali-cmp-feature-edit__artbtns button { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border: 0; border-radius: 999px; background: var(--os-on-art-chip); color: var(--os-on-art-ink); font: inherit; font-size: 12px; font-weight: 500; cursor: pointer; transition: background-color 0.14s ease-out; }
+.dali-cmp-feature-edit__artbtns button:hover { background: var(--os-on-art-chip-hover); }
+.dali-cmp-feature-edit__artbtns button:focus-visible { outline: none; box-shadow: 0 0 0 2px color-mix(in srgb, var(--os-accent-ink) 70%, transparent); }
+.dali-cmp-feature-edit__artbtns button[aria-label="Remove image"] { width: 26px; padding: 0; justify-content: center; }
+.dali-cmp-feature-edit__field { display: block; width: 100%; min-width: 0; margin: 0; padding: 0 0 4px; border: 0; border-radius: 0; outline: none; background: transparent; color: inherit; font: inherit; cursor: text; resize: none; field-sizing: content; box-shadow: inset 0 -1px 0 transparent; transition: box-shadow 0.14s ease-out; }
+.dali-cmp-feature-edit__field:hover { box-shadow: inset 0 -1px 0 var(--color-os-container); }
+.dali-cmp-feature-edit__field:focus, .dali-cmp-feature-edit__field:focus-visible { box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--os-accent-ink) 45%, transparent); }
+.dali-cmp-feature-edit__field::placeholder { font-style: normal; color: inherit; opacity: 0.4; }
+.dali-cmp-feature-edit__cta { position: relative; }
+.dali-cmp-feature-edit__add { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 14px; border: 1px dashed var(--color-os-container-hi); border-radius: 999px; background: transparent; color: inherit; font: inherit; font-size: 0.9em; font-weight: 600; opacity: 0.7; cursor: pointer; transition: opacity 0.14s ease-out, background-color 0.14s ease-out; }
+.dali-cmp-feature-edit__add:hover { opacity: 1; background: var(--color-os-hover-strong); }
+.dali-cmp-feature-edit__add:focus-visible { outline: none; opacity: 1; box-shadow: 0 0 0 2px color-mix(in srgb, var(--os-accent-ink) 60%, transparent); }
+.dali-cmp-feature-edit .dali-cmp-feature__body :is(.dali-cmp-eyebrow, .dali-cmp-feature__title, .dali-cmp-sub, .dali-cmp-cta) { font-size: 15px; font-weight: 400; letter-spacing: 0; text-transform: none; }
+@media (prefers-reduced-motion: reduce) { .dali-cmp-feature-edit * { transition: none !important; } }
+.dali-cmp-feature-edit .dali-cmp-feature-edit__colors { position: absolute; left: 10px; bottom: 10px; height: 26px; padding: 0 8px; border-radius: 999px; background: var(--os-on-art-chip); }
+.dali-cmp-feature-edit .dali-cmp-feature-edit__colors .dali-cmp-swatch { width: 14px; height: 14px; }
+.dali-cmp-feature-edit .dali-cmp-feature-edit__colors .dali-cmp-swatch[aria-checked="true"] { box-shadow: 0 0 0 1.5px var(--os-on-art-ink); }
+.dali-cmp-links-edit.dali-cmp-panel--flush { overflow: visible; }
+.dali-cmp a.dali-cmp-row, .dali-cmp a.dali-cmp-row .dali-cmp-sub, .dali-cmp a.dali-cmp-row .dali-cmp-row__title { color: inherit; text-decoration: none; }
+.dali-cmp-panel--flush { overflow: visible; }
+a.dali-cmp-row:hover { background: none; box-shadow: none; }
+
+/* Resources: the block shade and Edit show only over the heading; a row tints just around itself. */
+.dali-cmp[data-component="links"] a.dali-cmp-row { position: relative; }
+.dali-cmp[data-component="links"] a.dali-cmp-row::before { content: ""; position: absolute; inset: 3px -8px; z-index: -1; border-radius: 8px; background: var(--color-os-hover); opacity: 0; pointer-events: none; transition: opacity 0.14s ease-out; }
+.dali-cmp[data-component="links"] a.dali-cmp-row:hover::before { opacity: 1; }
+@media (hover: hover) {
+  .bn-editor[contenteditable="true"] .dali-cmp[data-component="links"]:hover::before { content: none; }
+  .bn-editor[contenteditable="true"] .dali-cmp[data-component="links"]:is(:has(.dali-cmp-head:hover), :has(.dali-cmp-edit:hover), :not(:has(.dali-cmp-head)):hover)::before {
+    content: ""; position: absolute; inset: -12px; z-index: -1; pointer-events: none; border-radius: 13px; background: var(--color-os-hover);
+  }
+  .dali-cmp[data-component="links"]:hover .dali-cmp-edit { opacity: 0; }
+  .dali-cmp[data-component="links"]:is(:has(.dali-cmp-head:hover), :has(.dali-cmp-edit:hover), :focus-within, :not(:has(.dali-cmp-head)):hover) .dali-cmp-edit { opacity: 1; }
+}
+.dali-cmp-row__linkind { font-size: 0.875em; opacity: 0.7; }
+.dali-cmp-row__linkind svg { width: 14px; height: 14px; }
+
+/* Resources, blog-list style: thumbnail on the left, title and description, arrow on the right. */
+.dali-cmp-row--media, .dali-cmp-links-edit .dali-cmp-row--edit { align-items: center; gap: 16px; padding-top: 14px; padding-bottom: 14px; }
+.dali-cmp-row--media .dali-cmp-row__main { flex: 1; min-width: 0; gap: 2px; }
+.dali-cmp-row__thumb { flex: none; aspect-ratio: 16 / 9; border-radius: 12px; overflow: hidden; background: color-mix(in srgb, var(--cmp-tone) 55%, var(--color-card)); }
+.dali-cmp-row__thumb > img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.dali-cmp-row__arrow { flex: none; margin-right: 8px; opacity: 0.55; transition: transform 0.14s ease-out, opacity 0.14s ease-out; }
+a.dali-cmp-row:hover .dali-cmp-row__arrow { opacity: 1; transform: translateX(3px); }
+.dali-cmp-links-edit .dali-cmp-row__open { flex-direction: row; align-items: center; gap: 16px; width: 100%; padding: 0 48px 0 0; }
+.dali-cmp-row__text { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; }
+.dali-cmp-links-edit .dali-cmp-row__tools { top: 50%; transform: translateY(-50%); }
+.dali-cmp-rowform__body { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 20px; align-items: start; }
+.dali-cmp-rowform__fields { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.dali-cmp-rowform__media { order: -1; display: flex; flex-direction: column; gap: 10px; align-items: stretch; }
+@media (max-width: 560px) {
+  .dali-cmp-rowform__body { grid-template-columns: minmax(0, 1fr); }
+  .dali-cmp-rowform__media { flex-direction: row; align-items: flex-start; gap: 12px; }
+  .dali-cmp-rowform__media .dali-cmp-row__thumb { width: 120px; }
+}
+.dali-cmp-rowform__mediactl { display: flex; flex-direction: column; gap: 8px; min-width: 0; flex: 1; }
+.dali-cmp-rowform__mediabtns { display: flex; flex-wrap: wrap; gap: 6px; }
+.dali-cmp-rowform__mediabtns .dali-cmp-mini { display: inline-flex; align-items: center; gap: 6px; }
+.dali-cmp-rowform__hint { margin: 0; min-height: 14px; font-size: 11px; color: var(--color-os-grey); }
+@media (max-width: 560px) { .dali-cmp-row__thumb { width: 96px; } .dali-cmp-links-edit .dali-cmp-row__open { padding-right: 52px; } }
+
+/* Spotlight editor: the card must never become a scroll container (the pop-up's focus scrolled it, cutting the art and text), and the pop-up may extend past the card. */
+.dali-cmp-feature-edit .dali-cmp-feature { overflow: visible; }
+.dali-cmp-feature-edit__artwrap { overflow: hidden; border-radius: 14px 0 0 14px; }
+@media (max-width: 560px) { .dali-cmp-feature-edit__artwrap { border-radius: 14px 14px 0 0; } }
+
+/* Resources editor sits exactly where the finished list does: same left edge, dividers, row height; only the tools appear. */
+.dali-cmp-links-edit .dali-cmp-row--edit, .dali-cmp-links-edit .dali-cmp-row--add { margin-inline: 0; width: 100%; padding-inline: 0; border-radius: 0; }
+.dali-cmp-links-edit .dali-cmp-rowform { margin-inline: 0; }
+.dali-cmp-links-edit .dali-cmp-row--add { padding-top: 14px; padding-bottom: 6px; }
+
+/* Collection: collapsible heading, category chips, tile grid. */
+.dali-cmp-coll { display: flex; flex-direction: column; }
+.dali-cmp-coll__head { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; border-radius: 6px; }
+.dali-cmp-coll__head:focus-visible, .dali-cmp-coll__chevbtn:focus-visible { outline: none; box-shadow: 0 0 0 2px color-mix(in srgb, var(--os-accent-ink) 60%, transparent); }
+.dali-cmp-coll__chev { flex: none; opacity: 0.55; transition: transform 0.18s ease-out, opacity 0.15s ease-out; }
+.dali-cmp-coll__head:hover .dali-cmp-coll__chev { opacity: 1; }
+.dali-cmp-coll--open > .dali-cmp-coll__head .dali-cmp-coll__chev, .dali-cmp-coll__chevbtn[aria-expanded="true"] .dali-cmp-coll__chev { transform: rotate(180deg); }
+.bn-editor[contenteditable="true"] .dali-cmp[data-component="collection"] .dali-cmp-coll__head { padding-right: 56px; }
+.dali-cmp-coll__body { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows 0.18s ease-out, opacity 0.18s ease-out; }
+.dali-cmp-coll--open > .dali-cmp-coll__body, .dali-cmp-coll--edit > .dali-cmp-coll__body:not(.dali-cmp-coll__body--shut) { grid-template-rows: 1fr; opacity: 1; }
+.dali-cmp-coll__inner { min-height: 0; overflow: hidden; padding: 4px; margin: 0 -4px; }
+.dali-cmp-coll--edit > .dali-cmp-coll__body .dali-cmp-coll__inner:has(.dali-cmp-coll__form) { overflow: visible; }
+.dali-cmp-coll__filters { display: flex; flex-wrap: nowrap; gap: 6px; overflow-x: auto; scrollbar-width: none; padding: 10px 0 12px; align-items: center; }
+.dali-cmp-coll__filters::-webkit-scrollbar { display: none; }
+.dali-cmp-coll__chip { flex: none; padding: 4px 12px; border: 0; border-radius: 999px; background: var(--color-os-hover); color: inherit; font: inherit; font-size: 0.85em; font-weight: 500; cursor: pointer; transition: background-color 0.15s ease-out, color 0.15s ease-out; }
+.dali-cmp-coll__chip:hover { background: var(--color-os-hover-strong); }
+.dali-cmp-coll__chip[aria-pressed="true"] { background: color-mix(in srgb, var(--os-accent-ink) 20%, transparent); color: var(--color-foreground); font-weight: 600; }
+.dali-cmp-coll__chip:focus-visible { outline: none; box-shadow: 0 0 0 2px color-mix(in srgb, var(--os-accent-ink) 60%, transparent); }
+.dali-cmp-coll__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+.dali-cmp-coll__tile { position: relative; display: flex; align-items: flex-start; gap: 12px; min-height: 92px; padding: 14px; border: 1px solid var(--color-os-container); border-radius: 14px; background: color-mix(in srgb, var(--color-card) 72%, transparent); color: inherit; text-decoration: none; transition: border-color 0.15s ease-out, background-color 0.15s ease-out; }
+a.dali-cmp-coll__tile { cursor: pointer; }
+.dali-doc .dali-cmp-coll a.dali-cmp-coll__tile[href] { color: inherit; text-decoration: none; }
+a.dali-cmp-coll__tile:hover, .dali-cmp-coll__tile--edit:hover { border-color: color-mix(in srgb, var(--os-accent-ink) 38%, transparent); background: color-mix(in srgb, var(--os-accent-ink) 4%, var(--color-card)); }
+a.dali-cmp-coll__tile:focus-visible { outline: none; box-shadow: 0 0 0 2px color-mix(in srgb, var(--os-accent-ink) 60%, transparent); }
+.dali-cmp-coll__icon { flex: none; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 10px; background: color-mix(in srgb, var(--cmp-tone) 38%, var(--color-card)); color: var(--color-foreground); }
+.dali-cmp-coll__text { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.dali-cmp-coll__name { font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; }
+.dali-cmp-coll__desc { font-size: 0.85em; opacity: 0.7; line-height: 1.35; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.dali-cmp-coll__cat { margin-top: 4px; font-size: 0.72em; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; opacity: 0.45; }
+/* editor */
+.dali-cmp-coll__headedit { display: flex; align-items: center; gap: 8px; padding-right: 170px; }
+.dali-cmp-coll__chevbtn { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: inherit; cursor: pointer; }
+.dali-cmp-coll__chevbtn:hover { background: var(--color-os-hover-strong); }
+.dali-cmp-coll__meta { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.dali-cmp-coll__meta .dali-cmp-coll__filters { flex: 1; min-width: 0; padding: 8px 0; }
+.dali-cmp-coll__chip--edit { display: inline-flex; align-items: center; gap: 4px; padding-right: 6px; cursor: default; }
+.dali-cmp-coll__chip--edit button { display: grid; place-items: center; width: 16px; height: 16px; padding: 0; border: 0; border-radius: 999px; background: transparent; color: inherit; opacity: 0.55; cursor: pointer; }
+.dali-cmp-coll__chip--edit button:hover { opacity: 1; color: var(--os-danger-ink); }
+.dali-cmp-coll__newcat { flex: none; width: 96px; height: 26px; padding: 0 10px; border: 1px dashed var(--color-os-container-hi); border-radius: 999px; background: transparent; color: inherit; font: inherit; font-size: 0.85em; outline: none; }
+.dali-cmp-coll__newcat:focus { border-style: solid; border-color: var(--os-accent-ink); }
+.dali-cmp-coll__newcat::placeholder { color: inherit; opacity: 0.5; font-style: normal; }
+.dali-cmp-coll__switch { opacity: 0.7; }
+.dali-cmp-coll__body--shut { grid-template-rows: 0fr; opacity: 0; }
+.dali-cmp-coll__open { display: flex; align-items: flex-start; gap: 12px; flex: 1; min-width: 0; padding: 0 44px 0 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.dali-cmp-coll__open:focus-visible { outline: none; box-shadow: 0 0 0 2px color-mix(in srgb, var(--os-accent-ink) 60%, transparent); border-radius: 8px; }
+.dali-cmp-coll__tools { position: absolute; top: 8px; right: 8px; display: flex; opacity: 0; transition: opacity 0.14s ease-out; }
+.dali-cmp-coll__tile--edit:hover .dali-cmp-coll__tools, .dali-cmp-coll__tile--edit:focus-within .dali-cmp-coll__tools { opacity: 1; }
+@media (hover: none) { .dali-cmp-coll__tools { opacity: 0.7; } }
+.dali-cmp-coll__tile--dragging { opacity: 0.55; }
+.dali-cmp-coll__tile--add { justify-content: center; align-items: center; gap: 6px; border-style: dashed; background: transparent; color: var(--color-os-grey); font: inherit; font-size: 0.9em; font-weight: 500; cursor: pointer; }
+.dali-cmp-coll__tile--add:hover { color: var(--color-foreground); border-color: var(--color-os-container-hi); }
+.dali-cmp-coll__form { grid-column: 1 / -1; margin-inline: 0; }
+.dali-cmp-coll__icons { display: flex; flex-wrap: wrap; gap: 4px; }
+.dali-cmp-coll__iconbtn { display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 1px solid transparent; border-radius: 8px; background: transparent; color: inherit; cursor: pointer; transition: background-color 0.14s ease-out; }
+.dali-cmp-coll__iconbtn:hover { background: var(--color-os-hover-strong); }
+.dali-cmp-coll__iconbtn[aria-checked="true"] { border-color: var(--os-accent-ink); background: color-mix(in srgb, var(--os-accent-ink) 12%, transparent); }
+@media (prefers-reduced-motion: reduce) { .dali-cmp-coll__body, .dali-cmp-coll__chev, .dali-cmp-coll__tools { transition: none; } }
+
+/* Gallery editor: the gallery itself, edited in place. */
+.dali-cmp-gal-edit { outline: var(--cmp-dash-w, 1px) dotted var(--cmp-dash-c); outline-offset: 12px; border-radius: 1px; }
+.dali-cmp-piece--edit { position: relative; }
+.dali-cmp-piece__artbtn { position: relative; display: block; width: 100%; padding: 0; border: 0; background: none; color: inherit; cursor: pointer; border-radius: 6px; }
+.dali-cmp-piece__artbtn .dali-cmp-piece__art { margin-bottom: 0; }
+.dali-cmp-piece__edithint { position: absolute; inset: 0; display: grid; place-items: center; border-radius: 6px; background: var(--os-on-art-chip); color: var(--os-on-art-ink); opacity: 0; transition: opacity 0.16s ease-out; pointer-events: none; }
+.dali-cmp-piece--edit:hover .dali-cmp-piece__edithint, .dali-cmp-piece--selected .dali-cmp-piece__edithint, .dali-cmp-piece__artbtn:focus-visible .dali-cmp-piece__edithint { opacity: 1; }
+.dali-cmp-piece--selected .dali-cmp-piece__art { box-shadow: 0 0 0 2px var(--os-accent-ink), 0 0 0 5px color-mix(in srgb, var(--os-accent-ink) 18%, transparent); }
+.dali-cmp-piece__artbtn:focus-visible { outline: none; }
+.dali-cmp-piece__artbtn:focus-visible .dali-cmp-piece__art { box-shadow: 0 0 0 2px var(--os-accent-ink); }
+.dali-cmp-piece__grip { position: absolute; top: 6px; left: 6px; display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 6px; background: var(--os-on-art-chip); color: var(--os-on-art-ink); opacity: 0; cursor: grab; transition: opacity 0.16s ease-out; }
+.dali-cmp-piece--edit:hover .dali-cmp-piece__grip, .dali-cmp-piece--edit:focus-within .dali-cmp-piece__grip { opacity: 1; }
+@media (hover: none) { .dali-cmp-piece__grip { opacity: 0.8; } }
+.dali-cmp-piece__titlefield { display: block; width: 100%; min-width: 0; margin: 0; padding: 0 0 4px; border: 0; border-radius: 0; outline: none; background: transparent; color: inherit; font: inherit; cursor: text; box-shadow: inset 0 -1px 0 transparent; transition: box-shadow 0.14s ease-out; }
+.dali-cmp-piece__titlefield:hover { box-shadow: inset 0 -1px 0 var(--color-os-container); }
+.dali-cmp-piece__titlefield:focus, .dali-cmp-piece__titlefield:focus-visible { box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--os-accent-ink) 45%, transparent); }
+.dali-cmp-piece__titlefield::placeholder { font-style: normal; color: inherit; opacity: 0.4; }
+.dali-cmp-piece--dragging { opacity: 0.5; }
+.dali-cmp-piece--add { align-self: start; padding: 0; border: 0; background: none; color: var(--color-os-grey); font: inherit; font-size: 0.9em; font-weight: 500; cursor: pointer; }
+.dali-cmp-piece--add .dali-cmp-piece__art { display: flex; align-items: center; justify-content: center; gap: 6px; margin: 0; background: transparent; border: var(--cmp-dash-w, 1px) dashed var(--cmp-dash-c); opacity: 0.7; transition: opacity 0.15s ease-out, background-color 0.15s ease-out; }
+.dali-cmp-piece--add:hover .dali-cmp-piece__art { opacity: 1; background: var(--color-os-hover); }
+.dali-cmp-piece--add:focus-visible { outline: none; }
+.dali-cmp-piece--add:focus-visible .dali-cmp-piece__art { opacity: 1; box-shadow: 0 0 0 2px var(--os-accent-ink); }
+@media (prefers-reduced-motion: reduce) { .dali-cmp-piece__edithint, .dali-cmp-piece__grip { transition: none; } }
+.dali-cmp-piece__tabs { display: flex; gap: 2px; padding: 2px; border-radius: 8px; background: var(--color-os-hover); }
+.dali-cmp-piece__tabs button { flex: 1; height: 26px; border: 0; border-radius: 6px; background: transparent; color: inherit; font: inherit; font-size: 12.5px; font-weight: 500; opacity: 0.65; cursor: pointer; transition: background-color 0.14s ease-out, opacity 0.14s ease-out; }
+.dali-cmp-piece__tabs button[aria-selected="true"] { background: var(--color-os-bg); opacity: 1; box-shadow: 0 0 0 1px var(--color-os-container); }
+.dali-cmp-piece--edit .dali-cmp-sub.dali-cmp-piece__titlefield { font-size: 0.875em; opacity: 0.7; }
+.dali-cmp-row__thumb { width: 198px; }
+.dali-cmp-rowform__media .dali-cmp-row__thumb { width: 112px; }
+@media (max-width: 560px) { .dali-cmp-row__thumb { width: 144px; } .dali-cmp-rowform__media .dali-cmp-row__thumb { width: 96px; } }
+.dali-cmp-links-edit .dali-cmp-row__tools { right: 0; }
+.dali-cmp-links-edit .dali-cmp-row__grip { position: absolute; top: 22px; left: 8px; z-index: 2; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 6px; background: var(--os-on-art-chip); color: var(--os-on-art-ink); opacity: 0; pointer-events: none; cursor: grab; transform: none; transition: opacity 0.14s ease-out; }
+.dali-cmp-links-edit .dali-cmp-row__grip svg { color: var(--os-on-art-ink); }
+.dali-cmp-links-edit .dali-cmp-row--edit:hover .dali-cmp-row__grip, .dali-cmp-links-edit .dali-cmp-row--edit:focus-within .dali-cmp-row__grip { opacity: 1; pointer-events: auto; }
+.dali-cmp-coll__grip { position: absolute; top: 8px; left: 8px; z-index: 2; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 6px; background: var(--os-on-art-chip); color: var(--os-on-art-ink); opacity: 0; cursor: grab; transition: opacity 0.14s ease-out; }
+.dali-cmp-coll__grip svg { color: var(--os-on-art-ink); }
+.dali-cmp-coll__tile--edit:hover .dali-cmp-coll__grip, .dali-cmp-coll__tile--edit:focus-within .dali-cmp-coll__grip { opacity: 1; }
+.dali-cmp-stat__tools { opacity: 0; }
+.dali-cmp-stat__grip { position: absolute; left: 8px; bottom: 8px; opacity: 0; pointer-events: none; transition: opacity 0.16s ease-out; }
+.dali-cmp-stat--edit:hover .dali-cmp-stat__grip, .dali-cmp-stat--edit:focus-within .dali-cmp-stat__grip, .dali-cmp-stat--selected .dali-cmp-stat__grip { opacity: 1; pointer-events: auto; }
+@media (hover: none) { .dali-cmp-links-edit .dali-cmp-row__grip, .dali-cmp-coll__grip, .dali-cmp-stat__grip { opacity: 0.8; pointer-events: auto; } }
+.dali-cmp-feature-edit__field.dali-cmp-eyebrow { font-size: 0.72em; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; opacity: 0.65; line-height: inherit; }
+.dali-cmp-feature-edit__field.dali-cmp-feature__title { font-size: 1.7em; font-weight: 800; line-height: 1.15; }
+.dali-cmp-feature-edit__field.dali-cmp-sub { font-size: 0.875em; opacity: 0.7; }
+.dali-cmp-chip--edit { position: relative; }
+.dali-cmp-cards-edit .dali-cmp-card--edit.dali-cmp-card--blank { background: color-mix(in srgb, var(--cmp-tone) 22%, transparent); box-shadow: none; }
+.dali-cmp-cards-edit .dali-cmp-card--edit:hover { box-shadow: 0 0 0 1px var(--color-os-container); transform: none; }
+.dali-cmp-cards-edit .dali-cmp-card--edit.dali-cmp-card--selected, .dali-cmp-cards-edit .dali-cmp-card--edit.dali-cmp-card--selected:hover { box-shadow: 0 0 0 1.5px var(--os-accent-ink); }
+.dali-cmp-card__field::placeholder { font-style: normal; font-weight: 400; color: inherit; opacity: 0.42; }
+.dali-cmp-tag.dali-cmp-card__field--tag { background: color-mix(in srgb, var(--cmp-tone) 42%, transparent) !important; border-radius: 999px !important; box-shadow: none; padding-bottom: 1px; }
+.dali-cmp-tag.dali-cmp-card__field--tag:hover, .dali-cmp-tag.dali-cmp-card__field--tag:focus { background: color-mix(in srgb, var(--cmp-tone) 58%, transparent) !important; box-shadow: none; }
+.dali-cmp-tag.dali-cmp-card__field--tag:placeholder-shown { background: transparent !important; box-shadow: inset 0 0 0 1px var(--color-os-container-hi); }
+.dali-cmp-card__tools { position: absolute; top: 8px; right: 8px; z-index: 2; display: flex; gap: 2px; opacity: 0; pointer-events: none; transition: opacity 0.16s ease-out; }
+.dali-cmp-card--edit:hover .dali-cmp-card__tools, .dali-cmp-card--edit:focus-within .dali-cmp-card__tools, .dali-cmp-card--selected .dali-cmp-card__tools { opacity: 1; pointer-events: auto; }
+@media (hover: none) { .dali-cmp-card__tools { opacity: 0.85; pointer-events: auto; } }
+.dali-cmp-card__tool { display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--color-os-grey); cursor: pointer; transition: color 0.14s ease-out, background-color 0.14s ease-out; }
+.dali-cmp-card__tool:hover, .dali-cmp-card__tool[aria-expanded="true"] { color: var(--color-foreground); background: var(--color-os-hover-strong); }
+.dali-cmp-card__grip { cursor: grab; }
+.dali-cmp-card__tool--on { color: var(--os-accent-ink); }
+.dali-cmp-card__tool--del:hover { color: var(--os-danger-ink); }
+.dali-cmp-card__tool:focus-visible { outline: none; box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--os-accent-ink) 60%, transparent); }
+.dali-cmp-cards-edit .dali-cmp-card--add { display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 6px; min-height: 96px; align-self: stretch; padding: 12px 14px; border-radius: 14px; background: transparent; color: var(--color-os-grey); font: inherit; font-size: 0.9em; font-weight: 500; opacity: 0.7; cursor: pointer; transition: opacity 0.15s ease-out, background-color 0.15s ease-out; }
+.dali-cmp-cards-edit .dali-cmp-card--add:hover { opacity: 1; background: var(--color-os-hover); }
+@media (prefers-reduced-motion: reduce) { .dali-cmp-card__tools { transition: none; } }

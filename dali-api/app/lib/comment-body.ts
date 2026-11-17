@@ -54,3 +54,16 @@ export function segmentMentionUserIds(segments: BodySegment[]): string[] {
   }
   return [...ids];
 }
+
+/** Handle to user id for the chips already on a comment, with anything newly picked layered on top. */
+export function mentionHandleMap(chips: BodySegment[] | null | undefined, picked?: Map<string, string>): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const s of chips ?? []) if (s.type === "mention") map.set(s.label.toLowerCase(), s.userId);
+  for (const [handle, userId] of picked ?? []) map.set(handle, userId);
+  return map;
+}
+
+/** Rebuild an edited plain body's segments, keeping the chips of people already mentioned on the comment. */
+export function keepMentionChips(text: string, prev: BodySegment[]): BodySegment[] {
+  return parseBodySegments(text, mentionHandleMap(prev));
+}

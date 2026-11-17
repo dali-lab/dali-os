@@ -54,7 +54,7 @@ export const COMPONENT_KINDS: KindDef[] = [
     itemLabel: "Chip",
     itemFields: [{ key: "label", label: "Text", type: "text" }, href],
     defaults: {
-      fields: { label: "Quick start" },
+      fields: { label: "Title", layout: "stacked" },
       items: [{ label: "New here", href: "" }, { label: "Templates", href: "" }],
     },
   },
@@ -92,7 +92,11 @@ export const COMPONENT_KINDS: KindDef[] = [
       { key: "current", label: "Current step number", type: "text", placeholder: "1" },
     ],
     itemLabel: "Step",
-    itemFields: [{ key: "label", label: "Name", type: "text" }],
+    itemFields: [
+      { key: "label", label: "Name", type: "text" },
+      tone,
+      { key: "details", label: "More details", type: "textarea" },
+    ],
     defaults: {
       fields: { title: "Term timeline", note: "", current: "2" },
       items: [{ label: "Kickoff" }, { label: "Research" }, { label: "Crit 1" }, { label: "Demo Day" }],
@@ -201,6 +205,29 @@ export const COMPONENT_KINDS: KindDef[] = [
     },
   },
   {
+    kind: "collection",
+    title: "Collection",
+    subtext: "A collapsible grid of resource tiles with category filters",
+    aliases: ["collection", "filter", "pills", "categories", "tabs", "tiles", "library", "grid", "collapsible", "accordion", "toolkit"],
+    fields: [title, { key: "categories", label: "Categories", type: "text" }],
+    itemLabel: "Resource",
+    itemFields: [
+      title,
+      { key: "description", label: "Description", type: "text" },
+      { key: "category", label: "Category", type: "text" },
+      { key: "icon", label: "Icon", type: "text" },
+      href,
+    ],
+    defaults: {
+      fields: { title: "Helpful resources", categories: "Design, Development", open: "1" },
+      items: [
+        { title: "Figma", description: "Design files and prototypes", category: "Design", icon: "palette", href: "https://www.figma.com" },
+        { title: "MDN Web Docs", description: "Web platform reference", category: "Development", icon: "code", href: "https://developer.mozilla.org" },
+        { title: "Lab handbook", description: "How we work together", category: "", icon: "book", href: "/resources" },
+      ],
+    },
+  },
+  {
     kind: "spacer",
     title: "Spacer",
     subtext: "Empty space between blocks",
@@ -256,13 +283,45 @@ export function parseComponentData(kind: string, json: string): ComponentData {
   }
 }
 
-/** Only web links, mail links and in-app paths. Anything else (javascript:,
- * data:) is dropped — component data is member-authored. */
+const STRUCTURAL_FIELDS = new Set(["layout", "tone", "open", "height", "current"]);
+
+/** What a component starts with when a member inserts it: the kind's settings, but none of its sample content. */
+export function blankComponentData(def: KindDef): ComponentData {
+  const fields: Record<string, string> = {};
+  for (const [k, v] of Object.entries(def.defaults.fields)) fields[k] = STRUCTURAL_FIELDS.has(k) ? v : "";
+  return { fields, items: [] };
+}
+
+/** Categories a collection offers as filters: the ones listed, then any an item uses that the list lacks. */
+export function collectionCategories(fields: Record<string, string>, items: Record<string, string>[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  const add = (raw: string | undefined) => {
+    const v = (raw ?? "").trim();
+    if (v && !seen.has(v.toLowerCase())) {
+      seen.add(v.toLowerCase());
+      out.push(v);
+    }
+  };
+  (fields.categories ?? "").split(",").forEach(add);
+  items.forEach((it) => add(it.category));
+  return out;
+}
+
+export function filterCollection<T extends Record<string, string>>(items: T[], category: string | null): T[] {
+  if (!category) return items;
+  return items.filter((it) => (it.category ?? "").trim().toLowerCase() === category.toLowerCase());
+}
+
+/** Only web links, mail, tel and slack links, anchors and in-app paths; bare hosts like dali.dartmouth.edu get https.
+ * Anything else (javascript:, data:) is dropped because component data is member-authored. */
 export function safeHref(value: string | undefined): string | undefined {
   const v = value?.trim();
   if (!v) return undefined;
-  if (/^(https?:\/\/|mailto:)/i.test(v)) return v;
+  if (/^(https?:\/\/|mailto:|tel:|slack:)/i.test(v)) return v;
   if (v.startsWith("/") && !v.startsWith("//")) return v;
+  if (v.startsWith("#")) return v;
+  if (/^[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}([/?#]\S*)?$/i.test(v)) return `https://${v}`;
   return undefined;
 }
 

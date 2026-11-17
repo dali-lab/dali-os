@@ -23,7 +23,8 @@ export type SearchResultType =
   | "partnerApplication"
   | "cycle"
   | "guide"
-  | "helpArticle";
+  | "helpArticle"
+  | "resourceHub";
 
 /** Types a search can return. `challenge` has a URL but no search source. */
 export const SEARCH_CATEGORIES: SearchResultType[] = [
@@ -43,6 +44,7 @@ export const SEARCH_CATEGORIES: SearchResultType[] = [
   "cycle",
   "guide",
   "helpArticle",
+  "resourceHub",
 ];
 
 export interface SearchResult {
@@ -143,6 +145,7 @@ export const buildUrl: Record<Exclude<SearchResultType, "task">, (id: string) =>
   },
   // Help-center articles are real pages; the id is the slug (see HELP_ARTICLES).
   helpArticle: (slug) => `/help/${slug}`,
+  resourceHub: (id) => `/resource-hub/${id}`,
 };
 
 // Lower is better; null means no match. exact(0) > prefix(1) > word-start(2) >

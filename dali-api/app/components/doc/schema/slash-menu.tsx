@@ -23,6 +23,8 @@ import {
   LayoutGrid,
   List,
   ListChecks,
+  ListFilter,
+  Scissors,
   Milestone,
   SeparatorHorizontal,
   Sparkles,
@@ -31,8 +33,9 @@ import {
 } from "lucide-react";
 import type { DefaultReactSuggestionItem } from "@blocknote/react";
 import { insertItemIntoGroup } from "../blocks-util";
-import { COMPONENT_KINDS } from "../components/kinds";
+import { COMPONENT_KINDS, blankComponentData } from "../components/kinds";
 import type { Features } from "../features";
+import { markFreshComponent } from "./fresh-components";
 import type { DocEditorInstance } from "./build";
 
 // DefaultReactSuggestionItem's type omits `key`, but the runtime objects carry
@@ -131,6 +134,7 @@ const COMPONENT_ICONS: Record<string, LucideIcon> = {
   timeline: Milestone,
   links: List,
   stats: Hash,
+  collection: ListFilter,
   bars: BarChart3,
   gallery: Images,
   feature: Sparkles,
@@ -150,10 +154,11 @@ function componentItems(editor: DocEditorInstance): KeyedItem[] {
       group: "Components",
       icon: <Icon size={18} aria-hidden />,
       onItemClick: () => {
-        insertOrUpdateBlockForSlashMenu(editor, {
+        const block = insertOrUpdateBlockForSlashMenu(editor, {
           type: "component",
-          props: { kind: def.kind, data: JSON.stringify(def.defaults) },
+          props: { kind: def.kind, data: JSON.stringify(blankComponentData(def)) },
         });
+        markFreshComponent(block.id);
       },
     };
   });
@@ -184,7 +189,8 @@ export function getDocSlashMenuItems(
     // generic parameters don't overlap with DocEditorInstance's narrow schema.
     const pbItems = getPageBreakSlashMenuItems(editor as unknown as Parameters<typeof getPageBreakSlashMenuItems>[0]);
     for (const pb of pbItems) {
-      items = insertItemIntoGroup(items, pb as unknown as DefaultReactSuggestionItem);
+      const withIcon = { ...(pb as unknown as DefaultReactSuggestionItem), icon: <Scissors size={18} aria-hidden /> };
+      items = insertItemIntoGroup(items, withIcon);
     }
   }
   if (features.components) items = [...items, ...componentItems(editor)];

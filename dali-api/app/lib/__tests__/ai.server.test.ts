@@ -103,10 +103,10 @@ describe("resolveAiProvider", () => {
 });
 
 describe("modelParams", () => {
-  it("runs the TL;DR on Haiku and every other task on Sonnet", () => {
+  it("runs the TL;DR and alumni chat on Haiku and every other task on Sonnet", () => {
     for (const task of TASKS) {
       expect(modelParams({ name: "anthropic" }, task).model).toBe(
-        task === "projectTldr" ? "claude-haiku-5-5" : "claude-sonnet-5-5",
+        task === "projectTldr" || task === "alumniChat" ? "claude-haiku-5-5" : "claude-sonnet-5-5",
       );
     }
   });
@@ -182,8 +182,8 @@ describe("aiProvidersFor", () => {
     process.env.DARTMOUTH_CHAT_API_KEY = "dartmouth-test";
   });
 
-  it("tries the gateway first for enhance, email, release notes and the TL;DR", () => {
-    for (const task of ["enhance", "email", "releaseNotes", "projectTldr"] as const) {
+  it("tries the gateway first for enhance, email, release notes, the TL;DR and alumni chat", () => {
+    for (const task of ["enhance", "email", "releaseNotes", "projectTldr", "alumniChat"] as const) {
       expect(aiProvidersFor(task).map((p) => p.name)).toEqual(["dartmouth", "anthropic"]);
     }
   });
