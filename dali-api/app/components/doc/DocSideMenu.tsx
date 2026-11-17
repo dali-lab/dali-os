@@ -5,7 +5,7 @@
 //   1b. Keep/Revert change — only on a block carrying a reserved Enhance mark
 //       (specs/archive/meeting-recording-rail.md Step 2); see EnhanceReviewMenuItems.
 //   2. Colors        — BlockNote's BlockColorsItem (text + background sub-menu).
-//   3. Delete        — BlockNote's RemoveBlockItem.
+//   3. Delete        — removes the block.
 //
 // Commenting starts from a text selection (the formatting toolbar), not here.
 //
@@ -16,13 +16,13 @@ import { SideMenuExtension } from "@blocknote/core/extensions";
 import {
   BlockColorsItem,
   DragHandleMenu,
-  RemoveBlockItem,
   SideMenu,
   SideMenuController,
   useBlockNoteEditor,
   useComponentsContext,
   useExtensionState,
 } from "@blocknote/react";
+import { Copy, Trash2 } from "lucide-react";
 import { useCallback, useContext } from "react";
 import type { FC } from "react";
 import type { SideMenuProps } from "@blocknote/react";
@@ -63,7 +63,23 @@ function DuplicateBlockItem({ children }: { children: React.ReactNode }) {
   if (!block) return null;
 
   return (
-    <Components.Generic.Menu.Item className={"bn-menu-item"} onClick={onClick}>
+    <Components.Generic.Menu.Item className={"bn-menu-item"} icon={<Copy size={16} strokeWidth={1.5} />} onClick={onClick}>
+      {children}
+    </Components.Generic.Menu.Item>
+  );
+}
+
+function DeleteBlockItem({ children }: { children: React.ReactNode }) {
+  const Components = useComponentsContext()!;
+  const editor = useBlockNoteEditor<any, any, any>();
+  const block = useExtensionState(SideMenuExtension, { editor, selector: (state) => state?.block });
+  if (!block) return null;
+  return (
+    <Components.Generic.Menu.Item
+      className="bn-menu-item"
+      icon={<Trash2 size={16} strokeWidth={1.5} />}
+      onClick={() => editor.removeBlocks([block])}
+    >
       {children}
     </Components.Generic.Menu.Item>
   );
@@ -112,7 +128,7 @@ function DaliDragHandleMenu() {
       <DuplicateBlockItem>Duplicate</DuplicateBlockItem>
       <EnhanceReviewMenuItems />
       <BlockColorsItem>Colors</BlockColorsItem>
-      <RemoveBlockItem>Delete</RemoveBlockItem>
+      <DeleteBlockItem>Delete</DeleteBlockItem>
     </DragHandleMenu>
   );
 }

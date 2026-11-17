@@ -86,6 +86,12 @@ export const FEATURE_FLAGS = [
       "The Community sidebar area: Community, Opportunities, Gallery and Stories. Stories opens /resources: a front page of member stories (Internal, or Public to also appear on dali.website) plus bookmark tabs, reference pages that Core/Admin create, edit and delete and every lab member reads. Ships off; without it Community stays under Lab and the other Community pages are not reachable.",
   },
   {
+    key: "resource-hub",
+    label: "Resource Hub",
+    description:
+      "A Resource Hub entry beside Calendar, Email and Drive: freely created hub pages, each a blank canvas its owners lay out with the editor's / blocks. Every lab member can read published hubs. Ships off.",
+  },
+  {
     key: "email-personal",
     label: "Email: personal DALI inbox",
     description:

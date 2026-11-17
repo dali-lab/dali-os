@@ -40,6 +40,7 @@ describe("resolveDesktopLink", () => {
   it("hands mailto: and tel: to the OS, like an off-site link", () => {
     expect(resolveDesktopLink("mailto:dali@dartmouth.edu", tabs).kind).toBe("handOff");
     expect(resolveDesktopLink("tel:+16036461234", tabs).kind).toBe("handOff");
+    expect(resolveDesktopLink("slack://channel?team=T1&id=C1", tabs).kind).toBe("handOff");
   });
 
   it("leaves the page's own schemes alone", () => {
