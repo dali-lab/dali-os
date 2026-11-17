@@ -5,6 +5,7 @@ import { getCity } from "~/lib/places/cities.server";
 import { normalizeHandle } from "~/lib/handle.server";
 import { uniqueViolationFields } from "~/lib/prisma-errors";
 import { isValidTimezone } from "~/lib/timezone";
+import { MAX_ASK_ME_ABOUT, MAX_ASK_ME_ABOUT_LENGTH, MAX_LONG_TEXT } from "~/members/lib/profile-limits";
 
 export type ProfileField =
   | "name"
@@ -14,6 +15,8 @@ export type ProfileField =
   | "birthday"
   | "handle"
   | "netId"
+  | "askMeAbout"
+  | "textLength"
   | "unique";
 
 export class ProfileValidationError extends BadRequestError {
@@ -47,9 +50,34 @@ const NULLABLE_TEXT = [
   "dietaryRestrictions",
   "minors",
   "funFact",
+  "outsideOfWork",
   "phoneNumber",
   "photoUrl",
 ] as const;
+
+export const OPEN_TO_COLUMNS = {
+  coffeeChats: "openToCoffeeChats",
+  resumeReviews: "openToResumeReviews",
+  portfolioReviews: "openToPortfolioReviews",
+  partnerReferrals: "openToPartnerReferrals",
+  mentoring: "openToMentoring",
+  speaking: "openToSpeaking",
+} as const;
+
+export type OpenToKey = keyof typeof OPEN_TO_COLUMNS;
+
+
+export function normalizeAskMeAbout(raw: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const item of raw) {
+    const topic = item.trim().replace(/\s+/g, " ");
+    if (topic === "" || seen.has(topic.toLowerCase())) continue;
+    seen.add(topic.toLowerCase());
+    out.push(topic);
+  }
+  return out;
+}
 
 export type ProfilePatch = Partial<
   Record<
@@ -65,9 +93,15 @@ export type ProfilePatch = Partial<
     | (typeof NULLABLE_TEXT)[number],
     string
   >
-> & { classYear?: number | string | null };
+> & {
+  classYear?: number | string | null;
+  askMeAbout?: string[];
+  openTo?: Partial<Record<OpenToKey, boolean>>;
+};
 
-export type ProfileUpdateResult = { updated: Record<string, string | number | null> };
+export type ProfileUpdateResult = {
+  updated: Record<string, string | number | boolean | string[] | null>;
+};
 
 const NO_LOCATION = {
   currentLocationLat: null,
@@ -81,7 +115,7 @@ const NO_LOCATION = {
 async function applyLocation(
   targetId: string,
   patch: ProfilePatch,
-  data: Record<string, string | number | Date | null>,
+  data: Record<string, string | number | boolean | string[] | Date | null>,
   updated: ProfileUpdateResult["updated"],
 ) {
   const text = data.currentLocation;
@@ -124,7 +158,7 @@ export async function updateProfileFields(
   patch: ProfilePatch,
   { allowNetId }: { allowNetId: boolean },
 ): Promise<ProfileUpdateResult> {
-  const data: Record<string, string | number | Date | null> = {};
+  const data: Record<string, string | number | boolean | string[] | Date | null> = {};
   const updated: ProfileUpdateResult["updated"] = {};
   const trimmed = (v: string) => v.trim();
 
@@ -143,6 +177,31 @@ export async function updateProfileFields(
     if (raw !== undefined) {
       const val = trimmed(raw);
       data[field] = updated[field] = val === "" ? null : val;
+    }
+  }
+
+  for (const field of ["funFact", "outsideOfWork"] as const) {
+    const val = patch[field];
+    if (val !== undefined && val.trim().length > MAX_LONG_TEXT) {
+      throw new ProfileValidationError("textLength", `Keep it under ${MAX_LONG_TEXT} characters.`);
+    }
+  }
+
+  if (patch.askMeAbout !== undefined) {
+    const topics = normalizeAskMeAbout(patch.askMeAbout);
+    if (topics.length > MAX_ASK_ME_ABOUT || topics.some((t) => t.length > MAX_ASK_ME_ABOUT_LENGTH)) {
+      throw new ProfileValidationError(
+        "askMeAbout",
+        `Pick up to ${MAX_ASK_ME_ABOUT} topics, ${MAX_ASK_ME_ABOUT_LENGTH} characters each.`,
+      );
+    }
+    data.askMeAbout = updated.askMeAbout = topics;
+  }
+
+  if (patch.openTo !== undefined) {
+    for (const key of Object.keys(OPEN_TO_COLUMNS) as OpenToKey[]) {
+      const on = patch.openTo[key];
+      if (typeof on === "boolean") data[OPEN_TO_COLUMNS[key]] = updated[OPEN_TO_COLUMNS[key]] = on;
     }
   }
 

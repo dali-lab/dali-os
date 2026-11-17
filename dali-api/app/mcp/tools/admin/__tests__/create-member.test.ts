@@ -210,6 +210,7 @@ describe("create_member", () => {
       data: {
         firstName: "Ada",
         lastName: "Lovelace",
+        email: "ada@example.com",
         personalEmail: "ada@example.com",
         major: "Math",
         classYear: 2027,

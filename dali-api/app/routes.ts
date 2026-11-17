@@ -163,7 +163,12 @@ export default [
     // The writing page sits outside the Resources layout: no masthead or
     // bookmark tabs, just the post and its settings.
     route("resources/write/:postId", "routes/resources.write.$postId.tsx"),
+    // Resource Hub: a card per domain, each a blank page its leads lay out
+    // with the editor's "/" blocks.
+    route("resource-hub", "routes/resource-hub.tsx"),
+    route("resource-hub/:pageId", "routes/resource-hub-layout.tsx", [index("routes/resource-hub.$pageId.tsx")]),
     route("api/resources/blog-posts", "routes/api.resources.blog-posts.ts"),
+    route("api/link-preview", "routes/api.link-preview.ts"),
     // DALI OS feedback: the feature request feed the shell's feedback button posts to.
     route("feedback", "routes/feedback.tsx"),
 
@@ -394,7 +399,7 @@ export default [
   // in each loader; see specs via app/components/alumni-game/.
   route("alumni/welcome", "routes/alumni.welcome.tsx"),
   route("alumni/lab", "routes/alumni.lab.tsx"),
-  route("alumni/form", "routes/alumni.form.tsx"),
+  route("alumni/onboarding", "routes/alumni.onboarding.tsx"),
 
   // Login / signup / onboarding (no layout)
   route("login", "routes/login.tsx"),
@@ -496,6 +501,8 @@ export default [
   route("api/tour/complete", "routes/api.tour.complete.ts"),
   route("api/timezone/update", "routes/api.timezone.update.ts"),
   route("api/feedback/posts", "routes/api.feedback.posts.ts"),
+  route("api/opportunities/posts", "community/routes/api.opportunities.posts.ts"),
+  route("api/opportunities/resolve-link", "community/routes/api.opportunities.resolve-link.ts"),
   route("api/custom-emoji", "routes/api.custom-emoji.ts"),
   route("api/release-notes", "routes/api.release-notes.ts"),
   route("api/announcements/sent", "routes/api.announcements.sent.ts"),

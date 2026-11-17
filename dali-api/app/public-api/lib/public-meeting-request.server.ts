@@ -4,8 +4,10 @@ import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 import { sendWebsiteMeetingRequestEmail } from "~/partners/lib/partner-emails.server";
 
 // The one write on the public surface: dali.website's support plan finder asks
-// DALI OS to email partners@ when a partner wants to meet. It only ever mails
-// that fixed inbox, so the secret can't be used to send mail anywhere else.
+// DALI OS to email partners@ about every request, marking the ones that want to
+// meet. It only ever mails that fixed inbox, so the secret can't be used to
+// send mail anywhere else. wantsMeeting defaults to true because the first
+// website release only called this for meetings.
 
 const text = (max: number) => z.string().trim().min(1).max(max);
 
@@ -17,6 +19,9 @@ export const MeetingRequestBody = z.object({
   need: text(200),
   plan: text(200),
   payer: text(200),
+  wantsMeeting: z.boolean().default(true),
+  billing: z.string().trim().max(200).optional(),
+  addons: z.array(text(200)).max(10).optional(),
   notes: z.string().trim().max(4000).optional(),
 });
 
@@ -42,6 +47,11 @@ export async function handleWebsiteMeetingRequest(request: Request): Promise<Res
     return Response.json({ error: "Invalid request body" }, { status: 400 });
   }
 
-  await sendWebsiteMeetingRequestEmail({ ...parsed.data, notes: parsed.data.notes || null });
+  await sendWebsiteMeetingRequestEmail({
+    ...parsed.data,
+    billing: parsed.data.billing || null,
+    addons: parsed.data.addons?.length ? parsed.data.addons : null,
+    notes: parsed.data.notes || null,
+  });
   return Response.json({ ok: true });
 }

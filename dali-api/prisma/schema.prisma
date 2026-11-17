@@ -152,6 +152,15 @@ model User {
   openToCoffeeChats   Boolean   @default(true)
   openToResumeReviews Boolean   @default(false)
   openToPortfolioReviews Boolean @default(false)
+  openToPartnerReferrals Boolean @default(false)
+  openToMentoring     Boolean   @default(false)
+  openToSpeaking      Boolean   @default(false)
+  // Short topics alumni are happy to be asked about, and a line on life outside
+  // work. Both show on the alumni profile.
+  askMeAbout          String[]  @default([])
+  outsideOfWork       String?
+  // Set when an alumnus finishes the first-login profile flow (alumni-onboarding).
+  alumniOnboardedAt   DateTime?
   linkedinUrl         String?
   // The member's current resume (PDF). Private: the member and admins only,
   // served through /api/members/:id/resume, never api/upload/url.
@@ -364,6 +373,12 @@ model User {
   feedbackReactions FeedbackReaction[]
   feedbackComments  FeedbackComment[]
 
+  // ─── Community opportunities ──────────────────────────────────────────────
+  opportunityPosts     OpportunityPost[]
+  opportunityReactions OpportunityReaction[]
+  opportunityComments  OpportunityComment[]
+  opportunityResponses OpportunityResponse[]
+
   // ─── Community gallery ────────────────────────────────────────────────────
   galleryPosts     GalleryPost[]     @relation("GalleryPostAuthor")
   galleryHidden    GalleryPost[]     @relation("GalleryPostHider")
@@ -379,6 +394,7 @@ model User {
   blogComments       BlogComment[]
   pageDocsCreated    PageDoc[]  @relation("PageDocCreatedBy")
   pageDocsLastEdited PageDoc[]  @relation("PageDocLastEditedBy")
+  resourceHubPages   ResourceHubPage[]
 
   // ─── Payroll: Reconcile back-relation ─────────────────────────────────────
   timesheetImports     TimesheetImport[]
@@ -877,6 +893,7 @@ model Domain {
 
   applicationCycles     DomainApplicationCycle[]
   domainLeadAssignments DomainLeadAssignment[]
+  resourceHubPage       ResourceHubPage?
   cycleReviewers        CycleReviewer[]
   cycleInterviewers     CycleInterviewer[]
   delibsSessions        DelibsSession[]
@@ -1678,6 +1695,95 @@ model FeedbackComment {
   author User         @relation(fields: [authorId], references: [id], onDelete: Cascade)
 
   @@index([postId, createdAt])
+}
+
+// ─── Community opportunities ─────────────────────────────────────────────────
+// The /community/opportunities feed. A null author is a DALI post.
+model OpportunityPost {
+  id                String              @id @default(cuid())
+  kind              OpportunityPostKind
+  authorId          String?
+  body              String
+  topic             String?
+  jobUrl            String?
+  companyName       String?
+  companyDomain     String?
+  logoKey           String?
+  blockColor        String?
+  role              String?
+  location          String?
+  jobType           String?
+  willRefer         Boolean             @default(false)
+  imageKey          String?
+  // Loose ref to PartnerReferral.id; unique so a shipped referral posts once.
+  partnerReferralId String?             @unique
+  stillOpenAskedAt  DateTime?
+  confirmedOpenAt   DateTime?
+  linkCheckedAt     DateTime?
+  closedAt          DateTime?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  author    User?                 @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  reactions OpportunityReaction[]
+  comments  OpportunityComment[]
+  responses OpportunityResponse[]
+
+  @@index([createdAt])
+  @@index([authorId])
+}
+
+enum OpportunityPostKind {
+  Job
+  ChatAsk
+  DaliUpdate
+}
+
+model OpportunityReaction {
+  id        String   @id @default(cuid())
+  postId    String
+  userId    String
+  emoji     String   @db.VarChar(64)
+  createdAt DateTime @default(now())
+
+  post OpportunityPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId, emoji])
+  @@index([postId])
+}
+
+model OpportunityComment {
+  id        String   @id @default(cuid())
+  postId    String
+  authorId  String
+  body      String
+  createdAt DateTime @default(now())
+
+  post   OpportunityPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  author User            @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([postId])
+}
+
+model OpportunityResponse {
+  id        String                  @id @default(cuid())
+  postId    String
+  userId    String
+  kind      OpportunityResponseKind
+  note      String?
+  createdAt DateTime                @default(now())
+
+  post OpportunityPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId, kind])
+  @@index([postId])
+}
+
+enum OpportunityResponseKind {
+  Interested
+  ChatOffer
 }
 
 // One photo in the Community gallery. A bulk upload makes one post per photo.
@@ -7380,6 +7486,10 @@ model PartnerReferral {
   // Full Pitch only: the referrer's own pitch for the partner.
   pitchBody          String?
 
+  // The application this referral led to, set by Partner Relations. Loose ref
+  // to PartnerApplication.id, like PartnerApplication.resultingProjectId.
+  partnerApplicationId String?
+
   // Partner Relations working notes + "we've reached out" marker.
   coreNotes          String?
   reachedOutAt       DateTime?
@@ -7389,6 +7499,7 @@ model PartnerReferral {
   @@index([createdAt])
   @@index([referredByUserId])
   @@index([tier])
+  @@index([partnerApplicationId])
 }
 
 enum PartnerReferralTier {
@@ -7962,6 +8073,27 @@ model BlogPost {
 
   @@index([publishedAt])
   @@index([authorId])
+}
+
+// A Resource Hub page: a card on /resource-hub that opens a blank canvas its
+// owners lay out with the editor's "/" blocks. Created from the hub's Add
+// button; a draft until published. Owned by the creator and, when set, the
+// leads of `domainId`. The body is the collab room `resourceHub:{id}:body`,
+// synced back to contentJson (see COLLAB_SOURCES).
+model ResourceHubPage {
+  id          String    @id @default(cuid())
+  title       String    @default("Untitled hub")
+  coverUrl    String?
+  publishedAt DateTime?
+  contentJson Json?
+  domainId    String?   @unique
+  domain      Domain?   @relation(fields: [domainId], references: [id], onDelete: SetNull)
+  createdById String?
+  createdBy   User?     @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([createdById])
 }
 
 model BlogReaction {

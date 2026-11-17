@@ -33,6 +33,7 @@ import {
   Plus,
   Shield,
   Smartphone,
+  Sparkles,
   Trash2,
   Upload,
   User as UserIcon,
@@ -55,6 +56,8 @@ import {
 import { Activity, Heart, User as ProfileTabIcon } from "lucide-react";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
+import { Toggle } from "~/components/ui/Toggle";
+import { OPEN_TO_CHOICES } from "~/lib/alumni-onboarding";
 import { PersonalNotesRail } from "./PersonalNotesRail";
 import { BasedInField, structuredPlace } from "./BasedInField";
 import { ProfileRequestButtons } from "./ProfileRequestButtons";
@@ -258,6 +261,7 @@ export function MemberProfileView({
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <AboutCard member={member} canEdit={canEdit} />
             <ContactCard member={member} canEdit={canEdit} />
+            {isAlumni && <AlumniDetailsCard member={member} openTo={openTo} canEdit={canEdit} />}
             <DomainsCard
               roleLabels={roleLabels}
               eligibilities={member.domainEligibilities}
@@ -760,6 +764,110 @@ function AboutCard({
               </DetailRow>
               <DetailRow icon={<MessageSquare className={ic} />} label="Ask me about">
                 {member.funFact ?? dash}
+              </DetailRow>
+            </>
+          )}
+        </div>
+      </article>
+    </Form>
+  );
+}
+
+// ─── Alumni details card ─────────────────────────────────────────────────────
+
+function splitTopics(text: string): string[] {
+  return text.split(",").map((t) => t.trim()).filter(Boolean);
+}
+
+function AlumniDetailsCard({
+  member,
+  openTo,
+  canEdit,
+}: {
+  member: ProfileMember;
+  openTo: ProfilePageData["openTo"];
+  canEdit: boolean;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [resetKey, setResetKey] = useState(0);
+  const [topicsText, setTopicsText] = useState(member.askMeAbout.join(", "));
+  const submit = useSubmit();
+  const formRef = useRef<HTMLFormElement | null>(null);
+  const { formClass } = useOsChrome();
+  const dash = <span className="text-os-muted">—</span>;
+  const isOn = (key: (typeof OPEN_TO_CHOICES)[number]["key"]) =>
+    key === "resumeReviews" ? openTo.resumeReviews || openTo.portfolioReviews : openTo[key];
+  const openList = OPEN_TO_CHOICES.filter((c) => isOn(c.key)).map((c) => c.title);
+
+  function cancel() {
+    setTopicsText(member.askMeAbout.join(", "));
+    setResetKey((k) => k + 1);
+    setEditing(false);
+  }
+
+  function save() {
+    if (formRef.current) submit(formRef.current);
+    setEditing(false);
+  }
+
+  return (
+    <Form method="post" ref={formRef} className="h-full">
+      <input type="hidden" name="intent" value="update-alumni-details" />
+      <input type="hidden" name="askMeAbout" value={JSON.stringify(splitTopics(topicsText))} />
+      <article className="rounded-os-card bg-os-card overflow-hidden h-full">
+        <CardHeader
+          icon={<Sparkles className="w-[17px] h-[17px]" />}
+          iconBg="rgba(185,162,242,0.14)"
+          iconColor="#b9a2f2"
+          title="Alumni details"
+          trailing={
+            canEdit && (
+              <CardEditControls editing={editing} onEdit={() => setEditing(true)} onCancel={cancel} onSave={save} />
+            )
+          }
+        />
+        <div key={resetKey} className={cn("px-5 pb-5", editing && cn(formClass, "flex flex-col gap-4"))}>
+          {editing ? (
+            <>
+              <label className="flex flex-col gap-1 text-xs text-os-grey">
+                Ask me about
+                <input
+                  type="text"
+                  value={topicsText}
+                  onChange={(e) => setTopicsText(e.target.value)}
+                  placeholder="Grad school, moving to New York"
+                  className="w-full"
+                />
+                <span className="text-os-muted">Separate topics with commas.</span>
+              </label>
+              <label className="flex flex-col gap-1 text-xs text-os-grey">
+                A fun fact
+                <input name="funFact" type="text" defaultValue={member.funFact ?? ""} className="w-full" />
+              </label>
+              <label className="flex flex-col gap-1 text-xs text-os-grey">
+                Outside of work
+                <input name="outsideOfWork" type="text" defaultValue={member.outsideOfWork ?? ""} className="w-full" />
+              </label>
+              <div className="flex flex-col gap-2">
+                <span className="text-xs text-os-grey">Open to</span>
+                {OPEN_TO_CHOICES.map((c) => (
+                  <Toggle key={c.key} tone="os" name={c.key} label={c.title} defaultChecked={isOn(c.key)} />
+                ))}
+              </div>
+            </>
+          ) : (
+            <>
+              <DetailRow icon={<Sparkles className={OS_DETAIL_ICON} />} label="Ask me about">
+                {member.askMeAbout.length > 0 ? member.askMeAbout.join(", ") : dash}
+              </DetailRow>
+              <DetailRow icon={<Sparkles className={OS_DETAIL_ICON} />} label="Fun fact">
+                {member.funFact ?? dash}
+              </DetailRow>
+              <DetailRow icon={<Sparkles className={OS_DETAIL_ICON} />} label="Outside of work">
+                {member.outsideOfWork ?? dash}
+              </DetailRow>
+              <DetailRow icon={<Sparkles className={OS_DETAIL_ICON} />} label="Open to">
+                {openList.length > 0 ? openList.join(", ") : dash}
               </DetailRow>
             </>
           )}

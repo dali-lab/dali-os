@@ -17,6 +17,12 @@ export function FormField({
   rows = 3,
   mono = false,
   onKeyDown,
+  maxLength,
+  autoFocus,
+  disabled,
+  inputMode,
+  invalid,
+  onBlur,
 }: {
   label: string;
   labelHidden?: boolean;
@@ -31,7 +37,13 @@ export function FormField({
   multiline?: boolean;
   rows?: number;
   mono?: boolean;
-  onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
+  onKeyDown?(e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>): void;
+  maxLength?: number;
+  autoFocus?: boolean;
+  disabled?: boolean;
+  inputMode?: "url" | "text";
+  invalid?: boolean;
+  onBlur?: () => void;
 }) {
   const { fieldLabel } = useOsChrome();
   const control = cn("w-full", mono && "font-mono text-[13px]", multiline && "resize-y leading-6");
@@ -39,16 +51,22 @@ export function FormField({
     name,
     required,
     placeholder,
+    maxLength,
+    autoFocus,
+    disabled,
+    onKeyDown,
+    "aria-invalid": invalid || undefined,
     className: control,
+    onBlur,
     ...(onChange ? { value: value ?? "", onChange: (e: { target: { value: string } }) => onChange(e.target.value) } : { defaultValue }),
   };
   return (
     <label className={fieldLabel}>
       <span className={labelHidden ? "sr-only" : undefined}>{label}</span>
       {multiline ? (
-        <textarea rows={rows} spellCheck={!mono} onKeyDown={onKeyDown} {...shared} />
+        <textarea rows={rows} spellCheck={!mono} {...shared} />
       ) : (
-        <input type={type} {...shared} />
+        <input type={type} inputMode={inputMode} {...shared} />
       )}
       {hint && <span className="text-xs text-os-muted">{hint}</span>}
     </label>

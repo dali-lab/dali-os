@@ -13,7 +13,7 @@ import {
   type Piece,
   type Run,
 } from './course'
-import { catmull, clamp, lerp, mix, seededRandom, smooth, sparkle, TAU, type Point } from './paint'
+import { blurSamples, catmull, clamp, lerp, mix, seededRandom, smooth, sparkle, TAU, type Point } from './paint'
 import { drawRunner } from './runner'
 
 /*
@@ -87,6 +87,8 @@ export function createTunnelScene(canvas: HTMLCanvasElement, options: Options) {
   let phase: ScenePhase = 'attract'
   let run: Run | null = null
   let lastScore = -1
+  let step = 0
+  let floorLayers: { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D }[] = []
 
   const narrow = () => W < 900 || W / H < 1.1
   const base = (): Point => (narrow() ? { x: W * 0.5, y: H * 0.62 } : { x: W * 0.3, y: H * 0.47 })
@@ -121,6 +123,7 @@ export function createTunnelScene(canvas: HTMLCanvasElement, options: Options) {
     flash = 1
     bursts.push({ r: 0 })
     lastScore = -1
+    step = 0
     audio.start()
     setPhase('play')
   }
@@ -414,6 +417,23 @@ export function createTunnelScene(canvas: HTMLCanvasElement, options: Options) {
     vignette()
   }
 
+  function layers() {
+    // At 1x: the blur hides the lost sharpness, and four full-DPR passes cost too much on slower machines.
+    const w = Math.round(W)
+    const h = Math.round(H)
+    const fresh = floorLayers[0]?.canvas
+    if (fresh && fresh.width === w && fresh.height === h) return floorLayers
+    floorLayers = [0, 1].map(() => {
+      const layer = document.createElement('canvas')
+      layer.width = w
+      layer.height = h
+      const lctx = layer.getContext('2d')!
+      lctx.setTransform(w / W, 0, 0, h / H, 0, 0)
+      return { canvas: layer, ctx: lctx }
+    })
+    return floorLayers
+  }
+
   function gameFrame(t: number, dt: number, r: Run) {
     const g = ctx!
     if (phase === 'paused') dt = 0
@@ -439,106 +459,131 @@ export function createTunnelScene(canvas: HTMLCanvasElement, options: Options) {
     const vy = vp.y
     speed = 1 + r.speed / 3
     flash = Math.max(0, flash - dt * 1.4)
+    if (dt > 0) step += (r.speed * dt - step) * 0.15
+
+    const drawFloor = (g: CanvasRenderingContext2D, cam: number, th: number) => {
+      const P = (a: number, z: number, rr: number): [number, number] => {
+        const sa = a - th + Math.PI / 2
+        const R = (F * rr) / z
+        return [vx + Math.cos(sa) * R, vy + Math.sin(sa) * R]
+      }
+      const quad = (a0: number, a1: number, z0: number, z1: number) => {
+        let p = P(a0, z0, 1)
+        g.moveTo(p[0], p[1])
+        p = P(a1, z0, 1)
+        g.lineTo(p[0], p[1])
+        p = P(a1, z1, 1)
+        g.lineTo(p[0], p[1])
+        p = P(a0, z1, 1)
+        g.lineTo(p[0], p[1])
+        g.closePath()
+      }
+
+      g.globalCompositeOperation = 'source-over'
+      g.globalAlpha = 1
+      const gr = g.createRadialGradient(vx, vy, 0, vx, vy, Math.max(W, H) * 0.95)
+      gr.addColorStop(0, '#2f8a6b')
+      gr.addColorStop(0.04, '#174f40')
+      gr.addColorStop(0.18, '#082620')
+      gr.addColorStop(0.5, '#041714')
+      gr.addColorStop(1, '#020b0a')
+      g.fillStyle = gr
+      g.fillRect(0, 0, W, H)
+
+      // The course: twelve film strips running into the light, frame by frame.
+      const LW = LANE_ANGLE
+      const i0 = Math.floor((cam + ZNEAR) / ROW) - 1
+      const i1 = Math.floor((cam + ZFAR) / ROW)
+      const gapA = LW * 0.03
+      for (let i = i1; i >= i0; i--) {
+        const z0 = Math.max(ZNEAR, i * ROW - cam + ROW * 0.035)
+        const z1 = (i + 1) * ROW - cam - ROW * 0.035
+        if (z1 <= ZNEAR + 0.01) continue
+        const row = rowAt(r, i)
+        const zm = (z0 + z1) / 2
+        const tone = 0.3 + 0.38 * Math.pow(clamp((zm - 1) / 13, 0, 1), 0.8)
+        const alpha = smooth(ZFAR, ZFAR - 2.5, zm)
+        if (alpha <= 0.01) continue
+        g.globalAlpha = alpha
+        g.beginPath()
+        for (let l = 0; l < LANES; l++) if (!row || row[l]) quad(l * LW - LW / 2 + gapA, l * LW + LW / 2 - gapA, z0, z1)
+        g.fillStyle = mix('#1a4a3f', '#8fe6c2', tone)
+        g.fill()
+        if (row) {
+          // A bright lip wherever the floor drops away, so holes read as holes.
+          const ahead = rowAt(r, i + 1)
+          const behind = i > 0 ? rowAt(r, i - 1) : null
+          g.beginPath()
+          for (let l = 0; l < LANES; l++) {
+            if (!row[l]) continue
+            const a0 = l * LW - LW / 2 + gapA
+            const a1 = l * LW + LW / 2 - gapA
+            const edge = (aa: number, za: number, ab: number, zb: number) => {
+              let p = P(aa, za, 1)
+              g.moveTo(p[0], p[1])
+              p = P(ab, zb, 1)
+              g.lineTo(p[0], p[1])
+            }
+            if (ahead && !ahead[l]) edge(a0, z1, a1, z1)
+            if (behind && !behind[l]) edge(a0, z0, a1, z0)
+            if (!row[lane(l - 1)]) edge(a0, z0, a0, z1)
+            if (!row[lane(l + 1)]) edge(a1, z0, a1, z1)
+          }
+          g.strokeStyle = 'rgba(225,255,240,0.9)'
+          g.lineWidth = clamp((F * 0.018) / zm, 1, 4)
+          g.lineCap = 'round'
+          g.stroke()
+        }
+        if (tone < 0.85) {
+          g.beginPath()
+          for (let l = 0; l < LANES; l++) if (!row || row[l]) quad(l * LW - LW * 0.3, l * LW + LW * 0.3, lerp(z0, z1, 0.12), lerp(z0, z1, 0.88))
+          g.fillStyle = `rgba(110,225,180,${0.1 * (1 - tone)})`
+          g.fill()
+        }
+        if ((F / z1) * LW * 0.05 > 1.1) {
+          g.beginPath()
+          for (let l = 0; l < LANES; l++) {
+            if (row && !row[l]) continue
+            for (const ea of [-0.41, 0.41]) {
+              for (const ez of [0.25, 0.75]) {
+                const ac = l * LW + ea * LW
+                const zc = lerp(z0, z1, ez)
+                quad(ac - LW * 0.028, ac + LW * 0.028, zc - ROW * 0.08, zc + ROW * 0.08)
+              }
+            }
+          }
+          g.fillStyle = `rgba(100,230,180,${0.28 * (1 - tone)})`
+          g.fill()
+        }
+      }
+      g.globalAlpha = 1
+    }
+
+    // Near rows move about a sprocket's width per frame at top speed and strobe, so average in-between positions.
+    const cam = r.d - ZP
+    const samples = blurSamples(step, ROW / 2)
+    if (samples === 1) drawFloor(g, cam, r.th)
+    else {
+      const [scratch, accum] = layers()
+      for (let s = 0; s < samples; s++) {
+        const back = s / samples
+        drawFloor(scratch.ctx, cam - step * back, r.th - r.thv * dt * back)
+        accum.ctx.globalAlpha = 1 / (s + 1)
+        accum.ctx.drawImage(scratch.canvas, 0, 0, W, H)
+      }
+      accum.ctx.globalAlpha = 1
+      g.drawImage(accum.canvas, 0, 0, W, H)
+    }
+
     const P = (a: number, z: number, rr: number): [number, number] => {
       const sa = a - r.th + Math.PI / 2
       const R = (F * rr) / z
       return [vx + Math.cos(sa) * R, vy + Math.sin(sa) * R]
     }
-    const quad = (a0: number, a1: number, z0: number, z1: number) => {
-      let p = P(a0, z0, 1)
-      g.moveTo(p[0], p[1])
-      p = P(a1, z0, 1)
-      g.lineTo(p[0], p[1])
-      p = P(a1, z1, 1)
-      g.lineTo(p[0], p[1])
-      p = P(a0, z1, 1)
-      g.lineTo(p[0], p[1])
-      g.closePath()
-    }
-
-    g.globalCompositeOperation = 'source-over'
-    g.globalAlpha = 1
-    let gr = g.createRadialGradient(vx, vy, 0, vx, vy, Math.max(W, H) * 0.95)
-    gr.addColorStop(0, '#2f8a6b')
-    gr.addColorStop(0.04, '#174f40')
-    gr.addColorStop(0.18, '#082620')
-    gr.addColorStop(0.5, '#041714')
-    gr.addColorStop(1, '#020b0a')
-    g.fillStyle = gr
-    g.fillRect(0, 0, W, H)
-
-    // The course: twelve film strips running into the light, frame by frame.
-    const LW = LANE_ANGLE
-    const cam = r.d - ZP
-    const i0 = Math.floor((cam + ZNEAR) / ROW) - 1
-    const i1 = Math.floor((cam + ZFAR) / ROW)
-    const gapA = LW * 0.03
-    for (let i = i1; i >= i0; i--) {
-      const z0 = Math.max(ZNEAR, i * ROW - cam + ROW * 0.035)
-      const z1 = (i + 1) * ROW - cam - ROW * 0.035
-      if (z1 <= ZNEAR + 0.01) continue
-      const row = rowAt(r, i)
-      const zm = (z0 + z1) / 2
-      const tone = 0.3 + 0.38 * Math.pow(clamp((zm - 1) / 13, 0, 1), 0.8)
-      const alpha = smooth(ZFAR, ZFAR - 2.5, zm)
-      if (alpha <= 0.01) continue
-      g.globalAlpha = alpha
-      g.beginPath()
-      for (let l = 0; l < LANES; l++) if (!row || row[l]) quad(l * LW - LW / 2 + gapA, l * LW + LW / 2 - gapA, z0, z1)
-      g.fillStyle = mix('#1a4a3f', '#8fe6c2', tone)
-      g.fill()
-      if (row) {
-        // A bright lip wherever the floor drops away, so holes read as holes.
-        const ahead = rowAt(r, i + 1)
-        const behind = i > 0 ? rowAt(r, i - 1) : null
-        g.beginPath()
-        for (let l = 0; l < LANES; l++) {
-          if (!row[l]) continue
-          const a0 = l * LW - LW / 2 + gapA
-          const a1 = l * LW + LW / 2 - gapA
-          const edge = (aa: number, za: number, ab: number, zb: number) => {
-            let p = P(aa, za, 1)
-            g.moveTo(p[0], p[1])
-            p = P(ab, zb, 1)
-            g.lineTo(p[0], p[1])
-          }
-          if (ahead && !ahead[l]) edge(a0, z1, a1, z1)
-          if (behind && !behind[l]) edge(a0, z0, a1, z0)
-          if (!row[lane(l - 1)]) edge(a0, z0, a0, z1)
-          if (!row[lane(l + 1)]) edge(a1, z0, a1, z1)
-        }
-        g.strokeStyle = 'rgba(225,255,240,0.9)'
-        g.lineWidth = clamp((F * 0.018) / zm, 1, 4)
-        g.lineCap = 'round'
-        g.stroke()
-      }
-      if (tone < 0.85) {
-        g.beginPath()
-        for (let l = 0; l < LANES; l++) if (!row || row[l]) quad(l * LW - LW * 0.3, l * LW + LW * 0.3, lerp(z0, z1, 0.12), lerp(z0, z1, 0.88))
-        g.fillStyle = `rgba(110,225,180,${0.1 * (1 - tone)})`
-        g.fill()
-      }
-      if ((F / z1) * LW * 0.05 > 1.1) {
-        g.beginPath()
-        for (let l = 0; l < LANES; l++) {
-          if (row && !row[l]) continue
-          for (const ea of [-0.41, 0.41]) {
-            for (const ez of [0.25, 0.75]) {
-              const ac = l * LW + ea * LW
-              const zc = lerp(z0, z1, ez)
-              quad(ac - LW * 0.028, ac + LW * 0.028, zc - ROW * 0.08, zc + ROW * 0.08)
-            }
-          }
-        }
-        g.fillStyle = `rgba(100,230,180,${0.28 * (1 - tone)})`
-        g.fill()
-      }
-    }
-    g.globalAlpha = 1
 
     g.globalCompositeOperation = 'lighter'
     const cr = H * (0.07 + 0.02 * boost)
-    gr = g.createRadialGradient(vx, vy, 0, vx, vy, cr)
+    const gr = g.createRadialGradient(vx, vy, 0, vx, vy, cr)
     gr.addColorStop(0, 'rgba(255,255,246,0.75)')
     gr.addColorStop(0.3, 'rgba(230,255,240,0.3)')
     gr.addColorStop(1, 'rgba(120,230,185,0)')

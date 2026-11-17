@@ -89,6 +89,10 @@ function parseBirthday(raw: string): Date {
   return date;
 }
 
+async function isLoginEmailFree(address: string): Promise<boolean> {
+  return !(await prisma.user.findFirst({ where: { email: address }, select: { id: true } }));
+}
+
 // Create a lab member, or promote the User that already owns any of the given
 // identities. `email` is routed to its typed column by suffix so CAS/Google
 // logins match later; explicit identity fields override that routing. An
@@ -161,15 +165,19 @@ export async function createOrPromoteMember(
   }
 
   const emailValues = EMAIL_COLUMNS.flatMap((c) => (identity[c] ? [identity[c] as string] : []));
+  const loginEmail = emailValues[0];
   const existing = await prisma.user.findFirst({
     where: {
       OR: [
-        ...emailValues.flatMap((value) => EMAIL_COLUMNS.map((c) => ({ [c]: value }))),
+        ...emailValues.flatMap((value) =>
+          [...EMAIL_COLUMNS, "email"].map((c) => ({ [c]: value })),
+        ),
         ...(identity.netId ? [{ netId: identity.netId }] : []),
       ],
     },
     select: {
       id: true,
+      email: true,
       daliEmail: true,
       dartmouthEmail: true,
       personalEmail: true,
@@ -202,6 +210,9 @@ export async function createOrPromoteMember(
     }
     if (classYear !== undefined && existing.classYear == null) fill.classYear = classYear;
     if (birthday && existing.birthday == null) fill.birthday = birthday;
+    if (loginEmail && existing.email == null && (await isLoginEmailFree(loginEmail))) {
+      fill.email = loginEmail;
+    }
     if (Object.keys(fill).length > 0) {
       await prisma.user.update({ where: { id: existing.id }, data: fill });
     }
@@ -213,6 +224,7 @@ export async function createOrPromoteMember(
     data: {
       firstName,
       lastName,
+      ...(loginEmail ? { email: loginEmail } : {}),
       ...identity,
       ...profile,
       classYear,

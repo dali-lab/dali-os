@@ -8,6 +8,9 @@ vi.mock("~/partners/lib/partner-activity.server", () => ({
   setApplicationStage: vi.fn().mockResolvedValue("New"),
 }));
 vi.mock("~/partners/lib/planning-notes.server", () => ({ movePlanningNoteToProject: vi.fn() }));
+vi.mock("~/partners/lib/referral-status.server", () => ({
+  onApplicationBecameProject: vi.fn().mockResolvedValue(undefined),
+}));
 vi.mock("~/partners/lib/partner-returns.server", () => ({
   reopenProjectFromApplication: vi.fn().mockResolvedValue({ id: "proj-old" }),
 }));
@@ -16,6 +19,7 @@ import { prisma } from "~/lib/db.server";
 import { setApplicationStage } from "~/partners/lib/partner-activity.server";
 import { movePlanningNoteToProject } from "~/partners/lib/planning-notes.server";
 import { reopenProjectFromApplication } from "~/partners/lib/partner-returns.server";
+import { onApplicationBecameProject } from "~/partners/lib/referral-status.server";
 import { promotePartnerApplication } from "../partner-promote.server";
 
 const db = prisma as unknown as {
@@ -96,6 +100,30 @@ describe("promotePartnerApplication", () => {
       applicationId: "app-1",
       projectId: "proj-new",
     });
+  });
+
+  it("tells referral status about the new project after the transaction", async () => {
+    db.partnerApplication.findUnique.mockResolvedValue({ ...base });
+    useTx(makeTx());
+    await promotePartnerApplication({ applicationId: "app-1", actorUserId: "u1" });
+    expect(onApplicationBecameProject).toHaveBeenCalledWith("app-1", "proj-new");
+  });
+
+  it("tells referral status about a reopened project", async () => {
+    db.partnerApplication.findUnique.mockResolvedValue({
+      ...base,
+      continuesProjectId: "proj-old",
+      targetTerms: [{ termId: "t26f" }],
+    });
+    db.$transaction = vi.fn(async (cb: (t: unknown) => unknown) => cb({}));
+    await promotePartnerApplication({ applicationId: "app-1", actorUserId: "u1" });
+    expect(onApplicationBecameProject).toHaveBeenCalledWith("app-1", "proj-old");
+  });
+
+  it("does not call the hook for an already-promoted application", async () => {
+    db.partnerApplication.findUnique.mockResolvedValue({ ...base, resultingProjectId: "p" });
+    await promotePartnerApplication({ applicationId: "app-1", actorUserId: "u1" });
+    expect(onApplicationBecameProject).not.toHaveBeenCalled();
   });
 
   it("creates role requests for the first target term only", async () => {

@@ -324,36 +324,52 @@ export type WebsiteMeetingRequest = {
   need: string;
   plan: string;
   payer: string;
+  wantsMeeting: boolean;
+  billing?: string | null;
+  addons?: string[] | null;
   notes?: string | null;
 };
 
-// Sent to the lab's own partners@ inbox, not to the partner, when someone on the
-// website's support plan finder asks to meet. No dedup key: each request is its
-// own ask.
+// Sent to the lab's own partners@ inbox, not to the partner, for every request
+// from the website's support plan finder. Requests that ask to meet are marked
+// in the subject. No dedup key: each request is its own ask.
 export async function sendWebsiteMeetingRequestEmail(req: WebsiteMeetingRequest): Promise<void> {
   const row = (label: string, value: string) =>
     `<tr><td style="padding:4px 16px 4px 0;color:#52525b;vertical-align:top;white-space:nowrap;">${label}</td><td style="padding:4px 0;">${value}</td></tr>`;
   const mailto = `mailto:${encodeURIComponent(req.email)}`;
+  const who = `<strong>${escapeHtml(req.name)}</strong> from ${escapeHtml(req.org)}`;
+  const project = `<strong>${escapeHtml(req.project)}</strong>`;
   await send(
     PARTNERS_FROM_EMAIL,
     {
-      subject: `Meeting request: ${req.name} (${req.org})`,
-      preheader: `${escapeHtml(req.name)} would like to talk about support for ${escapeHtml(req.project)}.`,
+      subject: `${req.wantsMeeting ? "Meeting request" : "Support request"}: ${req.name} (${req.org})`,
+      preheader: req.wantsMeeting
+        ? `${escapeHtml(req.name)} would like to talk about support for ${escapeHtml(req.project)}.`
+        : `${escapeHtml(req.name)} asked for ${escapeHtml(req.plan)} for ${escapeHtml(req.project)}.`,
       bodyHtml: [
-        `<p style="margin:0 0 16px;"><strong>${escapeHtml(req.name)}</strong> from ${escapeHtml(req.org)} asked to meet about support for <strong>${escapeHtml(req.project)}</strong> on the website's support plan finder.</p>`,
+        req.wantsMeeting
+          ? `<p style="margin:0 0 16px;">${who} asked to meet about support for ${project} on the website's support plan finder.</p>`
+          : `<p style="margin:0 0 16px;">${who} sent a support request for ${project} on the website's support plan finder. They don't need a call.</p>`,
         `<table role="presentation" style="border-collapse:collapse;margin:0 0 16px;font-size:14px;">`,
         row("Email", `<a href="${escapeHtml(mailto)}">${escapeHtml(req.email)}</a>`),
         row("Organization", escapeHtml(req.org)),
         row("Project", escapeHtml(req.project)),
         row("Needs", escapeHtml(req.need)),
         row("Plan", escapeHtml(req.plan)),
+        req.billing ? row("Billing", escapeHtml(req.billing)) : "",
+        req.addons?.length ? row("Add-ons", req.addons.map(escapeHtml).join(", ")) : "",
         row("Paying as", escapeHtml(req.payer)),
+        row("Wants to meet", req.wantsMeeting ? "Yes" : "No"),
         `</table>`,
         req.notes ? typed(req.notes) : "",
-        aside("We told them we'd get back to them soon. Reply to set up a time."),
+        aside(
+          req.wantsMeeting
+            ? "We told them we'd get back to them soon. Reply to set up a time."
+            : "We told them we'd get back to them soon to confirm their plan and billing.",
+        ),
       ].join("\n"),
       cta: { href: mailto, label: `Reply to ${escapeHtml(req.name)}` },
     },
-    { eventType: "partner.website_meeting_request" },
+    { eventType: req.wantsMeeting ? "partner.website_meeting_request" : "partner.website_support_request" },
   );
 }

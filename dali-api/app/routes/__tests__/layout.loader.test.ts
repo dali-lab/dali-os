@@ -28,6 +28,7 @@ vi.mock("~/lib/layout-reads.server", () => ({
   layoutRoles: vi.fn(),
 }));
 vi.mock("~/lib/feature-flags.server", () => ({ resolveFeatureFlags: vi.fn() }));
+vi.mock("~/lib/alumni-onboarding.server", () => ({ alumniInviteFor: vi.fn() }));
 vi.mock("~/lib/activities.server", () => ({ resolveActiveActivitiesForUser: vi.fn() }));
 vi.mock("~/lib/server-timing", () => ({
   timed: (_request: Request, _name: string, run: () => unknown) => run(),
@@ -41,6 +42,7 @@ import { getActiveCycles } from "~/hiring/lib/cycles";
 import { layoutAppGate, layoutFavorites, layoutFormGate, layoutRoles } from "~/lib/layout-reads.server";
 import { loadShellUser } from "~/lib/shell-user.server";
 import { resolveFeatureFlags } from "~/lib/feature-flags.server";
+import { alumniInviteFor } from "~/lib/alumni-onboarding.server";
 import { resolveActiveActivitiesForUser } from "~/lib/activities.server";
 import { publicDocRedirectForPath } from "~/lib/public-doc.server";
 import { redirectToLogin } from "~/lib/login-next";
@@ -173,6 +175,34 @@ describe("layout loader gate order", () => {
     expect(data).not.toBeInstanceOf(Response);
     expect(layoutAppGate).not.toHaveBeenCalled();
     expect(layoutFormGate).not.toHaveBeenCalled();
+  });
+
+  describe("alumni first-login invite", () => {
+    const loadAs = async (flags: Record<string, boolean>, isAlumni = true) => {
+      vi.mocked(layoutRoles).mockResolvedValue({ isLabMemberOrAlum: true, isLabMember: false, isAlumni } as never);
+      vi.mocked(loadShellUser).mockResolvedValue({ photoUrl: null, calendarLinks: [] } as never);
+      vi.mocked(resolveFeatureFlags).mockResolvedValue(flags as never);
+      vi.mocked(resolveActiveActivitiesForUser).mockResolvedValue([] as never);
+      return (await run().result) as unknown as { alumniInvite: string | null };
+    };
+
+    it("asks which invite to show when the onboarding flag is on", async () => {
+      vi.mocked(alumniInviteFor).mockResolvedValue("onboarding");
+      const flags = { "alumni-onboarding": true, "alumni-game": true };
+      expect((await loadAs(flags)).alumniInvite).toBe("onboarding");
+      expect(alumniInviteFor).toHaveBeenCalledWith("ada", true, flags);
+    });
+
+    it("still asks for the game invite when only the game flag is on", async () => {
+      vi.mocked(alumniInviteFor).mockResolvedValue("game");
+      expect((await loadAs({ "alumni-game": true })).alumniInvite).toBe("game");
+    });
+
+    it("shows no invite when both flags are off or the member is not an alumnus", async () => {
+      expect((await loadAs({})).alumniInvite).toBeNull();
+      expect((await loadAs({ "alumni-onboarding": true }, false)).alumniInvite).toBeNull();
+      expect(alumniInviteFor).not.toHaveBeenCalled();
+    });
   });
 
   describe("external instructors", () => {

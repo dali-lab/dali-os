@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { createRoutesStub } from "react-router";
-import { PlanningApplicationModal } from "../PlanningApplicationModal";
+import { PlanningApplicationPanel } from "../PlanningApplicationPanel";
 import type { PlanningApplicationInfo } from "~/partners/lib/planning-gap.server";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -15,7 +15,7 @@ let posted: FormData[];
 async function mount(info: PlanningApplicationInfo, canEdit = true) {
   posted = [];
   const Page = () =>
-    createElement(PlanningApplicationModal, {
+    createElement(PlanningApplicationPanel, {
       applicationId: "a1",
       info,
       canEdit,
@@ -24,7 +24,6 @@ async function mount(info: PlanningApplicationInfo, canEdit = true) {
         { id: "eng", name: "Engineering" },
         { id: "des", name: "Design" },
       ],
-      onClose: () => {},
     });
   const Stub = createRoutesStub([
     { path: "/", Component: Page, loader: () => null },
@@ -65,14 +64,13 @@ afterEach(() => {
   container.remove();
 });
 
-describe("PlanningApplicationModal", () => {
-  it("shows the stage and partner, and links to the board card", async () => {
-    await mount(info);
-    expect(document.body.textContent).toContain("Beacon");
-    expect(document.body.textContent).toContain("Acme");
-    expect(document.body.textContent).toContain("Interview");
-    const link = Array.from(document.body.querySelectorAll("a")).find((a) => a.textContent?.includes("Partners board"));
-    expect(link?.getAttribute("href")).toBe("/core/partners?application=a1");
+describe("PlanningApplicationPanel", () => {
+  it("leaves the summary and PI to the application window, showing the PI read-only", async () => {
+    await mount({ ...info, pi: { userId: "c1", name: "Core Person" } });
+    expect(document.body.querySelector("textarea[aria-label='Application summary']")).toBeNull();
+    expect(document.body.querySelector("button[aria-label='PI for Application']")).toBeNull();
+    expect(document.body.textContent).toContain("Core Person");
+    expect(document.body.textContent).toContain("Set the PI in the panel on the right.");
   });
 
   it("posts a new note for the application", async () => {
@@ -105,7 +103,6 @@ describe("PlanningApplicationModal", () => {
 
   it("names the past project a return continues, with a link", async () => {
     await mount({ ...info, continues: { projectId: "old", name: "Research Computing Dashboard", lastTermCode: "26S" } });
-    expect(document.body.textContent).toContain("Returning project");
     expect(document.body.textContent).toContain("Return of Research Computing Dashboard (last ran 26S)");
     const link = Array.from(document.body.querySelectorAll("a")).find((a) => a.textContent === "Research Computing Dashboard");
     expect(link?.getAttribute("href")).toBe("/projects/old");
@@ -113,26 +110,13 @@ describe("PlanningApplicationModal", () => {
 
   it("says nothing about a return for a fresh application", async () => {
     await mount(info);
-    expect(document.body.textContent).toContain("Application");
     expect(document.body.textContent).not.toContain("Return of");
   });
 
-  it("shows the summary, target terms and expected spots like a confirmed project", async () => {
+  it("shows the target terms and expected spots like a confirmed project", async () => {
     await mount(info);
-    expect(document.body.querySelector<HTMLTextAreaElement>("textarea[aria-label='Application summary']")!.value).toBe(
-      "A kiosk for the museum lobby",
-    );
     expect(document.body.textContent).toContain("Wants 27W, 27S");
     expect(document.body.textContent).toContain("2 spots");
-  });
-
-  it("posts a PI for the application", async () => {
-    await mount(info);
-    await click(document.body.querySelector("button[aria-label='PI for Application']")!);
-    await click(
-      Array.from(document.body.querySelectorAll("button[role='option']")).find((o) => o.textContent === "Core Person")!,
-    );
-    expect(Object.fromEntries(posted[0])).toEqual({ intent: "application-pi", applicationId: "a1", piUserId: "c1" });
   });
 
   it("posts edited expected spots", async () => {
@@ -146,18 +130,4 @@ describe("PlanningApplicationModal", () => {
     });
   });
 
-  it("posts an edited summary", async () => {
-    await mount(info);
-    const textarea = document.body.querySelector<HTMLTextAreaElement>("textarea[aria-label='Application summary']")!;
-    await act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(textarea, "A lobby kiosk");
-      textarea.dispatchEvent(new Event("input", { bubbles: true }));
-    });
-    await click(buttonByText("Save summary")!);
-    expect(Object.fromEntries(posted[0])).toEqual({
-      intent: "application-summary",
-      applicationId: "a1",
-      summary: "A lobby kiosk",
-    });
-  });
 });

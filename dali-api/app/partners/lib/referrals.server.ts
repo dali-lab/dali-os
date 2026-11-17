@@ -8,6 +8,7 @@ import { getUserRoles } from "~/lib/roles";
 import type { PartnerReferralTier } from "~/generated/prisma/enums";
 import { notifyPartners } from "./partner-notify.server";
 import { REFERRAL_TIER_LABEL } from "./referral-quiz";
+import { referralStatus, type ReferralStatus } from "./referral-status";
 
 export async function requireReferralsEnabled(userId: string, request: Request): Promise<void> {
   const roles = await getUserRoles(userId, request);
@@ -100,6 +101,7 @@ export type ReferralListRow = {
   partnerOrgName: string | null;
   referrerName: string;
   reachedOutAt: string | null;
+  status: ReferralStatus;
 };
 
 export async function listReferralsForCore(): Promise<ReferralListRow[]> {
@@ -113,11 +115,20 @@ export async function listReferralsForCore(): Promise<ReferralListRow[]> {
       partnerEmail: true,
       partnerOrgName: true,
       reachedOutAt: true,
+      partnerApplicationId: true,
       referredBy: {
         select: { firstName: true, lastName: true },
       },
     },
   });
+  const appIds = rows.flatMap((r) => (r.partnerApplicationId ? [r.partnerApplicationId] : []));
+  const apps = appIds.length
+    ? await prisma.partnerApplication.findMany({
+        where: { id: { in: appIds } },
+        select: { id: true, resultingProjectId: true },
+      })
+    : [];
+  const projectByApp = new Map(apps.map((a) => [a.id, a.resultingProjectId]));
   return rows.map((r) => ({
     id: r.id,
     createdAt: r.createdAt.toISOString(),
@@ -127,6 +138,11 @@ export async function listReferralsForCore(): Promise<ReferralListRow[]> {
     partnerOrgName: r.partnerOrgName,
     referrerName: `${r.referredBy.firstName} ${r.referredBy.lastName}`.trim(),
     reachedOutAt: r.reachedOutAt?.toISOString() ?? null,
+    status: referralStatus({
+      reachedOutAt: r.reachedOutAt,
+      partnerApplicationId: r.partnerApplicationId,
+      resultingProjectId: r.partnerApplicationId ? (projectByApp.get(r.partnerApplicationId) ?? null) : null,
+    }),
   }));
 }
 
@@ -142,6 +158,8 @@ export type ReferralDetail = {
   pitchBody: string | null;
   coreNotes: string | null;
   reachedOutAt: string | null;
+  partnerApplicationId: string | null;
+  status: ReferralStatus;
   referredBy: {
     id: string;
     firstName: string;
@@ -175,6 +193,12 @@ export async function getReferralForCore(
     },
   });
   if (!row) return null;
+  const linked = row.partnerApplicationId
+    ? await prisma.partnerApplication.findUnique({
+        where: { id: row.partnerApplicationId },
+        select: { resultingProjectId: true },
+      })
+    : null;
   return {
     id: row.id,
     createdAt: row.createdAt.toISOString(),
@@ -187,6 +211,12 @@ export async function getReferralForCore(
     pitchBody: row.pitchBody,
     coreNotes: row.coreNotes,
     reachedOutAt: row.reachedOutAt?.toISOString() ?? null,
+    partnerApplicationId: row.partnerApplicationId,
+    status: referralStatus({
+      reachedOutAt: row.reachedOutAt,
+      partnerApplicationId: row.partnerApplicationId,
+      resultingProjectId: linked?.resultingProjectId ?? null,
+    }),
     referredBy: row.referredBy,
     reachedOutBy: row.reachedOutBy,
   };

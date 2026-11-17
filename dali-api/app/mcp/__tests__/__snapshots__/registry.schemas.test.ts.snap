@@ -466,7 +466,12 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
           "resume_review.accepted",
           "gallery.comment",
           "gallery.reaction",
-          "community.event_nearby"
+          "community.event_nearby",
+          "opportunities.interest",
+          "opportunities.chat_offered",
+          "opportunities.chat_ask_match",
+          "opportunities.still_open",
+          "opportunities.referral_shipped"
         ],
         "description": "Event type key, as returned by \`list_notification_preferences\`."
       },
@@ -3294,7 +3299,8 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
           "partnerApplication",
           "cycle",
           "guide",
-          "helpArticle"
+          "helpArticle",
+          "resourceHub"
         ],
         "description": "Return only this category and page through it with limit and cursor."
       },
@@ -10527,5 +10533,46 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
     "additionalProperties": false
   },
   "requiredScope": "mcp:write"
+}
+{
+  "name": "list_resource_hubs",
+  "description": "List the Resource Hubs you can open, one per domain: id, domain, title, whether it is published, whether you can edit it, and its URL. Everyone sees published hubs; drafts show only to Core, the hub's creator and the leads of its domain.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {},
+    "additionalProperties": false
+  },
+  "requiredScope": "mcp:read"
+}
+{
+  "name": "get_resource_hub",
+  "description": "One Resource Hub: title, domain, published state and its page as Markdown. Pass hubId or domainId. A draft hub is not found unless you can edit it. Long pages come back in chunks of limit characters: pass page.nextCursor as cursor until page.hasMore is false.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "hubId": {
+        "type": "string",
+        "minLength": 1,
+        "description": "A hub id from list_resource_hubs."
+      },
+      "domainId": {
+        "type": "string",
+        "minLength": 1,
+        "description": "A domain id from list_domains. Used when hubId is not given."
+      },
+      "limit": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 200000,
+        "description": "Page size (default 50000, max 200000)."
+      },
+      "cursor": {
+        "type": "string",
+        "description": "Pass page.nextCursor from the previous response to get the next page."
+      }
+    },
+    "additionalProperties": false
+  },
+  "requiredScope": "mcp:read"
 }"
 `;

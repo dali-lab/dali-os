@@ -25,6 +25,7 @@ export function AnchoredCard({
   className,
   draggable = false,
   excludeRef,
+  placement = "right-start",
   children,
 }: {
   anchor?: DOMRect | null;
@@ -35,6 +36,7 @@ export function AnchoredCard({
   draggable?: boolean;
   /** A press on this node (usually the trigger) is not an outside press. */
   excludeRef?: RefObject<HTMLElement | null>;
+  placement?: "right-start" | "bottom-start";
   children: ReactNode;
 }) {
   const [dragPos, setDragPos] = useState<{ left: number; top: number } | null>(null);
@@ -45,11 +47,11 @@ export function AnchoredCard({
       if (!open) onClose();
     },
     strategy: "fixed",
-    placement: "right-start",
+    placement,
     whileElementsMounted: autoUpdate,
     middleware: [
       offset(MARGIN),
-      flip({ padding: MARGIN, fallbackPlacements: ["left-start"] }),
+      flip({ padding: MARGIN, fallbackPlacements: [placement === "bottom-start" ? "top-start" : "left-start"] }),
       shift({ padding: MARGIN }),
     ],
   });

@@ -20,6 +20,7 @@ import {
   listReferralsForCore,
   type ReferralListRow,
 } from "~/partners/lib/referrals.server";
+import { REFERRAL_STATUS_LABEL } from "~/partners/lib/referral-status";
 import { relativeTime } from "~/lib/relative-time";
 import { cn } from "~/lib/cn";
 
@@ -127,16 +128,11 @@ function ReferralRow({ row }: { row: ReferralListRow }) {
         <span
           className={cn(
             "inline-flex items-center gap-1 text-xs",
-            row.reachedOutAt ? "text-foreground" : "text-os-amber",
+            row.status === "Sent" ? "text-os-amber" : "text-foreground",
           )}
         >
-          {row.reachedOutAt ? (
-            <>
-              <Check className="h-3 w-3" /> Reached out
-            </>
-          ) : (
-            <>New</>
-          )}
+          {row.status !== "Sent" && <Check className="h-3 w-3" />}
+          {REFERRAL_STATUS_LABEL[row.status]}
         </span>
       </td>
     </tr>

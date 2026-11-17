@@ -11,7 +11,8 @@ import { publishCommentChange } from "~/lib/comment-events.server";
 import { notifyMentions } from "~/lib/mentions.server";
 import { commentAnchorSchema, anchorSlideId } from "~/lib/slide-comments";
 import { docCommentContext } from "~/lib/comment-links.server";
-import type { BodySegment } from "~/lib/comment-body";
+import { keepMentionChips, type BodySegment } from "~/lib/comment-body";
+import { bodySegmentsSchema } from "~/lib/comment-body-schema";
 
 // POST   /api/comments/:id  { intent: "edit" | "set-anchor" | "react" | "unreact" }
 // DELETE /api/comments/:id
@@ -106,25 +107,26 @@ export async function action({ request, params }: Route.ActionArgs) {
       return withCors(request, Response.json({ error: "Invalid body" }, { status: 400 }));
     }
 
-    // bodyJson is optional — old clients editing a comment may not send it.
-    const newBodyJson = Array.isArray(body?.bodyJson)
-      ? (body.bodyJson as BodySegment[])
-      : undefined;
+    const parsedJson = body?.bodyJson == null ? null : bodySegmentsSchema.safeParse(body.bodyJson);
+    if (parsedJson && !parsedJson.success) {
+      return withCors(request, Response.json({ error: "Invalid bodyJson" }, { status: 400 }));
+    }
 
-    // Read the previous bodyJson before overwriting so we can compute
-    // which mentions are genuinely new (not previously notified on this comment).
     const prev = await prisma.docComment.findUnique({
       where: { id: comment.id },
-      select: { bodyJson: true, targetId: true, targetType: true },
+      select: { bodyJson: true },
     });
-    const prevSegments = Array.isArray(prev?.bodyJson)
-      ? (prev.bodyJson as BodySegment[])
-      : [];
+    const prevSegments = Array.isArray(prev?.bodyJson) ? (prev.bodyJson as BodySegment[]) : [];
     const prevMentionIds = new Set(
       prevSegments
         .filter((s): s is Extract<BodySegment, { type: "mention" }> => s.type === "mention")
         .map((s) => s.userId),
     );
+    const newBodyJson: BodySegment[] | undefined = parsedJson
+      ? parsedJson.data
+      : prevSegments.length > 0
+        ? keepMentionChips(newBody.data, prevSegments)
+        : undefined;
 
     await prisma.docComment.update({
       where: { id: comment.id },

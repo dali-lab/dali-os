@@ -8,3 +8,4 @@ export { Popover } from "./Popover";
 export { AnchoredCard } from "./AnchoredCard";
 export { Tooltip, InfoTip } from "./Tooltip";
 export { isInFloatingLayer, FLOATING_LAYER_SELECTOR } from "./outside";
+export { useOutsideDismiss } from "./useOutsideDismiss";

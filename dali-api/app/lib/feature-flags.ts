@@ -86,6 +86,12 @@ export const FEATURE_FLAGS = [
       "The Community sidebar area: Community, Opportunities, Gallery and Stories. Stories opens /resources: a front page of member stories (Internal, or Public to also appear on dali.website) plus bookmark tabs, reference pages that Core/Admin create, edit and delete and every lab member reads. Ships off; without it Community stays under Lab and the other Community pages are not reachable.",
   },
   {
+    key: "resource-hub",
+    label: "Resource Hub",
+    description:
+      "A Resource Hub entry beside Calendar, Email and Drive: freely created hub pages, each a blank canvas its owners lay out with the editor's / blocks. Every lab member can read published hubs. Ships off.",
+  },
+  {
     key: "email-personal",
     label: "Email: personal DALI inbox",
     description:
@@ -127,7 +133,7 @@ export const FEATURE_FLAGS = [
     key: "website-meeting-requests",
     label: "Website meeting requests",
     description:
-      "When a partner asks to meet on the website's support plan finder (dali.dartmouth.edu/support-plans), dali.website calls api/public/partner-meeting-requests and DALI OS emails partners@dali.dartmouth.edu with their details. Turning this off makes that endpoint return 404; the website still files the request to its form. Only the whole-lab setting counts. Ships on.",
+      "Every request from the website's support plan finder (dali.dartmouth.edu/support-plans): dali.website calls api/public/partner-meeting-requests and DALI OS emails partners@dali.dartmouth.edu with the details, with requests to meet marked in the subject. Turning this off makes that endpoint return 404; the website still files the request to its form. Only the whole-lab setting counts. Ships on.",
     defaultEnabled: true,
     defaultEveryone: true,
   },
@@ -184,6 +190,18 @@ export const FEATURE_FLAGS = [
     label: "Alumni: onboarding game",
     description:
       "New alumni are invited to build a pixel avatar, then finish their profile either on the profile page or by exploring a pixel DALI lab and chatting with Tim on an in-game phone. Ships off.",
+  },
+  {
+    key: "alumni-onboarding",
+    label: "Alumni: onboarding flow",
+    description:
+      "New alumni are invited on first sign-in to check their details, add a few interests and choose what they are open to, in three short steps. With the alumni onboarding game on too, the flow ends with a link into the pixel lab. Ships off.",
+  },
+  {
+    key: "alumni-opportunities",
+    label: "Alumni: Opportunities feed",
+    description:
+      "Community > Opportunities becomes a feed where alumni share jobs (a pasted link fills in the company and its logo) and anyone can ask for a coffee chat, with reactions and comments. Partner referrals show their progress and a post when one becomes a project. Off shows the coming soon page. Ships off.",
   },
 ] as const satisfies readonly FeatureFlagDef[];
 

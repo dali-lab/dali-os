@@ -190,6 +190,17 @@ export function PageRowControlsScope({ children }: { children: ReactNode }) {
   );
 }
 
+const UNSCOPED = { scoped: false, register: () => {} };
+
+/** Cuts a subtree (a dialog) off from the page's row so its own tab rows don't show the page's controls. */
+export function PageRowControlsBoundary({ children }: { children: ReactNode }) {
+  return (
+    <RegisterContext.Provider value={UNSCOPED}>
+      <RegisteredControlsContext.Provider value={[]}>{children}</RegisteredControlsContext.Provider>
+    </RegisterContext.Provider>
+  );
+}
+
 /** True when a page row is listening, so a tab renders its controls there instead of in its own toolbar. */
 export function usePageRowScoped() {
   return useContext(RegisterContext).scoped;
@@ -560,9 +571,11 @@ export function PageTabRow({
       data-density={density}
       className={cn("flex flex-wrap items-center gap-x-3 gap-y-2", className)}
     >
-      <div ref={islandRef} data-slot="island" className="shrink-0">
-        <SegmentedTabButtons items={tabs} label={label} />
-      </div>
+      {tabs.length > 0 && (
+        <div ref={islandRef} data-slot="island" className="shrink-0">
+          <SegmentedTabButtons items={tabs} label={label} />
+        </div>
+      )}
       <div
         ref={clusterRef}
         data-slot="controls"

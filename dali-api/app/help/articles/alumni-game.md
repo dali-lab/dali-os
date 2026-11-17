@@ -6,7 +6,7 @@ keywords: [alumni, game, avatar, pixel, lab, quest, Tim, Lorie, onboarding]
 paths: [/alumni/welcome, /alumni/lab, /alumni/form]
 ---
 
-New alumni get a playful way to settle in. The first time you sign in, DALI OS invites you to build a pixel avatar of yourself. After that you can finish your alumni profile with one [quick form](/alumni/form), or do it inside a small game set in the lab.
+New alumni get a playful way to settle in. When the alumni welcome flow is on, it is the first thing you see after you sign in, and it ends with a link to the pixel lab. Otherwise, the first time you sign in, DALI OS invites you to build a pixel avatar of yourself. After that you can finish your alumni profile the normal way on your [profile](/profile), or do it inside a small game set in the lab.
 
 ## Build your avatar
 

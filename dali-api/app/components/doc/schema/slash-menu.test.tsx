@@ -57,3 +57,18 @@ describe("getFilteredDocSlashMenuItems", () => {
     expect(groupRuns(items)).toEqual(["Basic blocks"]);
   });
 });
+
+describe("component slash items", () => {
+  it("insert blank data without writing a marker into the document, and register the block locally", async () => {
+    const { takeFreshComponent } = await import("./fresh-components");
+    const editor = editorFor("resource");
+    const items = getDocSlashMenuItems(editor, EDITOR_PRESETS.resource, [], vi.fn());
+    const item = items.find((i) => i.title === "Spacer")!;
+    editor.replaceBlocks(editor.document, [{ type: "paragraph" }]);
+    editor.setTextCursorPosition(editor.document[0]!);
+    item.onItemClick();
+    const block = editor.document.find((b) => b.type === "component")!;
+    expect(block.props.data).not.toContain("_new");
+    expect(takeFreshComponent(block.id)).toBe(true);
+  });
+});

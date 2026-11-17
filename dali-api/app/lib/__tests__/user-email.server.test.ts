@@ -90,13 +90,45 @@ describe("resolveLoginIdentifier", () => {
     );
   });
 
-  it("falls through when the matched account has no canonical email", async () => {
-    findAlias.mockResolvedValue({ user: { email: null } } as never);
-    findUser.mockResolvedValue(null as never);
+  it("adopts the alias as canonical when its account has no login email", async () => {
+    findAlias.mockResolvedValue({ user: { id: "u1", email: null } } as never);
 
     expect(await resolveLoginIdentifier("orphan@dartmouth.edu")).toBe(
       "orphan@dartmouth.edu",
     );
+    expect(prisma.user.update).toHaveBeenCalledWith({
+      where: { id: "u1" },
+      data: { email: "orphan@dartmouth.edu" },
+    });
+  });
+
+  it("adopts a legacy-column match as canonical when the account has no login email", async () => {
+    findUser.mockResolvedValue({ id: "u1", email: null } as never);
+
+    expect(await resolveLoginIdentifier("Ada@DALI.Dartmouth.edu")).toBe("ada@dali.dartmouth.edu");
+    expect(prisma.user.update).toHaveBeenCalledWith({
+      where: { id: "u1" },
+      data: { email: "ada@dali.dartmouth.edu" },
+    });
+    expect(lookupNetId).not.toHaveBeenCalled();
+  });
+
+  it("does not touch an account that already has a login email", async () => {
+    findUser.mockResolvedValue({ id: "u1", email: "canonical@dali.dartmouth.edu" } as never);
+
+    await resolveLoginIdentifier("someone@dartmouth.edu");
+    expect(prisma.user.update).not.toHaveBeenCalled();
+  });
+
+  it("still returns the typed address when adopting it collides", async () => {
+    findUser.mockResolvedValue({ id: "u1", email: null } as never);
+    vi.mocked(prisma.user.update).mockRejectedValue(
+      Object.assign(new Error("Unique constraint failed"), { code: "P2002" }),
+    );
+    const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    expect(await resolveLoginIdentifier("ada@dali.dartmouth.edu")).toBe("ada@dali.dartmouth.edu");
+    spy.mockRestore();
   });
 });
 
