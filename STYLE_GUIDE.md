@@ -330,6 +330,9 @@ icon-only `IconButton`s in the card's top right. Choices the user must make
 - Layout with `.os-field-group` (stacked caption and field) and
   `.os-field-row` (side-by-side groups). `.os-field-hint` for help text,
   `.os-required-mark` for the asterisk.
+- Invalid fields: pass `invalid` to `FormField` to set `aria-invalid`. The
+  field gets the red (`--os-danger-ink`) border inside `.os-form`. Show the
+  message beneath it in the error style; do not color the label.
 - Outside a form: `chrome.formTrigger` for a lone Select trigger,
   `chrome.compactField` for a field in a table cell or toolbar.
 - Read-then-edit records: `.os-form-readonly` shows the same form as plain
