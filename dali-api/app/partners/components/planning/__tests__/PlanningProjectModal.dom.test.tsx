@@ -21,8 +21,6 @@ const info: PlanningProjectInfo = {
   applicationId: null,
 };
 
-const onOpenApplication = vi.fn();
-
 const domains = [
   { id: "eng", name: "Engineering" },
   { id: "des", name: "Design" },
@@ -34,7 +32,6 @@ let posted: FormData[];
 
 async function mount(canEdit = true, projectInfo: PlanningProjectInfo = info) {
   posted = [];
-  onOpenApplication.mockClear();
   const Page = () =>
     createElement(PlanningProjectModal, {
       project: { id: "p1", name: "Example", iconEmoji: null },
@@ -44,7 +41,6 @@ async function mount(canEdit = true, projectInfo: PlanningProjectInfo = info) {
       currentTermId: "t26s",
       canEdit,
       onClose: () => {},
-      onOpenApplication,
     });
   const Stub = createRoutesStub([
     { path: "/", Component: Page, loader: () => null },
@@ -74,18 +70,11 @@ afterEach(() => {
   container.remove();
 });
 
-describe("PlanningProjectModal partner application", () => {
-  it("opens the project's partner application in place", async () => {
-    await mount(true, { ...info, applicationId: "app-7" });
-    await click("Open application");
-    expect(onOpenApplication).toHaveBeenCalledWith("app-7");
+describe("PlanningProjectModal for a project with no partner application", () => {
+  it("links to the project page", async () => {
+    await mount(true, info);
     const projectLink = Array.from(document.body.querySelectorAll("a")).find((a) => a.textContent?.includes("Open project"));
     expect(projectLink?.getAttribute("href")).toBe("/projects/p1");
-  });
-
-  it("offers no application button for a project that never came from one", async () => {
-    await mount(true, info);
-    expect(button("Open application")).toBeUndefined();
   });
 });
 

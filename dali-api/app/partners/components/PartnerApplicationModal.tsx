@@ -8,11 +8,13 @@
 // (see partner-detail-fetch.ts) rather than a <Form>/useFetcher — a
 // cross-route redirect from a fetcher would navigate the whole app there.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router";
 import {
   Activity,
   CalendarDays,
+  CalendarRange,
+  FolderKanban,
   ClipboardCheck,
   FileText,
   Mail,
@@ -50,7 +52,8 @@ import { ProjectIconPicker } from "~/projects/components/ProjectIconPicker";
 
 const TAB_ROW_LIMIT = 8;
 
-type Tab = "activity" | "details" | "sow" | "meetings" | "evaluation" | "email";
+type Tab = "planning" | "activity" | "details" | "sow" | "meetings" | "evaluation" | "email";
+const PLANNING_TAB = { key: "planning" as const, label: "Planning", icon: CalendarRange };
 const TABS: { key: Tab; label: string; icon: LucideIcon }[] = [
   { key: "activity", label: "Activity", icon: Activity },
   { key: "details", label: "Details", icon: FileText },
@@ -74,6 +77,8 @@ export function PartnerApplicationModal({
   termOptions,
   onClose,
   onChanged,
+  planningTab,
+  projectId,
 }: {
   /** null = create mode. */
   card: Pick<PartnerCardModel, "id"> | null;
@@ -83,10 +88,13 @@ export function PartnerApplicationModal({
   onClose: () => void;
   /** Called after any save/move/create the caller should refresh the board for. */
   onChanged: () => void;
+  planningTab?: ReactNode;
+  projectId?: string | null;
 }) {
   const isCreate = !card;
   const dialog = useDialog();
-  const [tab, setTab] = useState<Tab>("activity");
+  const [tab, setTab] = useState<Tab>(planningTab ? "planning" : "activity");
+  const tabs = planningTab ? [PLANNING_TAB, ...TABS] : TABS;
   const [detail, setDetail] = useState<ApplicationDetailResponse | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState(false);
@@ -291,15 +299,24 @@ export function PartnerApplicationModal({
           </div>
           <div className="flex flex-shrink-0 items-center gap-1.5">
             {!isCreate && detail && (
-              <Tooltip content="Open full page">
-                <Link
-                  to={`/core/partners/applications/${detail.application.id}`}
-                  className="os-icon-btn"
-                  aria-label="Open full page"
-                >
-                  <Maximize2 className="h-4 w-4" aria-hidden />
-                </Link>
-              </Tooltip>
+              <>
+                {projectId && (
+                  <Tooltip content="Open project">
+                    <Link to={`/projects/${projectId}`} className="os-icon-btn" aria-label="Open project">
+                      <FolderKanban className="h-4 w-4" aria-hidden />
+                    </Link>
+                  </Tooltip>
+                )}
+                <Tooltip content="Open full page">
+                  <Link
+                    to={`/core/partners/applications/${detail.application.id}`}
+                    className="os-icon-btn"
+                    aria-label="Open full page"
+                  >
+                    <Maximize2 className="h-4 w-4" aria-hidden />
+                  </Link>
+                </Tooltip>
+              </>
             )}
             {!isCreate && !editingTitle && canEdit && detail && (
               <button
@@ -422,7 +439,7 @@ export function PartnerApplicationModal({
               <div className="min-w-0">
                 <PageTabRow
                   label="Application sections"
-                  tabs={TABS.map((t) => ({
+                  tabs={tabs.map((t) => ({
                     label: t.label,
                     icon: t.icon,
                     active: tab === t.key,
@@ -430,6 +447,7 @@ export function PartnerApplicationModal({
                   }))}
                 />
                 <div className="mt-5">
+                  {tab === "planning" && planningTab}
                   {tab === "activity" && (
                     <ActivityTab
                       applicationId={detail.application.id}
