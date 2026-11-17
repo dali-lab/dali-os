@@ -1,5 +1,5 @@
 import { Check, ImagePlus, Plus, Trash2, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useOutsideDismiss } from "~/components/ui/floating";
 import { TONES, safeHref, type ComponentData } from "../kinds";
 import { IMAGE_UPLOAD_ACCEPT, uploadEditorImage } from "../../upload";

@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, Check, GripVertical, ImagePlus, Link2, Pencil, Plus, Trash2 } from "lucide-react";
+import { Check, GripVertical, ImagePlus, Link2, Pencil, Plus, Trash2 } from "lucide-react";
 import { useRef, useState } from "react";
 import { useToast } from "~/components/ui/toast";
 import { TONES, safeHref, type ComponentData } from "../kinds";

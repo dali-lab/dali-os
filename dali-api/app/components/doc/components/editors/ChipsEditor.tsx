@@ -1,5 +1,5 @@
 import { Check, Columns2, Rows2, Plus, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useToast } from "~/components/ui/toast";
 import { useOutsideDismiss } from "~/components/ui/floating";
 import { TONES, safeHref, type ComponentData } from "../kinds";
