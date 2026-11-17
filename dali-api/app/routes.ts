@@ -145,6 +145,7 @@ export default [
     // Projects. The bare /projects route is the area hub (the project list).
     route("projects", "projects/routes/projects.hub.tsx"),
     route("projects/:id", "projects/routes/projects.$id.tsx"),
+    route("projects/:id/showcase", "projects/routes/projects.$id.showcase.tsx"),
     route(
       "projects/:id/partner-view",
       "projects/routes/projects.$id.partner-view.tsx",
@@ -212,6 +213,7 @@ export default [
     // Community: map of where alumni are based (members + alumni).
     route("community", "members/routes/community.tsx"),
     route("community/events/:id/calendar.ics", "members/routes/community.events.$id.calendar.ts"),
+    route("currently", "routes/currently.tsx"),
     // Community: the alumni map lives here in the sidebar, alongside these.
     route("community/opportunities", "community/routes/community.opportunities.tsx"),
     route("community/gallery", "community/routes/community.gallery.tsx"),
@@ -533,6 +535,11 @@ export default [
   route("api/public/media", "public-api/routes/api.public.media.ts"),
   route("api/public/blogs", "public-api/routes/api.public.blogs.ts"),
   route("api/public/blogs/:id", "public-api/routes/api.public.blogs.$id.ts"),
+  // The one write: the website's support plan finder asks to email partners@.
+  route(
+    "api/public/partner-meeting-requests",
+    "public-api/routes/api.public.partner-meeting-requests.ts",
+  ),
 
   route("api/attendance/feed", "routes/api.attendance.feed.ts"),
 

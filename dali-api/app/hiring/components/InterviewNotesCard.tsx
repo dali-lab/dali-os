@@ -28,6 +28,8 @@ export interface InterviewNotesData {
   jointNotes?: { blocks: unknown[]; updatedAt: string | Date | null } | null;
   interviewers?: InterviewNotesInterviewer[];
   openInInterviewerHref?: string; // omit to hide the link
+  /** Rendered after the interviewers in the meta row (full variant only). */
+  interviewersAction?: React.ReactNode;
 }
 
 function JointNotesBody({ interviewId, blocks }: { interviewId: string; blocks: unknown[] }) {
@@ -166,6 +168,7 @@ export function InterviewNotesCard({
           {interviewers.length === 0
             ? "No interviewers assigned"
             : interviewers.map((a) => `${a.name} (${interviewerMetaLabel(a)})`).join(", ")}
+          {interview.interviewersAction}
         </span>
       </div>
       <div className="rounded-os-item bg-os-card p-3">

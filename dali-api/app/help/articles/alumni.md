@@ -28,9 +28,9 @@ Set **Based in** on your profile to appear on the map. Others see **Active today
 
 Alumni get one flat list in the sidebar, with no section switcher:
 
-- **Projects**
+- **Currently at DALI**, with links to projects, stories and the gallery
 - **Community**
-- **Opportunities**, **Gallery** and **Stories**, when your workspace has the Community area
+- **Opportunities**, when your workspace has the Community area
 - **Refer a partner**: see [Refer a partner](/help/articles/refer-a-partner).
 
 Alumni don't see Calendar, Email, Mentorship, Attendance, Education or Drive in the sidebar.

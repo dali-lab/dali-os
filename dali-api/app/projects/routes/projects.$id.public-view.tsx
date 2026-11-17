@@ -48,9 +48,17 @@ export const handle = {
     ];
   },
   headerAction: (data: unknown) => {
-    const d = data as { project?: { id: string } } | undefined;
+    const d = data as
+      | { project?: { id: string }; showcase?: { status: string } | null }
+      | undefined;
     if (!d?.project) return null;
-    return <ProjectViewSwitch projectId={d.project.id} current="public" />;
+    return (
+      <ProjectViewSwitch
+        projectId={d.project.id}
+        current="public"
+        showcasePublished={d.showcase?.status === "Published"}
+      />
+    );
   },
 };
 

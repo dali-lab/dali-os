@@ -12,6 +12,7 @@ vi.mock("~/calendar/lib/notebooks.server", () => ({
   dissolveNotebook: vi.fn(),
   mergeNotebooks: vi.fn(),
   setNotebookTemplate: vi.fn(),
+  setNoteDate: vi.fn(),
   setSeriesNotebook: vi.fn(),
   trashNotebook: vi.fn(),
 }));
@@ -34,6 +35,7 @@ describe("manage_notebook definition", () => {
       "add_page",
       "detach_note",
       "attach_note",
+      "set_date",
       "merge_into",
       "dissolve",
       "trash",
@@ -58,6 +60,9 @@ describe("manage_notebook required fields", () => {
     ["detach_note", {}],
     ["attach_note", { pageId: "d1" }],
     ["attach_note", { meetingId: "m1" }],
+    ["set_date", { date: "2026-10-14" }],
+    ["set_date", { pageId: "d1" }],
+    ["set_date", { pageId: "d1", date: "tuesday" }],
     ["merge_into", { notebookId: "nb1" }],
     ["dissolve", {}],
     ["trash", {}],
@@ -132,6 +137,28 @@ describe("manage_notebook actions", () => {
     await expect(run({ action: "attach_note", pageId: "d1", meetingId: "m1", occurrenceStart: "tuesday" })).rejects.toMatchObject({ status: 400 });
   });
 
+  it.each([
+    ["2026-10-14", "2026-10-14T04:00:00.000Z"],
+    ["2026-01-14", "2026-01-14T05:00:00.000Z"],
+    ["2028-02-29", "2028-02-29T05:00:00.000Z"],
+  ])("set_date files the note under %s as midnight ET", async (date, instant) => {
+    expect(await run({ action: "set_date", pageId: "d1", date })).toEqual({ ok: true, date });
+    expect(lib.setNoteDate).toHaveBeenCalledWith("d1", new Date(instant), "u1");
+  });
+
+  it("set_date with a null date clears it", async () => {
+    expect(await run({ action: "set_date", pageId: "d1", date: null })).toEqual({ ok: true, date: null });
+    expect(lib.setNoteDate).toHaveBeenCalledWith("d1", null, "u1");
+  });
+
+  it.each(["2026-02-30", "2026-13-01", "0099-01-01", "2026-10-14T10:00:00Z", "10/14/2026", ""])(
+    "set_date rejects %j without saving",
+    async (date) => {
+      await expect(run({ action: "set_date", pageId: "d1", date })).rejects.toMatchObject({ status: 400 });
+      expect(lib.setNoteDate).not.toHaveBeenCalled();
+    },
+  );
+
   it("merge_into", async () => {
     vi.mocked(lib.mergeNotebooks).mockResolvedValue({ moved: 4 });
     expect(await run({ action: "merge_into", notebookId: "nb1", targetId: "nb2" })).toEqual({ ok: true, moved: 4 });
@@ -165,12 +192,23 @@ describe("manage_notebook actions", () => {
 describe("manage_notebook authorization", () => {
   const refusal = Object.assign(new Error("Only the organizer or Core can change a meeting's notebook"), { status: 403 });
 
+  it("set_date surfaces the refusal for a note linked to a meeting", async () => {
+    vi.mocked(lib.setNoteDate).mockRejectedValue(
+      Object.assign(new Error("A note linked to a meeting takes its date from the meeting"), { status: 400 }),
+    );
+    await expect(run({ action: "set_date", pageId: "d1", date: "2026-10-14" })).rejects.toMatchObject({
+      status: 400,
+      message: "A note linked to a meeting takes its date from the meeting",
+    });
+  });
+
   it.each([
     ["create", { action: "create", title: "x", workspaceType: "Lab" }, "createNotebook"],
     ["set_template", { action: "set_template", notebookId: "nb1" }, "setNotebookTemplate"],
     ["add_page", { action: "add_page", notebookId: "nb1", pageId: "d1" }, "addToNotebook"],
     ["detach_note", { action: "detach_note", pageId: "d1" }, "detachNote"],
     ["attach_note", { action: "attach_note", pageId: "d1", meetingId: "m1" }, "attachNote"],
+    ["set_date", { action: "set_date", pageId: "d1", date: "2026-10-14" }, "setNoteDate"],
     ["merge_into", { action: "merge_into", notebookId: "nb1", targetId: "nb2" }, "mergeNotebooks"],
     ["dissolve", { action: "dissolve", notebookId: "nb1" }, "dissolveNotebook"],
     ["trash", { action: "trash", notebookId: "nb1" }, "trashNotebook"],

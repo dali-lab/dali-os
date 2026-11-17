@@ -41,6 +41,7 @@ import {
   countNewerPosts,
   galleryAction,
   galleryDownloadUrl,
+  galleryImageUrl,
   loadGalleryPerson,
   searchGalleryPeople,
   loadGalleryPage,
@@ -533,6 +534,23 @@ describe("galleryDownloadUrl", () => {
     db.galleryPost.findFirst.mockResolvedValue({ imageKey: key, caption: null });
     expect(await galleryDownloadUrl(member, "p1")).toBe(
       `/api/upload/raw?key=${encodeURIComponent(key)}`,
+    );
+  });
+});
+
+describe("galleryImageUrl", () => {
+  it("passes a full URL through untouched, with or without S3", async () => {
+    const url = "https://example.test/photo.jpg";
+    s3.isS3Configured.mockReturnValue(false);
+    expect(await galleryImageUrl(url)).toBe(url);
+    s3.isS3Configured.mockReturnValue(true);
+    expect(await galleryImageUrl(url)).toBe(url);
+  });
+
+  it("still signs uploads keys when S3 is configured", async () => {
+    s3.isS3Configured.mockReturnValue(true);
+    expect(await galleryImageUrl("uploads/gallery/x.jpg")).toBe(
+      "https://s3.test/uploads/gallery/x.jpg",
     );
   });
 });
