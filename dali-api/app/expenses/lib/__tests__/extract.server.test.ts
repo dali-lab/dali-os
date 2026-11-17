@@ -55,7 +55,8 @@ describe("extractReceipts", () => {
     expect(aiProvidersFor).toHaveBeenCalledWith("receiptExtract");
     expect(req.model).toBe("claude-sonnet-5-5");
     expect(req.output_config).toEqual({ effort: "low" });
-    expect(req.tool_choice).toEqual({ type: "tool", name: "record_receipts" });
+    expect(req.tool_choice).toEqual({ type: "auto" });
+    expect(req.tools.map((tool: { name: string }) => tool.name)).toEqual(["record_receipts"]);
     const blocks = req.messages[0].content.map((b: { type: string }) => b.type);
     expect(blocks).toEqual(["text", "image", "text", "document", "text"]);
     expect(req.messages[0].content[1].source).toMatchObject({ type: "base64", media_type: "image/png", data: "AQID" });
@@ -107,15 +108,28 @@ describe("extractReceipts", () => {
     expect(out.error).toBeNull();
   });
 
-  it("returns an empty extraction when the model skips the tool", async () => {
-    create.mockResolvedValue({ content: [{ type: "text", text: "sorry" }], usage: { input_tokens: 5, output_tokens: 1 } });
+  it("returns an empty extraction and logs the stop reason when the model skips the tool", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    create.mockResolvedValue({
+      content: [{ type: "text", text: "sorry" }],
+      stop_reason: "end_turn",
+      usage: { input_tokens: 5, output_tokens: 1 },
+    });
     expect(await extractReceipts("u1", [png, png])).toEqual(emptyExtraction(2, "failed"));
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("[expenses:extract]"), "end_turn");
+    log.mockRestore();
   });
 
-  it("returns an empty extraction when the model call throws", async () => {
-    create.mockRejectedValue(new Error("boom"));
+  it("returns an empty extraction and logs the API error message when the model call throws", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    create.mockRejectedValue(new Error('400 tool_choice: type "tool" and "any" are not supported for this model.'));
     await expect(extractReceipts("u1", [png])).resolves.toEqual(emptyExtraction(1, "failed"));
     expect(recordTokenUsage).not.toHaveBeenCalled();
+    expect(log).toHaveBeenCalledWith(
+      expect.stringContaining("[expenses:extract]"),
+      '400 tool_choice: type "tool" and "any" are not supported for this model.',
+    );
+    log.mockRestore();
   });
 
   it("returns an empty extraction without a provider", async () => {
