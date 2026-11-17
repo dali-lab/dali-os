@@ -12,12 +12,14 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { DataProvider, useData } from './contexts/DataContext';
 import { NotesProvider, useNotes, type MeetingTarget } from './contexts/NotesContext';
 import { api, errorMessage } from './api/client';
+import { ExpensesProvider, useExpenses } from './contexts/ExpensesContext';
 import { TimeProvider, useTime } from './contexts/TimeContext';
 import type { TabId } from './types/navigation';
 import { CalendarTab } from './components/calendar/CalendarTab';
 import { NotesTab } from './components/notes/NotesTab';
 import { LandingScreen } from './components/onboarding/LandingScreen';
 import { SyncingScreen } from './components/onboarding/SyncingScreen';
+import { ExpensesScreen } from './components/expenses/ExpensesScreen';
 import { PassTab } from './components/pass/PassTab';
 import { ProfileSheet } from './components/ProfileSheet';
 import { ProjectTab } from './components/project/ProjectTab';
@@ -39,7 +41,9 @@ export default function App() {
         <DataProvider>
           <TimeProvider>
             <NotesProvider>
-              <Shell />
+              <ExpensesProvider>
+                <Shell />
+              </ExpensesProvider>
             </NotesProvider>
           </TimeProvider>
         </DataProvider>
@@ -53,14 +57,17 @@ function Shell() {
   const { reset } = useData();
   const time = useTime();
   const notes = useNotes();
+  const expenses = useExpenses();
   const [synced, setSynced] = useState(false);
   const [tab, setTab] = useState<TabId>('time');
   const [profileOpen, setProfileOpen] = useState(false);
+  const [expensesOpen, setExpensesOpen] = useState(false);
   const resetAll = useRef(() => {});
   resetAll.current = () => {
     reset();
     time.reset();
     notes.reset();
+    expenses.reset();
   };
 
   useEffect(() => {
@@ -68,11 +75,18 @@ function Shell() {
     if (auth.status !== 'signedIn') {
       setSynced(false);
       setProfileOpen(false);
+      setExpensesOpen(false);
       setTab('time');
     }
     // Not while still loading: that would drop a running timer saved on the device.
     if (auth.status === 'signedOut') resetAll.current();
   }, [auth.status]);
+
+  const { loadOptions } = expenses;
+  const signedInSynced = auth.status === 'signedIn' && synced;
+  useEffect(() => {
+    if (signedInSynced) void loadOptions();
+  }, [signedInSynced, loadOptions]);
 
   const stage: Stage | null =
     auth.status === 'loading' ? null : auth.status !== 'signedIn' ? 'landing' : synced ? 'app' : 'syncing';
@@ -132,7 +146,13 @@ function Shell() {
             </View>
           </View>
           <TabBar active={tab} onChange={setTab} />
-          <ProfileSheet open={profileOpen} onClose={() => setProfileOpen(false)} onSignOut={signOut} />
+          <ProfileSheet open={profileOpen} onClose={() => setProfileOpen(false)} onSignOut={signOut}
+            onOpenExpenses={() => {
+              setProfileOpen(false);
+              setExpensesOpen(true);
+            }}
+          />
+          {expensesOpen ? <ExpensesScreen onClose={() => setExpensesOpen(false)} /> : null}
         </View>
       ) : null}
 
