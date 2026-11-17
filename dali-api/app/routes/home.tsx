@@ -12,6 +12,9 @@ import { resolvePhotoUrl } from "~/lib/photo";
 import { fullName } from "~/lib/display";
 import MilestoneHero from "~/components/home/MilestoneHero";
 import BakerHero from "~/components/home/baker/BakerHero";
+import Timeline from "~/components/home/timeline/Timeline";
+import type { TimelineEvent, TimelineTerm } from "~/components/home/timeline/term-timeline";
+import { loadHomeEvents, loadTermProjects } from "~/members/lib/home-timeline.server";
 import { buttonClasses } from "~/components/ui/Button";
 import { readOnlyRoles } from "~/lib/read-only-roles.server";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
@@ -44,11 +47,15 @@ export async function loader({ request }: Route.LoaderArgs) {
   const preview = new URL(request.url).searchParams.get("background");
   const landing = landingWeek(today, preview);
 
-  const [tasks, week, birthdays, alumniHome] = await Promise.all([
+  const alumniHomeCheck = showsAlumniHome(auth.user.sub, request);
+  const [tasks, week, birthdays, alumniHome, timeline] = await Promise.all([
     timed(request, 'home.tasks', () => loadHomeTasks(auth.user.sub, request)),
     loadTermWeek(isLandingBackgroundId(preview) ? landing.from : today, request),
     timed(request, 'home.birthdays', () => loadBirthdaysToday()),
-    showsAlumniHome(auth.user.sub, request),
+    alumniHomeCheck,
+    timed(request, 'home.timeline', async () =>
+      (await alumniHomeCheck) ? loadTimeline(auth.user.sub, request) : null,
+    ),
   ]);
 
   const __loaderTotal = performance.now() - __loaderStart;
@@ -75,7 +82,35 @@ export async function loader({ request }: Route.LoaderArgs) {
     tasks,
     birthdays,
     alumniHome,
+    timeline,
+    tz,
     now: Date.now(),
+  };
+}
+
+async function loadTimeline(
+  userId: string,
+  request: Request,
+): Promise<{ events: TimelineEvent[]; term: TimelineTerm | null }> {
+  const term = await currentTermStrict(request);
+  const today = Date.now();
+  const startMs = term ? Date.UTC(term.startDate.getUTCFullYear(), term.startDate.getUTCMonth(), term.startDate.getUTCDate()) : 0;
+  const index = term ? termWeekNumber(today, startMs) : 0;
+  const [events, projects] = await Promise.all([
+    loadHomeEvents({ id: userId, isAlumni: true }),
+    term && index >= 1 ? loadTermProjects(userId, term.id) : null,
+  ]);
+  return {
+    events,
+    term:
+      term && projects
+        ? {
+            index,
+            term: term.code,
+            startLabel: new Date(startMs).toLocaleString("en-US", { month: "short", day: "numeric", timeZone: "UTC" }),
+            projects,
+          }
+        : null,
   };
 }
 
@@ -165,7 +200,7 @@ const HOME_TASK_LIMIT = 6;
 export const handle = { fitViewport: true, bleedPane: true };
 
 export default function Home() {
-  const { user, greeting, week, milestoneTitle, background, tasks, birthdays, alumniHome, now } =
+  const { user, greeting, week, milestoneTitle, background, tasks, birthdays, alumniHome, timeline, tz, now } =
     useLoaderData<typeof loader>();
   const firstName = user.firstName || user.email.split("@")[0];
 
@@ -182,6 +217,7 @@ export default function Home() {
             </Link>
           }
         />
+        {timeline && <Timeline events={timeline.events} term={timeline.term} tz={tz} />}
       </div>
     );
   }
