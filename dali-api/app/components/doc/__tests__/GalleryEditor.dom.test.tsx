@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, createElement, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { ToastProvider } from "~/components/ui/toast";
-import { GalleryEditor } from "../schema/component";
+import { GalleryEditor } from "../components/editors/GalleryEditor";
 import type { ComponentData } from "../components/kinds";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;

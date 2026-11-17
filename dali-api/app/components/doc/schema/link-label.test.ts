@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { linkLabel } from "./component";
+import { linkLabel } from "../components/editors/LinksEditor";
 
 describe("linkLabel", () => {
   it("shows the host without www", () => {
