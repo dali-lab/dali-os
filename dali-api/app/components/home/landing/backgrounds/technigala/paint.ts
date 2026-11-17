@@ -13,6 +13,9 @@ export const smooth = (a: number, b: number, x: number) => {
  */
 export const strobe = (step: number, pitch: number) => smooth(0.15, 0.35, step / pitch)
 
+/** How many in-between positions to average so a pattern of this pitch blurs instead of strobing. */
+export const blurSamples = (step: number, pitch: number) => 1 + Math.round(3 * strobe(step, pitch))
+
 export function seededRandom(seed: number) {
   return () => {
     seed = (seed + 0x6d2b79f5) | 0
