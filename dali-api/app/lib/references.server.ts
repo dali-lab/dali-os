@@ -1,9 +1,13 @@
 import { displayName, UPLOAD_URL_PREFIX } from "~/lib/crit.server";
 import { fetchLinkPreview } from "~/lib/link-preview.server";
 import { safeHref } from "~/components/doc/components/kinds";
+import { prisma } from "~/lib/db.server";
+import { decodeCursor, keysetAfter, keysetPage } from "~/lib/pagination";
 
 export { loadCritContext as loadReferencesContext } from "~/lib/crit.server";
 
+export const REFERENCES_PAGE_SIZE = 24;
+const AUTHOR = { select: { firstName: true, lastName: true } };
 const MAX_TITLE = 120;
 const MAX_CREATOR = 120;
 const MAX_NOTE = 400;
@@ -47,6 +51,29 @@ export function serializeReference(row: ReferenceRow, viewerId: string, canModer
 }
 
 export type ReferenceView = ReturnType<typeof serializeReference>;
+
+type Viewer = { userId: string; domainId: string; canModerate: boolean };
+
+export async function loadReferencesPage(ctx: Viewer, cursor: string | null) {
+  const rows = await prisma.domainReference.findMany({
+    where: { domainId: ctx.domainId, ...keysetAfter("createdAt", decodeCursor(cursor)) },
+    include: { author: AUTHOR },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    take: REFERENCES_PAGE_SIZE + 1,
+  });
+  const page = keysetPage(rows, REFERENCES_PAGE_SIZE, (r) => ({ at: r.createdAt.toISOString(), id: r.id }));
+  return { items: page.items.map((r) => serializeReference(r, ctx.userId, ctx.canModerate)), nextCursor: page.nextCursor };
+}
+
+/** Current versions of specific references, for a gallery that holds later pages or a link to one. Missing ids are omitted. */
+export async function loadReferencesByIds(ctx: Viewer, ids: string[]) {
+  if (ids.length === 0) return [];
+  const rows = await prisma.domainReference.findMany({
+    where: { domainId: ctx.domainId, id: { in: ids.slice(0, REFERENCES_PAGE_SIZE * 10) } },
+    include: { author: AUTHOR },
+  });
+  return rows.map((r) => serializeReference(r, ctx.userId, ctx.canModerate));
+}
 
 type Credit = { daliMade: boolean; creatorName: string | null };
 

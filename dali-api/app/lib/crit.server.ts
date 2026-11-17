@@ -2,10 +2,13 @@ import { prisma } from "~/lib/db.server";
 import { canEditResourceHub, ledDomainIds, requireResourceHubViewer } from "~/lib/resource-hub.server";
 import { fetchLinkPreview } from "~/lib/link-preview.server";
 import { safeHref } from "~/components/doc/components/kinds";
+import { decodeCursor, keysetAfter, keysetPage } from "~/lib/pagination";
 
 export const UPLOAD_URL_PREFIX = "/api/upload/raw?key=uploads%2F";
 const MAX_TITLE = 120;
 const MAX_QUESTION = 400;
+export const CRIT_PAGE_SIZE = 24;
+const AUTHOR = { select: { firstName: true, lastName: true } };
 
 export interface CritContext {
   userId: string;
@@ -132,4 +135,30 @@ export async function resolveSubmission(input: SubmissionInput): Promise<{ title
     }
   })();
   return { title: input.title || (preview?.title ?? "").slice(0, MAX_TITLE) || host, previewUrl: preview?.image ?? null };
+}
+
+export async function loadCritPage(ctx: Pick<CritContext, "userId" | "domainId" | "canModerate">, cursor: string | null) {
+  const rows = await prisma.critSubmission.findMany({
+    where: { domainId: ctx.domainId, ...keysetAfter("createdAt", decodeCursor(cursor)) },
+    include: { author: AUTHOR },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    take: CRIT_PAGE_SIZE + 1,
+  });
+  const page = keysetPage(rows, CRIT_PAGE_SIZE, (r) => ({ at: r.createdAt.toISOString(), id: r.id }));
+  const counts = await critCommentCounts(page.items.map((r) => r.id));
+  return {
+    items: page.items.map((r) => serializeSubmission(r, ctx.userId, ctx.canModerate, counts.get(r.id) ?? 0)),
+    nextCursor: page.nextCursor,
+  };
+}
+
+/** Current versions of specific posts, for a wall that holds later pages or a link to one. Missing ids are omitted. */
+export async function loadCritPostsByIds(ctx: Pick<CritContext, "userId" | "domainId" | "canModerate">, ids: string[]) {
+  if (ids.length === 0) return [];
+  const rows = await prisma.critSubmission.findMany({
+    where: { domainId: ctx.domainId, id: { in: ids.slice(0, CRIT_PAGE_SIZE * 10) } },
+    include: { author: AUTHOR },
+  });
+  const counts = await critCommentCounts(rows.map((r) => r.id));
+  return rows.map((r) => serializeSubmission(r, ctx.userId, ctx.canModerate, counts.get(r.id) ?? 0));
 }

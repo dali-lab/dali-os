@@ -74,19 +74,36 @@ function PostActions({ submission, onStartEdit, onDelete }: { submission: CritSu
   );
 }
 
-function EditPostForm({ submission, onSave, onCancel }: { submission: CritSubmissionView; onSave: (title: string, question: string) => void; onCancel: () => void }) {
+function EditPostForm({
+  submission,
+  busy,
+  error,
+  onSave,
+  onCancel,
+}: {
+  submission: CritSubmissionView;
+  busy: boolean;
+  error: string | null;
+  onSave: (title: string, question: string) => void;
+  onCancel: () => void;
+}) {
   const [title, setTitle] = useState(submission.title);
   const [question, setQuestion] = useState(submission.question ?? "");
   return (
     <div className="os-form flex flex-col gap-2 rounded-lg bg-os-bg p-3">
       <FormField label="Title" labelHidden value={title} maxLength={120} onChange={setTitle} />
       <FormField label="Question" labelHidden multiline rows={2} value={question} maxLength={400} placeholder="What would you like feedback on?" onChange={setQuestion} />
+      {error && (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      )}
       <div className="flex justify-end gap-2">
-        <button type="button" className="os-btn-ghost text-sm" onClick={onCancel}>
+        <button type="button" className="os-btn-ghost text-sm" disabled={busy} onClick={onCancel}>
           Cancel
         </button>
-        <button type="button" disabled={!title.trim()} className="os-btn-primary os-btn-primary--sm disabled:opacity-50" onClick={() => onSave(title, question)}>
-          Save
+        <button type="button" disabled={!title.trim() || busy} className="os-btn-primary os-btn-primary--sm disabled:opacity-50" onClick={() => onSave(title, question)}>
+          {busy ? "Saving…" : "Save"}
         </button>
       </div>
     </div>
@@ -124,6 +141,7 @@ export function SubmissionOverlay({
   initialThreadId = null,
   onClose,
   onChanged,
+  edit,
   onEdit,
   onDelete,
 }: {
@@ -132,6 +150,7 @@ export function SubmissionOverlay({
   initialThreadId?: string | null;
   onClose: () => void;
   onChanged: () => void;
+  edit?: { busy: boolean; result?: { ok?: boolean; error?: string } };
   onEdit?: (title: string, question: string) => void;
   onDelete?: () => void;
 }) {
@@ -139,6 +158,8 @@ export function SubmissionOverlay({
   const wide = useMediaQuery("(min-width: 1024px)");
   const comments = useSlideComments(submission.id, true, "crit");
   const [editing, setEditing] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const saving = useRef(false);
   const [mode, setMode] = useState<Mode>("view");
   const [draft, setDraft] = useState<{ x: number; y: number } | null>(null);
   const [draftBody, setDraftBody] = useState("");
@@ -173,6 +194,15 @@ export function SubmissionOverlay({
   const popoverThread = wide && active?.pin ? active : null;
   const viewerCtx = { id: viewer.id, canModerate: submission.canModerate };
   const pinned = threads.filter((t) => t.pin);
+
+  const editBusy = edit?.busy ?? false;
+  const editResult = edit?.result;
+  useEffect(() => {
+    if (!saving.current || editBusy || !editResult) return;
+    saving.current = false;
+    if (editResult.ok) setEditing(false);
+    else setSaveError(editResult.error ?? "Couldn't save your changes.");
+  }, [editBusy, editResult]);
 
   useEffect(() => {
     if (!comments.loaded || deepLinked.current || !initialThreadId) return;
@@ -252,16 +282,19 @@ export function SubmissionOverlay({
           {wide && <kbd className="rounded border border-os-container-hi px-1 text-[10px] text-os-grey">C</kbd>}
         </>
       )}
-      <PostActions submission={submission} onStartEdit={() => setEditing(true)} onDelete={onDelete} />
+      <PostActions submission={submission} onStartEdit={() => (setSaveError(null), setEditing(true))} onDelete={onDelete} />
     </>
   );
   const editForm = editing ? (
     <EditPostForm
       submission={submission}
+      busy={editBusy}
+      error={saveError}
       onCancel={() => setEditing(false)}
       onSave={(t, q) => {
+        saving.current = true;
+        setSaveError(null);
         onEdit?.(t, q);
-        setEditing(false);
       }}
     />
   ) : null;

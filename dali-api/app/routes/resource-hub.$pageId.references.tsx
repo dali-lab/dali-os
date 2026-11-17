@@ -4,11 +4,16 @@ import { Plus } from "lucide-react";
 import type { Route } from "./+types/resource-hub.$pageId.references";
 import { EmptyState } from "~/components/ui/EmptyState";
 import { prisma } from "~/lib/db.server";
-import { loadReferencesContext, parseReferenceEdit, parseReferenceForm, resolveReference, serializeReference } from "~/lib/references.server";
+import { loadReferencesByIds, loadReferencesContext, loadReferencesPage, parseReferenceEdit, parseReferenceForm, resolveReference } from "~/lib/references.server";
 import { limitLinkPreviews } from "~/lib/link-preview-limit.server";
 import { PageRowControls } from "~/components/os-page";
 import { useDialog } from "~/components/ui/dialog";
+import { useToast } from "~/components/ui/toast";
+import { LoadMore } from "~/components/ui/Pager";
+import { fetchCursorPage } from "~/hooks/useLoadMore";
+import { useRefreshedLoadMore } from "~/hooks/useRefreshedLoadMore";
 import { ReferenceModal, type ReferenceValues } from "~/components/resource-hub/references/ReferenceModal";
+import type { ReferenceView } from "~/lib/references.server";
 import { ReferenceCard } from "~/components/resource-hub/references/ReferenceCard";
 import { ReferenceOverlay } from "~/components/resource-hub/references/ReferenceOverlay";
 
@@ -16,12 +21,11 @@ export const meta: Route.MetaFunction = () => [{ title: "References · DALI OS" 
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const ctx = await loadReferencesContext(request, params.pageId!);
-  const rows = await prisma.domainReference.findMany({
-    where: { domainId: ctx.domainId },
-    include: { author: { select: { firstName: true, lastName: true } } },
-    orderBy: { createdAt: "desc" },
-  });
-  return { items: rows.map((r) => serializeReference(r, ctx.userId, ctx.canModerate)) };
+  const referenceId = new URL(request.url).searchParams.get("r");
+  const page = await loadReferencesPage(ctx, null);
+  const linked =
+    referenceId && !page.items.some((i) => i.id === referenceId) ? ((await loadReferencesByIds(ctx, [referenceId]))[0] ?? null) : null;
+  return { pageId: params.pageId!, items: page.items, nextCursor: page.nextCursor, linked };
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -67,14 +71,24 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 export default function References() {
-  const { items } = useLoaderData<typeof loader>();
+  const { pageId, items: firstPage, nextCursor, linked } = useLoaderData<typeof loader>();
+  const apiUrl = `/api/resource-hub/${pageId}/references`;
+  const { items, pager } = useRefreshedLoadMore<ReferenceView>({
+    items: firstPage,
+    nextCursor,
+    fetchPage: (cursor) => fetchCursorPage<ReferenceView>(`${apiUrl}?cursor=${encodeURIComponent(cursor)}`),
+    fetchByIds: async (ids) => (await fetchCursorPage<ReferenceView>(`${apiUrl}?ids=${ids.join(",")}`)).items,
+  });
   const [params, setParams] = useSearchParams();
   const fetcher = useFetcher<{ ok?: boolean; error?: string }>();
+  const deleteFetcher = useFetcher<{ ok?: boolean; error?: string }>();
+  const toast = useToast();
   const dialog = useDialog();
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const open = items.find((i) => i.id === params.get("r")) ?? null;
+  const openId = params.get("r");
+  const open = items.find((i) => i.id === openId) ?? (linked?.id === openId ? linked : null);
   const editing = items.find((i) => i.id === editingId) ?? null;
 
   useEffect(() => {
@@ -82,6 +96,13 @@ export default function References() {
     if (fetcher.data.ok) closeForm();
     else setError(fetcher.data.error ?? "Something went wrong.");
   }, [fetcher.state, fetcher.data]);
+
+  useEffect(() => {
+    if (deleteFetcher.state === "idle" && deleteFetcher.data && !deleteFetcher.data.ok) {
+      toast.error(deleteFetcher.data.error ?? "Couldn't delete this reference.");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deleteFetcher.state, deleteFetcher.data]);
 
   const openItem = (id: string) => setParams({ r: id }, { preventScrollReset: true });
   const closeItem = () =>
@@ -111,7 +132,7 @@ export default function References() {
 
   const remove = async (id: string) => {
     if (await dialog.confirm({ title: "Delete this reference?", confirmLabel: "Delete", tone: "destructive" })) {
-      fetcher.submit({ intent: "delete", id }, { method: "post" });
+      deleteFetcher.submit({ intent: "delete", id }, { method: "post" });
     }
   };
 
@@ -129,6 +150,7 @@ export default function References() {
           ))}
         </ul>
       )}
+      <LoadMore {...pager} />
 
       {(adding || editing) && (
         <ReferenceModal

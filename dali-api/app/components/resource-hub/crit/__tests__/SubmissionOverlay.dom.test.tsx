@@ -256,3 +256,61 @@ describe("narrow screens", () => {
     expect(document.querySelector("[data-thread-row='a'] [data-thread-view='a']")).not.toBeNull();
   });
 });
+
+describe("editing the post", () => {
+  const mine = () => submission({ mine: true, canDelete: true });
+  const editButton = () => document.querySelector<HTMLElement>("[aria-label='Edit post']");
+  const save = () => byText("Save") ?? byText("Saving…");
+  const alertText = () => document.querySelector("[role='alert']")?.textContent ?? null;
+  const render = (props: Partial<React.ComponentProps<typeof SubmissionOverlay>>) =>
+    act(async () => {
+      root.render(createElement(SubmissionOverlay, { viewer, submission: mine(), onClose: vi.fn(), onChanged: vi.fn(), ...props }));
+    });
+
+  it("keeps the form open while the save is in flight and closes it once the save succeeds", async () => {
+    const onEdit = vi.fn();
+    await mount({ submission: mine(), onEdit, edit: { busy: false } });
+    click(editButton());
+    click(save());
+    expect(onEdit).toHaveBeenCalledWith("Logo", "Is the contrast ok?");
+    expect(document.querySelector("input[maxlength='120']")).not.toBeNull();
+
+    await render({ onEdit, edit: { busy: true } });
+    expect(document.querySelector("input[maxlength='120']")).not.toBeNull();
+    expect((save() as HTMLButtonElement).disabled).toBe(true);
+
+    await render({ onEdit, edit: { busy: false, result: { ok: true } } });
+    expect(document.querySelector("input[maxlength='120']")).toBeNull();
+  });
+
+  it("shows a failed save in the form and leaves it open", async () => {
+    const onEdit = vi.fn();
+    await mount({ submission: mine(), onEdit, edit: { busy: false } });
+    click(editButton());
+    click(save());
+    await render({ onEdit, edit: { busy: true } });
+    await render({ onEdit, edit: { busy: false, result: { error: "Add a title." } } });
+    expect(alertText()).toBe("Add a title.");
+    expect(document.querySelector("input[maxlength='120']")).not.toBeNull();
+  });
+
+  it("does not show an earlier failure when the form is opened again", async () => {
+    const onEdit = vi.fn();
+    await mount({ submission: mine(), onEdit, edit: { busy: false, result: { error: "Forbidden" } } });
+    click(editButton());
+    expect(alertText()).toBeNull();
+  });
+});
+
+describe("deleting the post", () => {
+  it("asks first and leaves closing to the caller", async () => {
+    const onDelete = vi.fn();
+    const onClose = vi.fn();
+    await mount({ submission: submission({ mine: true, canDelete: true }), onDelete, onClose });
+    click(document.querySelector("[aria-label='Delete post']"));
+    await act(async () => {});
+    expect(confirm).toHaveBeenCalled();
+    expect(onDelete).toHaveBeenCalledTimes(1);
+    expect(onClose).not.toHaveBeenCalled();
+  });
+});

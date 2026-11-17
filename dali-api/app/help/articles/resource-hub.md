@@ -41,6 +41,8 @@ The **Crit Wall** tab is where members of a domain post work in progress and ask
 
 Use the filter to show **All work**, **Mine** or **Needs feedback**, which lists posts with no comments yet. You can edit the title and question of your own post.
 
+The wall shows the newest posts first. Select **Load more** at the bottom for older ones.
+
 ### Anonymous posts
 
 An anonymous post hides your name from other members, including on your comments on that post. Core and the domain's leads can still see who wrote the comments, so they can moderate.
@@ -65,3 +67,5 @@ The **References** tab collects work and inspiration shared by the domain.
 A reference marked **DALI-made** is credited to the member who shared it. Other references show **Shared by** with your name, plus the creator you entered.
 
 You can edit and delete your own references. Core and the domain's leads can delete any reference.
+
+The newest references show first. Select **Load more** at the bottom for older ones.

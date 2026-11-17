@@ -4,32 +4,39 @@ import { FileText, Link2, ListFilter, MessageSquare, Plus } from "lucide-react";
 import type { Route } from "./+types/resource-hub.$pageId.crit";
 import { EmptyState } from "~/components/ui/EmptyState";
 import { prisma } from "~/lib/db.server";
-import { critCommentCounts, loadCritContext, parseSubmissionForm, resolveSubmission, serializeSubmission } from "~/lib/crit.server";
+import { loadCritContext, loadCritPage, loadCritPostsByIds, parseSubmissionForm, resolveSubmission } from "~/lib/crit.server";
 import { parseCritLink } from "~/lib/crit-comments";
 import { hydrateAuthors } from "~/lib/collabAuth.server";
 import { limitLinkPreviews } from "~/lib/link-preview-limit.server";
 import { PageRowControls, type PageRowControl } from "~/components/os-page";
+import { LoadMore } from "~/components/ui/Pager";
+import { useToast } from "~/components/ui/toast";
+import { fetchCursorPage } from "~/hooks/useLoadMore";
+import { useRefreshedLoadMore } from "~/hooks/useRefreshedLoadMore";
 import { CRIT_FILTERS, type CritFilter } from "~/components/resource-hub/crit/filters";
 import { ShareWorkModal, type ShareValues } from "~/components/resource-hub/crit/ShareWorkModal";
 import { SubmissionOverlay, type CritSubmissionView } from "~/components/resource-hub/crit/SubmissionOverlay";
 
 export const meta: Route.MetaFunction = () => [{ title: "Crit Wall · DALI OS" }];
 
-const person = { select: { firstName: true, lastName: true } };
+const wallUrl = (pageId: string) => `/api/resource-hub/${pageId}/crit`;
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const ctx = await loadCritContext(request, params.pageId!);
-  const rows = await prisma.critSubmission.findMany({
-    where: { domainId: ctx.domainId },
-    include: { author: person },
-    orderBy: { createdAt: "desc" },
-  });
-  const [counts, [me]] = await Promise.all([critCommentCounts(rows.map((r) => r.id)), hydrateAuthors([ctx.userId])]);
+  const postId = new URL(request.url).searchParams.get("post");
+  const page = await loadCritPage(ctx, null);
+  const [linked, [me]] = await Promise.all([
+    postId && !page.items.some((i) => i.id === postId) ? loadCritPostsByIds(ctx, [postId]).then((r) => r[0] ?? null) : null,
+    hydrateAuthors([ctx.userId]),
+  ]);
   return {
     viewer: { id: ctx.userId, name: ctx.userName, photoUrl: me?.photoUrl ?? null },
     userName: ctx.userName,
     domainName: ctx.domainName,
-    items: rows.map((r) => serializeSubmission(r, ctx.userId, ctx.canModerate, counts.get(r.id) ?? 0)),
+    pageId: params.pageId!,
+    items: page.items,
+    nextCursor: page.nextCursor,
+    linked,
   };
 }
 
@@ -104,20 +111,36 @@ function Thumb({ item }: { item: CritSubmissionView }) {
 }
 
 export default function CritWall() {
-  const { viewer, userName, domainName, items: all } = useLoaderData<typeof loader>();
+  const { viewer, userName, domainName, pageId, items: firstPage, nextCursor, linked } = useLoaderData<typeof loader>();
+  const { items: all, pager } = useRefreshedLoadMore<CritSubmissionView>({
+    items: firstPage,
+    nextCursor,
+    fetchPage: (cursor) => fetchCursorPage<CritSubmissionView>(`${wallUrl(pageId)}?cursor=${encodeURIComponent(cursor)}`),
+    fetchByIds: async (ids) => (await fetchCursorPage<CritSubmissionView>(`${wallUrl(pageId)}?ids=${ids.join(",")}`)).items,
+  });
   const [filter, setFilter] = useState<CritFilter>("all");
   const active = CRIT_FILTERS.find((f) => f.value === filter)!;
   const items = all.filter(active.keep);
   const [params, setParams] = useSearchParams();
   const fetcher = useFetcher<{ ok?: boolean; error?: string }>();
+  const editFetcher = useFetcher<{ ok?: boolean; error?: string }>();
+  const deleteFetcher = useFetcher<{ ok?: boolean; error?: string }>();
+  const toast = useToast();
   const revalidator = useRevalidator();
   const [sharing, setSharing] = useState(false);
   const { submissionId: openId, threadId } = parseCritLink(params);
-  const open = items.find((i) => i.id === openId) ?? null;
+  const open = all.find((i) => i.id === openId) ?? (linked?.id === openId ? linked : null);
 
   useEffect(() => {
     if (fetcher.state === "idle" && fetcher.data?.ok) setSharing(false);
   }, [fetcher.state, fetcher.data]);
+
+  useEffect(() => {
+    if (deleteFetcher.state !== "idle" || !deleteFetcher.data) return;
+    if (deleteFetcher.data.ok) closeItem();
+    else toast.error(deleteFetcher.data.error ?? "Couldn't delete this post.");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deleteFetcher.state, deleteFetcher.data]);
 
   const openItem = (id: string) => setParams({ post: id }, { preventScrollReset: true });
   const closeItem = () =>
@@ -195,6 +218,7 @@ export default function CritWall() {
           })}
         </ul>
       )}
+      <LoadMore {...pager} />
 
       {sharing && (
         <ShareWorkModal
@@ -212,11 +236,9 @@ export default function CritWall() {
           submission={open}
           onClose={closeItem}
           onChanged={() => revalidator.revalidate()}
-          onEdit={(title, question) => fetcher.submit({ intent: "edit", id: open.id, title, question }, { method: "post" })}
-          onDelete={() => {
-            fetcher.submit({ intent: "delete", id: open.id }, { method: "post" });
-            closeItem();
-          }}
+          edit={{ busy: editFetcher.state !== "idle", result: editFetcher.data }}
+          onEdit={(title, question) => editFetcher.submit({ intent: "edit", id: open.id, title, question }, { method: "post" })}
+          onDelete={() => deleteFetcher.submit({ intent: "delete", id: open.id }, { method: "post" })}
         />
       )}
     </div>

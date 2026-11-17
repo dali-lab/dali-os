@@ -14,6 +14,8 @@ import { canEditResourceHub, ledDomainIds, requireResourceHubViewer } from "~/li
 import { fetchLinkPreview } from "~/lib/link-preview.server";
 import { _resetForTests } from "~/lib/rate-limit";
 import { action, loader } from "~/routes/resource-hub.$pageId.references";
+import { loader as pageApi } from "~/routes/api.resource-hub.$pageId.references";
+import { REFERENCES_PAGE_SIZE } from "~/lib/references.server";
 
 const db = vi.mocked(prisma, true);
 const params = { pageId: "p1" };
@@ -41,12 +43,49 @@ describe("loader", () => {
       { id: "r1", title: "A", kind: "link", url: "https://a.example", previewUrl: null, fileName: null, creatorName: null, daliMade: true, note: null, authorId: "u1", author: { firstName: "Ada", lastName: "Lovelace" }, createdAt: new Date(0) },
     ] as any);
     const data = await get();
-    expect(db.domainReference.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { domainId: "d1" }, orderBy: { createdAt: "desc" } }));
+    expect(db.domainReference.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { domainId: "d1" }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: REFERENCES_PAGE_SIZE + 1 }));
     expect(data.items[0]).toMatchObject({ id: "r1", daliMade: true, creatorName: "Ada Lovelace", mine: true });
   });
   it("leaves the hub's title and cover to the layout", async () => {
     db.domainReference.findMany.mockResolvedValue([]);
-    expect(Object.keys(await get()).sort()).toEqual(["items"]);
+    expect(Object.keys(await get()).sort()).toEqual(["items", "linked", "nextCursor", "pageId"]);
+  });
+
+  describe("paging", () => {
+    const ref = (n: number) => ({ id: `r${n}`, title: "A", kind: "link", url: "https://a.example", previewUrl: null, fileName: null, creatorName: null, daliMade: false, note: null, authorId: "u9", author: null, createdAt: new Date(Date.UTC(2026, 10, 1, 0, 0, 100 - n)) });
+
+    it("returns one page with a cursor when more remain", async () => {
+      db.domainReference.findMany.mockResolvedValue(Array.from({ length: REFERENCES_PAGE_SIZE + 1 }, (_, i) => ref(i)) as never);
+      const out = await get();
+      expect(out.items).toHaveLength(REFERENCES_PAGE_SIZE);
+      expect(out.nextCursor).toBe(`${ref(REFERENCES_PAGE_SIZE - 1).createdAt.toISOString()}|r${REFERENCES_PAGE_SIZE - 1}`);
+    });
+
+    it("has no cursor on the last page", async () => {
+      db.domainReference.findMany.mockResolvedValue([ref(0)] as never);
+      expect((await get()).nextCursor).toBeNull();
+    });
+
+    it("serves the next page after the cursor from the page endpoint", async () => {
+      db.domainReference.findMany.mockResolvedValue([ref(30)] as never);
+      const cursor = `${ref(5).createdAt.toISOString()}|r5`;
+      const res = (await pageApi({ request: new Request(`http://localhost/api/resource-hub/p1/references?cursor=${encodeURIComponent(cursor)}`), params, context: {} } as any)) as Response;
+      expect((await res.json()).items.map((i: any) => i.id)).toEqual(["r30"]);
+      expect((db.domainReference.findMany.mock.calls[0][0]!.where as any).OR[0]).toEqual({ createdAt: { lt: ref(5).createdAt } });
+    });
+
+    it("re-reads specific references within this domain only", async () => {
+      db.domainReference.findMany.mockResolvedValue([ref(7)] as never);
+      const res = (await pageApi({ request: new Request("http://localhost/api/resource-hub/p1/references?ids=r7,r8"), params, context: {} } as any)) as Response;
+      expect((await res.json()).items.map((i: any) => i.id)).toEqual(["r7"]);
+      expect(db.domainReference.findMany.mock.calls[0][0]!.where).toEqual({ domainId: "d1", id: { in: ["r7", "r8"] } });
+    });
+
+    it("loads a linked reference that sits beyond the first page", async () => {
+      db.domainReference.findMany.mockResolvedValueOnce([ref(0)] as never).mockResolvedValueOnce([ref(99)] as never);
+      const out = (await loader({ request: new Request("http://localhost/resource-hub/p1/references?r=r99"), params, context: {} } as any)) as any;
+      expect(out.linked).toMatchObject({ id: "r99" });
+    });
   });
   it("404s for a hub with no domain, so it has no gallery", async () => {
     db.resourceHubPage.findUnique.mockResolvedValue({ id: "p1", domainId: null, domain: null } as any);
