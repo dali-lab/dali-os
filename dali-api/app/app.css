@@ -1594,6 +1594,10 @@ html.os-shell > body::-webkit-scrollbar-track {
   outline: none;
   border-color: var(--color-os-accent);
 }
+.os-shell .os-form input[aria-invalid="true"],
+.os-shell .os-form textarea[aria-invalid="true"] {
+  border-color: var(--color-destructive);
+}
 .os-shell .os-form input::placeholder,
 .os-shell .os-form textarea::placeholder {
   color: var(--color-os-muted);

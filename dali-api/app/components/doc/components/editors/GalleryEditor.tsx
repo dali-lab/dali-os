@@ -1,8 +1,11 @@
-import { Check, GripVertical, ImagePlus, Plus, Trash2 } from "lucide-react";
+import { GripVertical, ImagePlus, Plus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useToast } from "~/components/ui/toast";
+import { Button } from "~/components/ui/Button";
+import { FormField } from "~/components/ui/FormField";
 import { useOutsideDismiss } from "~/components/ui/floating";
-import { TONES, safeHref, type ComponentData } from "../kinds";
+import { safeHref, type ComponentData } from "../kinds";
+import { EditPopover, PopoverActions, PopoverError, ToneSwatches, useTriggerAnchor } from "./EditPopover";
 import { IMAGE_UPLOAD_ACCEPT, uploadEditorImage } from "../../upload";
 
 export function GalleryEditor({
@@ -22,11 +25,10 @@ export function GalleryEditor({
   const [dragReady, setDragReady] = useState<number | null>(null);
   const [uploading, setUploading] = useState(false);
   const [linkError, setLinkError] = useState<string | null>(null);
-  const [alignEnd, setAlignEnd] = useState(false);
   const [tab, setTab] = useState<"upload" | "link">("upload");
   const [focusNew, setFocusNew] = useState(false);
   const titleRefs = useRef<(HTMLInputElement | null)[]>([]);
-  const popRef = useRef<HTMLDivElement | null>(null);
+  const { ref: pieceRef, anchor } = useTriggerAnchor<HTMLDivElement>(sel);
   const fileRef = useRef<HTMLInputElement>(null);
   const toast = useToast();
 
@@ -65,15 +67,6 @@ export function GalleryEditor({
 
   useOutsideDismiss(sel !== null, ".dali-cmp-piece--edit", () => select(null));
 
-  useEffect(() => {
-    const pop = popRef.current;
-    if (!pop) return;
-    setAlignEnd(false);
-    requestAnimationFrame(() => {
-      if (pop.getBoundingClientRect().right > window.innerWidth - 12) setAlignEnd(true);
-    });
-  }, [sel]);
-
   return (
     <div className="dali-cmp-gal-edit">
       <div className="dali-cmp-head">
@@ -99,6 +92,7 @@ export function GalleryEditor({
         {draft.items.map((it, i) => (
           <div
             key={i}
+            ref={sel === i ? pieceRef : undefined}
             draggable={dragReady === i}
             className={`dali-cmp-piece dali-cmp-piece--edit dali-cmp-tone--${it.tone || "neutral"}${sel === i ? " dali-cmp-piece--selected" : ""}${dragFrom === i ? " dali-cmp-piece--dragging" : ""}`}
             onFocusCapture={() => sel !== i && select(i)}
@@ -184,7 +178,7 @@ export function GalleryEditor({
               className="dali-cmp-sub dali-cmp-piece__titlefield"
             />
             {sel === i && (
-              <div ref={popRef} className={`dali-cmp-piece__pop${alignEnd ? " dali-cmp-piece__pop--end" : ""}`} role="dialog" aria-label={`Edit ${it.title || "piece"}`}>
+              <EditPopover anchor={anchor} excludeRef={pieceRef} ariaLabel={`Edit ${it.title || "piece"}`} onClose={() => select(null)}>
                 <div className="dali-cmp-piece__tabs" role="tablist" aria-label="Image source">
                   {(["upload", "link"] as const).map((t) => (
                     <button key={t} type="button" role="tab" aria-selected={tab === t} onClick={() => setTab(t)}>
@@ -193,63 +187,51 @@ export function GalleryEditor({
                   ))}
                 </div>
                 {tab === "upload" ? (
-                  <div className="dali-cmp-piece__upload">
-                    <button type="button" className="dali-cmp-piece__uploadbtn" disabled={uploading} onClick={() => fileRef.current?.click()}>
+                  <div className="flex items-center gap-2">
+                    <Button variant="secondary" size="sm" disabled={uploading} onClick={() => fileRef.current?.click()}>
                       <ImagePlus size={14} strokeWidth={1.5} aria-hidden />
                       {uploading ? "Uploading" : it.image ? "Replace image" : "Upload image"}
-                    </button>
+                    </Button>
                     {it.image && (
-                      <button type="button" className="dali-cmp-mini" onClick={() => setItem(i, { image: "" })}>
+                      <Button variant="ghost" size="xs" onClick={() => setItem(i, { image: "" })}>
                         Remove image
-                      </button>
+                      </Button>
                     )}
                   </div>
                 ) : (
-                  <input aria-label="Image link" value={it.image ?? ""} placeholder="Paste an image link" inputMode="url" onChange={(e) => setItem(i, { image: e.target.value })} />
+                  <FormField label="Image link" labelHidden type="url" inputMode="url" value={it.image ?? ""} placeholder="Paste an image link" onChange={(v) => setItem(i, { image: v })} />
                 )}
-                <label className="dali-cmp-pop-field">
-                  <span>Opens</span>
-                  <input value={it.href ?? ""} placeholder="https://..." inputMode="url" aria-invalid={!!linkError} onChange={(e) => { setLinkError(null); setItem(i, { href: e.target.value }); }} />
-                </label>
-                {linkError && (
-                  <p role="alert" className="dali-cmp-pop-error">
-                    {linkError}
-                  </p>
-                )}
-                <div className="dali-cmp-pop-field">
-                  <span>Color</span>
-                  <div className="dali-cmp-chip-pop__colors" role="radiogroup" aria-label="Color">
-                    {TONES.map((tn) => {
-                      const on = (it.tone || "neutral") === tn;
-                      return (
-                        <button key={tn} type="button" role="radio" aria-checked={on} aria-label={tn} title={tn} onClick={() => setItem(i, { tone: tn })} className={`dali-cmp-swatch dali-cmp-swatch--pick dali-cmp-tone--${tn}`}>
-                          {on && <Check className="dali-cmp-ico dali-cmp-ico--check" size={9} strokeWidth={2.25} aria-hidden />}
-                        </button>
-                      );
-                    })}
-                  </div>
+                <FormField
+                  label="Opens"
+                  type="url"
+                  inputMode="url"
+                  value={it.href ?? ""}
+                  placeholder="https://..."
+                  invalid={!!linkError}
+                  onChange={(v) => {
+                    setLinkError(null);
+                    setItem(i, { href: v });
+                  }}
+                />
+                {linkError && <PopoverError>{linkError}</PopoverError>}
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-sm font-semibold text-os-grey">Color</span>
+                  <ToneSwatches label="Color" value={it.tone || "neutral"} onPick={(tn) => setItem(i, { tone: tn })} />
                 </div>
-                <div className="dali-cmp-pop-actions">
-                  <button
-                    type="button"
-                    className="dali-cmp-pop-delete"
-                    onClick={() => {
-                      select(null);
-                      setDraft((d) => ({ ...d, items: d.items.filter((_, j) => j !== i) }));
-                      toast.error(<span className="font-medium text-destructive">Piece deleted</span>, {
-                        duration: 8000,
-                        actions: [{ label: "Undo", onClick: () => setDraft((d) => { const items = [...d.items]; items.splice(Math.min(i, items.length), 0, it); return { ...d, items }; }) }],
-                      });
-                    }}
-                  >
-                    <Trash2 className="dali-cmp-ico" size={12} strokeWidth={1.5} aria-hidden />
-                    Delete
-                  </button>
-                  <button type="button" className="dali-cmp-pop-save" onClick={() => select(null)}>
-                    Done
-                  </button>
-                </div>
-              </div>
+                <PopoverActions
+                  deleteLabel="Delete"
+                  saveLabel="Done"
+                  onSave={() => select(null)}
+                  onDelete={() => {
+                    select(null);
+                    setDraft((d) => ({ ...d, items: d.items.filter((_, j) => j !== i) }));
+                    toast.error(<span className="font-medium text-destructive">Piece deleted</span>, {
+                      duration: 8000,
+                      actions: [{ label: "Undo", onClick: () => setDraft((d) => { const items = [...d.items]; items.splice(Math.min(i, items.length), 0, it); return { ...d, items }; }) }],
+                    });
+                  }}
+                />
+              </EditPopover>
             )}
           </div>
         ))}

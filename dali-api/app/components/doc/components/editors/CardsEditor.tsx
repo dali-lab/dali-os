@@ -1,8 +1,10 @@
-import { Check, Link2, Palette, Plus, Trash2 } from "lucide-react";
+import { Link2, Palette, Plus, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useToast } from "~/components/ui/toast";
+import { FormField } from "~/components/ui/FormField";
 import { useOutsideDismiss } from "~/components/ui/floating";
-import { TONES, type ComponentData } from "../kinds";
+import { safeHref, type ComponentData } from "../kinds";
+import { EditPopover, PopoverError, ToneSwatches, useTriggerAnchor } from "./EditPopover";
 import { linkLabel } from "./LinksEditor";
 
 export function CardsEditor({
@@ -19,17 +21,20 @@ export function CardsEditor({
   const [sel, setSel] = useState<number | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [linkOpen, setLinkOpen] = useState(false);
+  const [linkError, setLinkError] = useState<string | null>(null);
+  const { ref: toolRef, anchor } = useTriggerAnchor<HTMLButtonElement>(linkOpen ? "link" : paletteOpen ? "palette" : null);
   const [dragFrom, setDragFrom] = useState<number | null>(null);
   const [dragOver, setDragOver] = useState<number | null>(null);
   const toast = useToast();
   const titleRefs = useRef<(HTMLInputElement | null)[]>([]);
   const [focusTitle, setFocusTitle] = useState(false);
 
-  useOutsideDismiss(sel !== null, ".dali-cmp-card--edit", () => setSel(null));
+  useOutsideDismiss(sel !== null && !linkOpen, ".dali-cmp-card--edit", () => setSel(null));
 
   useEffect(() => {
     setPaletteOpen(false);
     setLinkOpen(false);
+    setLinkError(null);
   }, [sel]);
 
   useEffect(() => {
@@ -40,6 +45,12 @@ export function CardsEditor({
 
   const setItem = (i: number, patch: Record<string, string>) =>
     setDraft((d) => ({ ...d, items: d.items.map((it, j) => (j === i ? { ...it, ...patch } : it)) }));
+
+  const closeLink = (i: number) => {
+    const href = (draft.items[i]!.href ?? "").trim();
+    if (href && !safeHref(href)) return setLinkError("Enter a valid link, like https://… or mailto:…");
+    setLinkOpen(false);
+  };
 
   const move = (from: number, to: number) => {
     if (to < 0 || to >= draft.items.length || from === to) return;
@@ -133,6 +144,8 @@ export function CardsEditor({
                   className={`dali-cmp-card__tool${it.href ? " dali-cmp-card__tool--on" : ""}`}
                   aria-label={it.href ? `Edit link for card ${i + 1}` : `Add link to card ${i + 1}`}
                   title={it.href ? linkLabel(it.href) : "Add link"}
+                  ref={linkOpen ? toolRef : undefined}
+                  aria-expanded={linkOpen}
                   onClick={() => {
                     setPaletteOpen(false);
                     setLinkOpen((o) => !o);
@@ -147,6 +160,7 @@ export function CardsEditor({
                   className="dali-cmp-card__tool"
                   aria-label={`Card ${i + 1} color`}
                   aria-expanded={paletteOpen}
+                  ref={paletteOpen ? toolRef : undefined}
                   title="Color"
                   onClick={() => {
                     setLinkOpen(false);
@@ -184,48 +198,46 @@ export function CardsEditor({
               </button>
             </div>
             {sel === i && paletteOpen && (
-              <div className="dali-cmp-card__palette" role="radiogroup" aria-label="Color">
-                {TONES.map((tn) => {
-                  const on = (it.tone || "neutral") === tn;
-                  return (
-                    <button
-                      key={tn}
-                      type="button"
-                      role="radio"
-                      aria-checked={on}
-                      aria-label={tn}
-                      title={tn}
-                      onClick={() => {
-                        setItem(i, { tone: tn });
-                        setPaletteOpen(false);
-                      }}
-                      className={`dali-cmp-swatch dali-cmp-swatch--pick dali-cmp-tone--${tn}`}
-                    >
-                      {on && <Check className="dali-cmp-ico dali-cmp-ico--check" size={9} strokeWidth={2.25} aria-hidden />}
-                    </button>
-                  );
-                })}
-              </div>
+              <EditPopover compact anchor={anchor} excludeRef={toolRef} ariaLabel={`Card ${i + 1} color`} onClose={() => setPaletteOpen(false)}>
+                <ToneSwatches
+                  label="Color"
+                  value={it.tone || "neutral"}
+                  onPick={(tn) => {
+                    setItem(i, { tone: tn });
+                    setPaletteOpen(false);
+                  }}
+                />
+              </EditPopover>
             )}
-            {sel === i && (linkOpen ? (
-              <input
-                autoFocus
-                aria-label={`Card ${i + 1} link`}
-                value={it.href ?? ""}
-                placeholder="https://..."
-                inputMode="url"
-                onChange={(e) => setItem(i, { href: e.target.value })}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === "Escape") {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setLinkOpen(false);
-                  }
-                }}
-                onBlur={() => setLinkOpen(false)}
-                className="dali-cmp-meta dali-cmp-card__field dali-cmp-card__link"
-              />
-            ) : null)}
+            {sel === i && linkOpen && (
+              <EditPopover anchor={anchor} excludeRef={toolRef} ariaLabel={`Card ${i + 1} link`} onClose={() => closeLink(i)}>
+                <FormField
+                  label="Link"
+                  autoFocus
+                  type="url"
+                  inputMode="url"
+                  value={it.href ?? ""}
+                  placeholder="https://..."
+                  invalid={!!linkError}
+                  onChange={(v) => {
+                    setLinkError(null);
+                    setItem(i, { href: v });
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      closeLink(i);
+                    } else if (e.key === "Escape") {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setLinkOpen(false);
+                      setLinkError(null);
+                    }
+                  }}
+                />
+                {linkError && <PopoverError>{linkError}</PopoverError>}
+              </EditPopover>
+            )}
           </div>
         ))}
         <button

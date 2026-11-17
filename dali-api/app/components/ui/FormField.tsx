@@ -21,6 +21,7 @@ export function FormField({
   autoFocus,
   disabled,
   inputMode,
+  invalid,
 }: {
   label: string;
   labelHidden?: boolean;
@@ -40,6 +41,7 @@ export function FormField({
   autoFocus?: boolean;
   disabled?: boolean;
   inputMode?: "url" | "text";
+  invalid?: boolean;
 }) {
   const { fieldLabel } = useOsChrome();
   const control = cn("w-full", mono && "font-mono text-[13px]", multiline && "resize-y leading-6");
@@ -51,6 +53,7 @@ export function FormField({
     autoFocus,
     disabled,
     onKeyDown,
+    "aria-invalid": invalid || undefined,
     className: control,
     ...(onChange ? { value: value ?? "", onChange: (e: { target: { value: string } }) => onChange(e.target.value) } : { defaultValue }),
   };

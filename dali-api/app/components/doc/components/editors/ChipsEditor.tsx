@@ -1,8 +1,12 @@
-import { Check, Columns2, Rows2, Plus, Trash2 } from "lucide-react";
+import { Columns2, Rows2, Plus } from "lucide-react";
 import { useState } from "react";
 import { useToast } from "~/components/ui/toast";
-import { useOutsideDismiss } from "~/components/ui/floating";
-import { TONES, safeHref, type ComponentData } from "../kinds";
+import { FormField } from "~/components/ui/FormField";
+import { safeHref, type ComponentData } from "../kinds";
+import { EditPopover, PopoverActions, PopoverError, ToneSwatches, useTriggerAnchor } from "./EditPopover";
+
+const NAME_ERROR = "Add a name.";
+const HREF_ERROR = "Enter a valid link, like https://… or mailto:…";
 
 export function ChipsEditor({
   draft,
@@ -23,7 +27,7 @@ export function ChipsEditor({
   const [dragOver, setDragOver] = useState<number | null>(null);
   const inline = draft.fields.layout === "inline";
 
-  useOutsideDismiss(urlOpen !== null, ".dali-cmp-chip--edit", () => openPop(null));
+  const { ref: chipRef, anchor } = useTriggerAnchor<HTMLLIElement>(urlOpen !== null);
 
   const setItem = (i: number, patch: Record<string, string>) =>
     setDraft((d) => ({ ...d, items: d.items.map((it, j) => (j === i ? { ...it, ...patch } : it)) }));
@@ -34,14 +38,19 @@ export function ChipsEditor({
     setPopError(null);
   };
   const validate = (it: ComponentData["items"][number]) => {
-    if (!(it.label ?? "").trim()) return "Add a name.";
+    if (!(it.label ?? "").trim()) return NAME_ERROR;
     const href = (it.href ?? "").trim();
-    if (href && !safeHref(href)) return "Enter a valid link, like https://… or mailto:…";
+    if (href && !safeHref(href)) return HREF_ERROR;
     return null;
   };
   const savePop = (i: number) => {
     const err = validate(draft.items[i]!);
     if (err) return setPopError(err);
+    openPop(null);
+  };
+  const closePop = (i: number) => {
+    const href = (draft.items[i]!.href ?? "").trim();
+    if (href && !safeHref(href)) return setPopError(HREF_ERROR);
     openPop(null);
   };
   const cancelPop = (i: number) => {
@@ -80,6 +89,7 @@ export function ChipsEditor({
           {draft.items.map((it, i) => (
             <li
               key={i}
+              ref={urlOpen === i ? chipRef : undefined}
               className={`dali-cmp-chip dali-cmp-chip--edit${it.tone ? ` dali-cmp-tone--${it.tone}` : ""}${dragOver === i && dragFrom !== i ? " dali-cmp-chip--over" : ""}${dragFrom === i ? " dali-cmp-chip--dragging" : ""}`}
               draggable={urlOpen !== i}
               onDragStart={(e) => {
@@ -118,10 +128,11 @@ export function ChipsEditor({
                 {it.label || <span className="opacity-50">Link</span>}
               </button>
               {urlOpen === i && (
-                <div
-                  className="dali-cmp-chip-pop"
-                  role="dialog"
-                  aria-label={`Edit ${it.label || "link"}`}
+                <EditPopover
+                  anchor={anchor}
+                  excludeRef={chipRef}
+                  ariaLabel={`Edit ${it.label || "link"}`}
+                  onClose={() => closePop(i)}
                   onKeyDown={(e) => {
                     if (e.key === "Escape") {
                       e.stopPropagation();
@@ -132,76 +143,44 @@ export function ChipsEditor({
                     }
                   }}
                 >
-                  <label className="dali-cmp-pop-field">
-                    <span>Name</span>
-                    <input
-                      autoFocus
-                      value={it.label ?? ""}
-                      placeholder="Link name"
-                      aria-invalid={popError === "Add a name."}
-                      onChange={(e) => {
-                        setPopError(null);
-                        setItem(i, { label: e.target.value });
-                      }}
-                    />
-                  </label>
-                  <label className="dali-cmp-pop-field">
-                    <span>Link</span>
-                    <input
-                      value={it.href ?? ""}
-                      placeholder="https://"
-                      inputMode="url"
-                      aria-invalid={!!popError && popError !== "Add a name."}
-                      onChange={(e) => {
-                        setPopError(null);
-                        setItem(i, { href: e.target.value });
-                      }}
-                    />
-                  </label>
-                  <div className="dali-cmp-pop-field">
-                    <span>Color</span>
-                    <div className="dali-cmp-chip-pop__colors" role="radiogroup" aria-label="Link color">
-                      {TONES.map((tn) => {
-                        const on = (it.tone || "neutral") === tn;
-                        return (
-                          <button
-                            key={tn}
-                            type="button"
-                            role="radio"
-                            aria-checked={on}
-                            aria-label={tn}
-                            title={tn}
-                            onClick={() => setItem(i, { tone: tn })}
-                            className={`dali-cmp-swatch dali-cmp-swatch--pick dali-cmp-tone--${tn}`}
-                          >
-                            {on && <Check className="dali-cmp-ico dali-cmp-ico--check" size={9} strokeWidth={2.25} aria-hidden />}
-                          </button>
-                        );
-                      })}
-                    </div>
+                  <FormField
+                    label="Name"
+                    autoFocus
+                    value={it.label ?? ""}
+                    placeholder="Link name"
+                    invalid={popError === NAME_ERROR}
+                    onChange={(v) => {
+                      setPopError(null);
+                      setItem(i, { label: v });
+                    }}
+                  />
+                  <FormField
+                    label="Link"
+                    type="url"
+                    inputMode="url"
+                    value={it.href ?? ""}
+                    placeholder="https://"
+                    invalid={!!popError && popError !== NAME_ERROR}
+                    onChange={(v) => {
+                      setPopError(null);
+                      setItem(i, { href: v });
+                    }}
+                  />
+                  <div className="flex flex-col gap-1.5">
+                    <span className="text-sm font-semibold text-os-grey">Color</span>
+                    <ToneSwatches label="Link color" value={it.tone || "neutral"} onPick={(tn) => setItem(i, { tone: tn })} />
                   </div>
-                  {popError && (
-                    <p role="alert" className="dali-cmp-pop-error">
-                      {popError}
-                    </p>
-                  )}
-                  <div className="dali-cmp-pop-actions">
-                    <button
-                      type="button"
-                      className="dali-cmp-pop-delete"
-                      onClick={() => {
-                        openPop(null);
-                        setDraft((d) => ({ ...d, items: d.items.filter((_, j) => j !== i) }));
-                      }}
-                    >
-                      <Trash2 className="dali-cmp-ico" size={7} strokeWidth={1.5} aria-hidden />
-                      Delete
-                    </button>
-                    <button type="button" className="dali-cmp-pop-save" onClick={() => savePop(i)}>
-                      Save
-                    </button>
-                  </div>
-                </div>
+                  {popError && <PopoverError>{popError}</PopoverError>}
+                  <PopoverActions
+                    deleteLabel="Delete"
+                    saveLabel="Save"
+                    onSave={() => savePop(i)}
+                    onDelete={() => {
+                      openPop(null);
+                      setDraft((d) => ({ ...d, items: d.items.filter((_, j) => j !== i) }));
+                    }}
+                  />
+                </EditPopover>
               )}
             </li>
           ))}
