@@ -2031,8 +2031,7 @@ svg.lucide-plus.dali-cmp-ico { width: 11px !important; height: 11px !important; 
 .dali-cmp-links-edit.dali-cmp-panel--flush { overflow: visible; }
 .dali-cmp a.dali-cmp-row, .dali-cmp a.dali-cmp-row .dali-cmp-sub, .dali-cmp a.dali-cmp-row .dali-cmp-row__title { color: inherit; text-decoration: none; }
 
-/* Round 26: nothing clips a component's hover shade, frame or row hover (columns scroll by default, which cut the left side). */
-.dali-doc .bn-block-column { overflow: visible; }
+/* Round 26: nothing clips a component's hover shade, frame or row hover . */
 .dali-cmp-panel--flush { overflow: visible; }
 a.dali-cmp-row:hover { background: none; box-shadow: none; }
 

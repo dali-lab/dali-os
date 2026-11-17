@@ -283,8 +283,6 @@ export function parseComponentData(kind: string, json: string): ComponentData {
   }
 }
 
-/** Only web links, mail links and in-app paths. Anything else (javascript:,
- * data:) is dropped — component data is member-authored. */
 const STRUCTURAL_FIELDS = new Set(["layout", "tone", "open", "height", "current"]);
 
 /** What a component starts with when a member inserts it: the kind's settings, but none of its sample content. */
@@ -315,13 +313,15 @@ export function filterCollection<T extends Record<string, string>>(items: T[], c
   return items.filter((it) => (it.category ?? "").trim().toLowerCase() === category.toLowerCase());
 }
 
+/** Only web links, mail, tel and slack links, anchors and in-app paths; bare hosts like dali.dartmouth.edu get https.
+ * Anything else (javascript:, data:) is dropped because component data is member-authored. */
 export function safeHref(value: string | undefined): string | undefined {
   const v = value?.trim();
   if (!v) return undefined;
   if (/^(https?:\/\/|mailto:|tel:|slack:)/i.test(v)) return v;
   if (v.startsWith("/") && !v.startsWith("//")) return v;
   if (v.startsWith("#")) return v;
-  if (/^[\w-]+(\.[\w-]+)+([/?#]\S*)?$/.test(v)) return `https://${v}`;
+  if (/^[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}([/?#]\S*)?$/i.test(v)) return `https://${v}`;
   return undefined;
 }
 
