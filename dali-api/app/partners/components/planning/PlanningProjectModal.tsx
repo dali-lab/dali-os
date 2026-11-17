@@ -3,6 +3,7 @@ import { Select } from "~/components/ui/floating";
 import type { MaintenancePlan } from "~/generated/prisma/enums";
 import { centsToDollars, MAINTENANCE_PLANS, maintenanceLabel } from "../../lib/partner-renewals";
 import { Modal, ModalHeader } from "~/components/Modal";
+import { modalCardClass } from "~/components/os-chrome";
 import { Button } from "~/components/ui/Button";
 import { ProjectIcon } from "~/components/ProjectIcon";
 import type { PlanningProjectInfo } from "../../lib/planning-gap.server";
@@ -11,26 +12,19 @@ import { fetcherError, noteMeta, PLANNING_ACTION, SavedTextField } from "./Saved
 
 export { sameSpots } from "./PlanBlock";
 
-export function PlanningProjectModal({
-  project,
-  info,
-  coreMembers,
-  domains,
-  currentTermId,
-  canEdit,
-  onClose,
-}: {
+type PlanningProjectProps = {
   project: { id: string; name: string; iconEmoji: string | null };
   info: PlanningProjectInfo;
   coreMembers: CoreMember[];
   domains: DomainOption[];
   currentTermId: string | null;
   canEdit: boolean;
-  onClose: () => void;
-}) {
-  const last = info.plannedTerms.length === 0 ? info.lastTerm : null;
+};
+
+export function PlanningProjectModal({ onClose, ...props }: PlanningProjectProps & { onClose: () => void }) {
+  const { project, info } = props;
   return (
-    <Modal open onClose={onClose} labelledBy="planning-project-title">
+    <Modal open onClose={onClose} labelledBy="planning-project-title" containerClassName={modalCardClass("max-w-2xl")}>
       <ModalHeader
         titleId="planning-project-title"
         title={
@@ -43,7 +37,22 @@ export function PlanningProjectModal({
         onClose={onClose}
         closeLabel="Close project info"
       />
+      <PlanningProjectPanel {...props} />
+      <div className="flex items-center justify-between gap-2 pt-6">
+        <Link to={`/projects/${project.id}`} className="text-sm font-medium text-os-accent hover:underline">
+          Open project →
+        </Link>
+        <Button variant="ghost" size="sm" onClick={onClose}>
+          Close
+        </Button>
+      </div>
+    </Modal>
+  );
+}
 
+export function PlanningProjectPanel({ project, info, coreMembers, domains, currentTermId, canEdit }: PlanningProjectProps) {
+  const last = info.plannedTerms.length === 0 ? info.lastTerm : null;
+  return (
       <div className="flex flex-col gap-4">
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <span className="rounded-full bg-os-container/70 px-2 py-0.5 font-medium text-foreground">
@@ -139,17 +148,7 @@ export function PlanningProjectModal({
             <p className="text-sm italic text-muted-foreground">This project has no terms yet.</p>
           )}
         </section>
-
-        <div className="flex items-center justify-between pt-2">
-          <Link to={`/projects/${project.id}`} className="text-sm font-medium text-os-accent hover:underline">
-            Open project →
-          </Link>
-          <Button variant="ghost" size="sm" onClick={onClose}>
-            Close
-          </Button>
-        </div>
       </div>
-    </Modal>
   );
 }
 

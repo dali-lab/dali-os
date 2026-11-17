@@ -63,6 +63,31 @@ beforeEach(() => {
   vi.mocked(listReturnableProjects).mockResolvedValue([]);
 });
 
+describe("loadPlanningData project applications", () => {
+  it("links each project to its newest partner application, and leaves projects without one null", async () => {
+    db.project.findMany.mockResolvedValue([project({ id: "p1" }), project({ id: "p2", name: "Lab built" })]);
+    db.partnerApplication.findMany.mockImplementation(async (args: { where: Record<string, unknown> }) =>
+      "resultingProjectId" in args.where && args.where.resultingProjectId !== null
+        ? [
+            { id: "app-return", resultingProjectId: "p1" },
+            { id: "app-original", resultingProjectId: "p1" },
+          ]
+        : [],
+    );
+    const data = await loadPlanningData("t26s");
+    expect(data.projectInfo.p1.applicationId).toBe("app-return");
+    expect(data.projectInfo.p2.applicationId).toBeNull();
+    const lookup = db.partnerApplication.findMany.mock.calls.find(
+      ([args]) => (args as { where: Record<string, unknown> }).where.resultingProjectId !== null,
+    )![0];
+    expect(lookup).toEqual({
+      where: { resultingProjectId: { in: ["p1", "p2"] } },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, resultingProjectId: true },
+    });
+  });
+});
+
 describe("loadPlanningData term selection", () => {
   it("returns an empty plan when there are no terms", async () => {
     db.term.findMany.mockResolvedValue([]);

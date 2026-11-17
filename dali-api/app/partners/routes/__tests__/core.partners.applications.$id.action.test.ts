@@ -5,6 +5,7 @@ vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn(), isNonMember: vi.fn(async ()
 vi.mock("~/lib/roles");
 vi.mock("~/lib/feature-flags.server");
 vi.mock("~/partners/lib/partner-emails.server");
+vi.mock("~/partners/lib/partner-application-delete.server", () => ({ deletePartnerApplication: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
@@ -17,6 +18,7 @@ import {
   sendLearnMoreRequestEmail,
   sendDecisionAcceptedEmail,
 } from "~/partners/lib/partner-emails.server";
+import { deletePartnerApplication } from "~/partners/lib/partner-application-delete.server";
 import { action } from "~/partners/routes/core.partners.applications.$id";
 
 const db = prisma as unknown as Record<string, any>;
@@ -374,5 +376,33 @@ describe("promote intent for a returning project", () => {
       error: "Pick at least one target term before reopening the project.",
     });
     expect(db.$transaction).not.toHaveBeenCalled();
+  });
+});
+
+describe("delete intent", () => {
+  it("deletes the application as the caller and sends them back to the board", async () => {
+    vi.mocked(deletePartnerApplication).mockResolvedValue({ ok: true, id: APP_ID, title: "Gallery Kiosk" });
+    const res = await callAction({ intent: "delete" });
+    expect(res).toBeInstanceOf(Response);
+    expect((res as Response).headers.get("Location")).toBe("/core/partners");
+    expect(deletePartnerApplication).toHaveBeenCalledWith(APP_ID, "core-1", expect.any(Request));
+    expect(db.partnerApplication.update).not.toHaveBeenCalled();
+  });
+
+  it("returns the refusal for an application that became a project", async () => {
+    vi.mocked(deletePartnerApplication).mockResolvedValue({
+      ok: false,
+      reason: "promoted",
+      message: "This application became a project, so it can't be deleted.",
+    });
+    expect(await callAction({ intent: "delete" })).toEqual({
+      error: "This application became a project, so it can't be deleted.",
+    });
+  });
+
+  it("is refused for a non-Core caller before anything is deleted", async () => {
+    (isCore as any).mockResolvedValue(false);
+    expect(await callAction({ intent: "delete" })).toMatchObject({ error: expect.stringContaining("permission") });
+    expect(deletePartnerApplication).not.toHaveBeenCalled();
   });
 });
