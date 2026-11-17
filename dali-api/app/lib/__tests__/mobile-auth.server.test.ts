@@ -14,7 +14,7 @@ const authed = { ok: true, user: { sub: "u1", email: "a@b", type: "member" }, se
 beforeEach(() => {
   vi.clearAllMocks();
   requireAuth.mockResolvedValue(authed);
-  getUserRoles.mockResolvedValue({ isLabMember: true });
+  getUserRoles.mockResolvedValue({ isLabMemberOrAlum: true });
 });
 
 describe("requireMobileUser", () => {
@@ -31,7 +31,7 @@ describe("requireMobileUser", () => {
   });
 
   it("404s a non-member, so the mobile routes stay invisible to them", async () => {
-    getUserRoles.mockResolvedValue({ isLabMember: false });
+    getUserRoles.mockResolvedValue({ isLabMemberOrAlum: false });
     const r = await requireMobileUser(request);
     expect(r.ok).toBe(false);
     if (r.ok) return;

@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { Modal } from "~/components/Modal";
 import { useFetcher, useNavigate } from "react-router";
 import { FileText, Plus, X } from "lucide-react";
 import {
@@ -16,6 +16,7 @@ import { OPEN_NOTE_FETCHER_KEY } from "~/calendar/components/MeetingNoteOpenWatc
 import { useSeriesNotebook } from "~/calendar/lib/useSeriesNotebook";
 import { suggestInputOfMeeting } from "~/calendar/lib/note-suggest-input";
 import type { EditContext } from "~/calendar/components/EditMeetingModal";
+import { Z } from "~/components/ui/z";
 
 // Post-hoc counterpart to the create modal's meeting-note fields: adds a notes
 // doc to a meeting that was created without one. The note config (which
@@ -136,6 +137,8 @@ function AddMeetingNoteModal({
   actionPath?: string;
   onClose: () => void;
 }) {
+  const titleId = useId();
+  const contentRef = useRef<HTMLDivElement>(null);
   const note = useMeetingNote();
   const fetcher = useFetcher<FiledNoteResponse & { seriesNotebookId?: string | null }>();
   const showFiledNote = useFiledNoteToast();
@@ -169,7 +172,8 @@ function AddMeetingNoteModal({
   // closing that too; a Modal stacked on top (the notebook picker) handles its own.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !(e.target as Element | null)?.closest?.(".os-modal-overlay")) {
+      const overlay = (e.target as Element | null)?.closest?.(".os-modal-overlay");
+      if (e.key === "Escape" && (!overlay || overlay === contentRef.current?.closest(".os-modal-overlay"))) {
         e.stopPropagation();
         onClose();
       }
@@ -213,18 +217,17 @@ function AddMeetingNoteModal({
     fetcher.submit(fields, { method: "post", ...(actionPath ? { action: actionPath } : {}) });
   }
 
-  if (typeof document === "undefined") return null;
-
-  return createPortal(
-    <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/55 backdrop-blur-sm p-4"
-      onPointerDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      labelledBy={titleId}
+      layer={Z.popover}
+      containerClassName="relative z-10 flex w-full max-w-md flex-col overflow-hidden rounded-xl cal-surface max-h-[90vh]"
     >
-      <div className="relative z-10 flex w-full max-w-md flex-col overflow-hidden rounded-xl cal-surface max-h-[90vh]">
+      <div ref={contentRef} className="contents">
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
-          <h2 className="font-heading text-base font-semibold text-foreground">Add meeting notes</h2>
+          <h2 id={titleId} className="font-heading text-base font-semibold text-foreground">Add meeting notes</h2>
           <button
             type="button"
             onClick={onClose}
@@ -269,7 +272,6 @@ function AddMeetingNoteModal({
           </button>
         </div>
       </div>
-    </div>,
-    document.body,
+    </Modal>
   );
 }

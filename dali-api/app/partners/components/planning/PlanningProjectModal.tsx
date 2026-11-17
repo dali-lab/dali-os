@@ -1,10 +1,13 @@
-import { Link } from "react-router";
+import { Link, useFetcher } from "react-router";
+import { Select } from "~/components/ui/floating";
+import type { MaintenancePlan } from "~/generated/prisma/enums";
+import { centsToDollars, MAINTENANCE_PLANS, maintenanceLabel } from "../../lib/partner-renewals";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { Button } from "~/components/ui/Button";
 import { ProjectIcon } from "~/components/ProjectIcon";
 import type { PlanningProjectInfo } from "../../lib/planning-gap.server";
 import { PlanBlock, spotsKey, type CoreMember, type DomainOption } from "./PlanBlock";
-import { noteMeta, SavedTextField } from "./SavedTextField";
+import { fetcherError, noteMeta, PLANNING_ACTION, SavedTextField } from "./SavedTextField";
 
 export { sameSpots } from "./PlanBlock";
 
@@ -50,6 +53,8 @@ export function PlanningProjectModal({
             <span>
               {info.plannedTerms.length} planned {info.plannedTerms.length === 1 ? "term" : "terms"} ahead
             </span>
+          ) : info.maintenance ? (
+            <span>{maintenanceLabel(info.maintenance.plan)}</span>
           ) : (
             <span>Not decided yet</span>
           )}
@@ -80,6 +85,10 @@ export function PlanningProjectModal({
           saveLabel="Save notes"
           canEdit={canEdit}
         />
+
+        {info.maintenance && (
+          <MaintenanceSection projectId={project.id} maintenance={info.maintenance} canEdit={canEdit} />
+        )}
 
         <section className="flex flex-col gap-2">
           <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -141,5 +150,45 @@ export function PlanningProjectModal({
         </div>
       </div>
     </Modal>
+  );
+}
+
+function MaintenanceSection({
+  projectId,
+  maintenance,
+  canEdit,
+}: {
+  projectId: string;
+  maintenance: { plan: MaintenancePlan; feeCents: number | null };
+  canEdit: boolean;
+}) {
+  const fetcher = useFetcher();
+  const error = fetcherError(fetcher.data);
+  const fee = maintenance.feeCents != null ? `$${centsToDollars(maintenance.feeCents)} a term` : "No fee set";
+  return (
+    <section className="flex flex-col gap-2">
+      <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Maintenance</h3>
+      <div className="grid grid-cols-[minmax(70px,100px)_minmax(0,1fr)] items-center gap-3 rounded-os-card bg-os-container/40 p-3">
+        <span className="text-xs text-muted-foreground">Plan</span>
+        {canEdit ? (
+          <Select
+            ariaLabel="Maintenance plan"
+            value={maintenance.plan}
+            onChange={(plan) =>
+              fetcher.submit({ intent: "maintenance-plan", projectId, plan }, { method: "post", action: PLANNING_ACTION })
+            }
+            options={MAINTENANCE_PLANS.map((p) => ({ value: p, label: maintenanceLabel(p) }))}
+          />
+        ) : (
+          <span className="text-sm text-foreground">{maintenanceLabel(maintenance.plan)}</span>
+        )}
+        <span className="text-xs text-muted-foreground">Fee</span>
+        <span className="text-sm text-foreground">{fee}</span>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Changing the plan uses its price from Partner settings. Start or end maintenance on Renewals.
+      </p>
+      {error && <p className="text-xs text-destructive">{error}</p>}
+    </section>
   );
 }

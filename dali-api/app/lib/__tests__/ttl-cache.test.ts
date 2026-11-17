@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cachedForTtl, clearTtlCache, setTtlCacheEnabledForTests } from "~/lib/ttl-cache";
+import { cachedForTtl, clearTtlCache, setTtlCacheEnabledForTests, ttlCacheSizeForTests } from "~/lib/ttl-cache";
 import { reportPerfStats } from "~/lib/perf-stats";
 
 describe("cachedForTtl", () => {
@@ -116,5 +116,26 @@ describe("cachedForTtl", () => {
     await cachedForTtl("k", 1000, compute);
     await cachedForTtl("k", 1000, compute);
     expect(compute).toHaveBeenCalledTimes(2);
+  });
+
+  it("drops expired entries once the map is full and keeps live ones", async () => {
+    for (let i = 0; i < 995; i++) await cachedForTtl(`sweep:short:${i}`, 10, async () => i);
+    for (let i = 0; i < 5; i++) await cachedForTtl(`sweep:long:${i}`, 60_000, async () => i);
+    expect(ttlCacheSizeForTests()).toBe(1000);
+
+    vi.advanceTimersByTime(1000);
+    await cachedForTtl("sweep:new", 60_000, async () => "n");
+
+    expect(ttlCacheSizeForTests()).toBe(6);
+    const compute = vi.fn(async () => "again");
+    await cachedForTtl("sweep:long:0", 60_000, compute);
+    expect(compute).not.toHaveBeenCalled();
+  });
+
+  it("does not sweep below the threshold", async () => {
+    for (let i = 0; i < 10; i++) await cachedForTtl(`small:${i}`, 10, async () => i);
+    vi.advanceTimersByTime(1000);
+    await cachedForTtl("small:new", 10, async () => "n");
+    expect(ttlCacheSizeForTests()).toBe(11);
   });
 });

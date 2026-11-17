@@ -7,12 +7,12 @@ vi.mock("~/lib/db.server", () => ({
   },
 }));
 vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn() }));
-vi.mock("~/lib/upcoming-meetings", () => ({ listUpcomingMeetings: vi.fn() }));
+vi.mock("~/calendar/lib/upcoming-meetings-list.server", () => ({ listUpcomingMeetings: vi.fn() }));
 vi.mock("~/lib/photo", () => ({ resolvePhotoUrl: vi.fn(async (v: string | null) => (v ? `https://img/${v}` : null)) }));
 
 import { prisma } from "~/lib/db.server";
 import { getUserRoles } from "~/lib/roles";
-import { listUpcomingMeetings } from "~/lib/upcoming-meetings";
+import { listUpcomingMeetings } from "~/calendar/lib/upcoming-meetings-list.server";
 import { loadCommunity, loadCommunityEvents, loadCommunityPeople, type CommunityViewerData } from "../community.server";
 
 const db = prisma as unknown as {
@@ -106,6 +106,12 @@ describe("loadCommunityPeople", () => {
       },
     ]);
     expect(JSON.stringify(people)).not.toContain("lastActiveAt");
+  });
+
+  it("leaves the viewer out of the people query", async () => {
+    db.user.findMany.mockResolvedValue([]);
+    await loadCommunityPeople("viewer", NOW);
+    expect(db.user.findMany.mock.calls[0][0].where).toMatchObject({ id: { not: "viewer" } });
   });
 
   it("hides activity for someone who turned it off", async () => {

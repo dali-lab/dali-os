@@ -21,7 +21,7 @@ vi.mock("~/lib/cors", () => ({
   handlePreflight: vi.fn(() => null),
 }));
 vi.mock("~/lib/validate", () => ({ parseJson: vi.fn() }));
-vi.mock("~/lib/scheduled-meeting", () => ({
+vi.mock("~/calendar/lib/scheduled-meeting.server", () => ({
   updateScheduledMeeting: vi.fn(),
 }));
 vi.mock("~/lib/notify.server", () => ({ notify: vi.fn().mockResolvedValue(undefined) }));
@@ -30,7 +30,7 @@ import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { parseJson } from "~/lib/validate";
-import { updateScheduledMeeting } from "~/lib/scheduled-meeting";
+import { updateScheduledMeeting } from "~/calendar/lib/scheduled-meeting.server";
 import { action } from "~/calendar/routes/api.scheduled-meetings.$id.proposal";
 
 const m = {

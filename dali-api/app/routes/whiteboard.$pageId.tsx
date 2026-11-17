@@ -4,12 +4,12 @@ import { prisma } from "~/lib/db.server";
 import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { getCollabToken } from "~/lib/collab-token.server";
-import { getPresenceUser } from "~/lib/presence-user";
+import { getPresenceUser } from "~/lib/presence-user.server";
 import { PAGE_ACCESS_SELECT, getPageAccess } from "~/lib/pageAccess.server";
 import { recordPageVisit } from "~/lib/user-pages.server";
 import { canManageSharing } from "~/lib/page-share-access.server";
-import { drivePageTrail, type DrivePageAncestry } from "~/lib/drive-page-trail";
-import { loadDrivePageAncestry } from "~/lib/drive-page-trail.server";
+import { drivePageTrail, type DrivePageAncestry } from "~/components/drive/drive-page-trail";
+import { loadDrivePageAncestry } from "~/drive/lib/drive-page-trail.server";
 import { Shapes } from "lucide-react";
 import { WhiteboardEditor } from "~/components/whiteboard/WhiteboardEditor";
 
@@ -142,7 +142,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 }
 
 export default function WhiteboardPage() {
-  const data = useLoaderData() as Exclude<Awaited<ReturnType<typeof loader>>, Response>;
+  const data = useLoaderData<typeof loader>();
   return (
     <WhiteboardEditor
       pageId={data.pageId}

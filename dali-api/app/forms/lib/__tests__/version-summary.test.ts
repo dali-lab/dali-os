@@ -244,7 +244,7 @@ describe("summarizeResponses with rules", () => {
     expect(s).toMatchObject({
       answered: 1,
       skipped: 1,
-      asked: { count: 2, who: "who picked Design in Q1" },
+      asked: { count: 2, who: "when Q1 includes Design" },
     });
   });
 
@@ -295,7 +295,7 @@ describe("summarizeResponses with rules", () => {
       ],
       2,
     );
-    expect(s).toMatchObject({ answered: 1, skipped: 0, asked: { count: 1, who: "who picked A in Q2" } });
+    expect(s).toMatchObject({ answered: 1, skipped: 0, asked: { count: 1, who: "when Q2 is A" } });
   });
 
   it("says nothing about who was asked for an unconditional question", () => {
@@ -309,6 +309,24 @@ describe("summarizeResponses with rules", () => {
       [source, q("p", "text", { showIf: { questionKey: "domains", op: "excludes", value: "Design" } })],
       [{ domains: ["Eng"] }],
     );
-    expect(s.asked?.who).toBe("who didn't pick Design in Q1");
+    expect(s.asked?.who).toBe("when Q1 doesn't include Design");
+  });
+
+  it("counts a question on a conditional page as asked only when the page was shown", () => {
+    const rating = q("rating", "scale");
+    const page = q("p", "pageBreak", {
+      showIf: { match: "all", conditions: [{ questionKey: "rating", op: "atMost", values: ["2"] }] },
+    });
+    const why = q("why", "text", { showIf: { questionKey: "rating", op: "answered" } });
+    const s = summaryOf(
+      [rating, page, why],
+      [{ rating: "1", why: "slow" }, { rating: "2" }, { rating: "5", why: "stale" }],
+      1,
+    );
+    expect(s).toMatchObject({
+      answered: 1,
+      skipped: 1,
+      asked: { count: 2, who: "when Q1 is at most 2 and Q1 is answered" },
+    });
   });
 });

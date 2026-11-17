@@ -17,7 +17,6 @@ import { prisma } from "~/lib/db.server";
 import { isCore, isProjectMember } from "~/lib/roles";
 import {
   runSetPageVisibility,
-  SET_PAGE_VISIBILITY_TOOL,
 } from "~/mcp/tools/projects-extra/set-page-visibility";
 
 const mockPrisma = prisma as unknown as {
@@ -32,10 +31,6 @@ beforeEach(() => {
 });
 
 describe("set_page_visibility", () => {
-  it("requires mcp:write scope", () => {
-    expect(SET_PAGE_VISIBILITY_TOOL.requiredScope).toBe("mcp:write");
-  });
-
   it("throws McpNotFoundError for non-project pages", async () => {
     vi.mocked(isCore).mockResolvedValue(true);
     mockPrisma.page.findUnique.mockResolvedValue({

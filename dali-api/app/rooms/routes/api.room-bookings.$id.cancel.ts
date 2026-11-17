@@ -3,7 +3,7 @@ import { z } from "zod";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
 import { requireRoomBookingUser } from "~/rooms/lib/access.server";
-import { cancelRoomBookingAsMember } from "~/lib/rooms.server";
+import { cancelRoomBookingAsMember } from "~/rooms/lib/rooms.server";
 
 const BodySchema = z.object({
   scope: z.enum(["this", "following", "all"]).optional(),

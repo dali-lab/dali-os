@@ -4,38 +4,14 @@ import { prisma } from "~/lib/db.server";
 import { requireProjectEditAccess, requireMemberSession } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { logAuditEvent } from "~/lib/audit";
-import { findNameConflict } from "~/lib/page-names.server";
-import { getPageAccess } from "~/lib/pageAccess.server";
-import { loadManageableNotebook, notebookErrorResponse, trashNotebook } from "~/lib/notebooks.server";
-import { isRoot, ROOT_DELETE_ERROR, CLEARED_FOLDER_TYPE } from "~/lib/drive-roots";
-
-// POST   /api/documents/:id — partial update. Body: any of
-//                             { title?, iconEmoji?, coverImageUrl? }.
-// DELETE /api/documents/:id — archive (sets archivedAt; archived pages drop
-//                             out of the hub / workspace list by default). A
-//                             notebook is archived with its tabs.
-//                             `?ifEmpty=1` on a Notebook refuses (409) while it
-//                             still holds live notes.
-//
-// Documents are FreeForm Pages. Project-scoped pages use the project-edit gate
-// (isCore === Admin || Core, or a project assignee). Lab, EducationOffering and
-// Member pages resolve through getPageAccess, which is the only gate that
-// understands a folder scope, a note's owner, or a share list.
-//
-// Lab used to take the bare lab-member gate, on the reasoning that the lab's
-// members are the Lab workspace's members. But the Lab workspace also holds the
-// Core-scoped folders, so that let any member rename or delete Core's
-// Agreements folder through this endpoint — the Drive hides those folders, the
-// API didn't. getPageAccess reads the folder scope and closes it.
-//
-// EducationOffering is handled here now rather than 404ing: the Drive's
-// Education space routes rename and delete through this same endpoint, so
-// without it neither worked anywhere in that space.
-//
-// Member pages (personal notes in My Drive): the doc editor's title box posts
-// here for every workspace, so this branch is what makes renaming a note from
-// the document itself work. Archiving one still belongs to /api/notes, so
-// DELETE stays owner-only.
+import { notebookErrorResponse, trashNotebook } from "~/calendar/lib/notebooks.server";
+import { isRoot, ROOT_DELETE_ERROR, CLEARED_FOLDER_TYPE } from "~/drive/lib/drive-roots";
+import {
+  PageRenameError,
+  canEditPageMetadata,
+  isRenamableWorkspace,
+  resolveRenameTitle,
+} from "~/drive/lib/page-rename.server";
 
 type Body = { title?: string; iconEmoji?: string | null; coverImageUrl?: string | null };
 
@@ -66,39 +42,18 @@ export async function action({ request, params }: Route.ActionArgs) {
     where: { id: pageId },
     select: { id: true, workspaceType: true, workspaceId: true, parentPageId: true, kind: true, folderType: true },
   });
-  if (
-    !page ||
-    (page.workspaceType !== "Project" &&
-      page.workspaceType !== "Lab" &&
-      page.workspaceType !== "EducationOffering" &&
-      page.workspaceType !== "Member") ||
-    (page.workspaceType !== "Lab" && !page.workspaceId)
-  ) {
+  if (!page || !isRenamableWorkspace(page)) {
     return withCors(request, Response.json({ error: "Document not found" }, { status: 404 }));
   }
   let auth: AuthSuccess;
-  if (page.workspaceType === "Lab" || page.workspaceType === "EducationOffering") {
+  if (page.workspaceType !== "Project") {
     const gate = await requireMemberSession(request);
     if (!gate.ok) return withCors(request, gate.response);
     auth = gate.auth;
-    // getPageAccess, not a bare role check: it is the only gate that walks the
-    // folder scope, so a Core-scoped Lab folder stays Core's. 404 rather than
-    // 403 so the endpoint doesn't confirm a page the caller can't see.
-    const access = await getPageAccess(auth.user.sub, pageId, request);
-    if (!access.canEdit) {
-      return withCors(request, Response.json({ error: "Document not found" }, { status: 404 }));
-    }
-  } else if (page.workspaceType === "Member") {
-    const gate = await requireMemberSession(request);
-    if (!gate.ok) return withCors(request, gate.response);
-    auth = gate.auth;
-    const isOwner = page.workspaceId === auth.user.sub;
-    // DELETE archives the note, which is the owner's call alone; a metadata
-    // edit follows the note's own edit grant (owner or an Edit/Full share).
     const allowed =
-      request.method === "DELETE"
-        ? isOwner
-        : isOwner || (await getPageAccess(auth.user.sub, pageId, request)).canEdit;
+      request.method === "DELETE" && page.workspaceType === "Member"
+        ? page.workspaceId === auth.user.sub
+        : await canEditPageMetadata(auth.user.sub, page, request);
     if (!allowed) {
       return withCors(request, Response.json({ error: "Document not found" }, { status: 404 }));
     }
@@ -193,26 +148,13 @@ export async function action({ request, params }: Route.ActionArgs) {
   } = { lastEditedById: auth.user.sub };
 
   if (body.title !== undefined) {
-    const title = body.title.trim();
-    if (!title) {
-      return withCors(request, Response.json({ error: "Title is required" }, { status: 400 }));
-    }
-    const conflict = await findNameConflict({
-      workspaceType: page.workspaceType,
-      workspaceId: page.workspaceId,
-      parentPageId: page.parentPageId,
-      kind: page.kind,
-      title,
-      excludeId: pageId,
-    });
-    if (conflict) return withCors(request, Response.json({ error: conflict }, { status: 409 }));
-    data.title = title;
-    if (page.kind === "Notebook") {
-      try {
-        await loadManageableNotebook(pageId, auth.user.sub, request);
-      } catch (err) {
-        return withCors(request, notebookErrorResponse(err));
+    try {
+      data.title = await resolveRenameTitle(page, body.title, auth.user.sub, request);
+    } catch (err) {
+      if (err instanceof PageRenameError) {
+        return withCors(request, Response.json({ error: err.message }, { status: err.status }));
       }
+      return withCors(request, notebookErrorResponse(err));
     }
   }
   if (body.iconEmoji !== undefined) {

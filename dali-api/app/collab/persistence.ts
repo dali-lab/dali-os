@@ -13,8 +13,7 @@ import {
   plainTextToBlocks,
 } from "./blocknote-server";
 import { mapPmDocToBlocks } from "./legacy/pm-to-blocknote";
-import { getStructuredData, ydocToBlocks } from "./read";
-import { stripCommentFormats } from "./comment-formats";
+import { getStructuredData, stateToBlocks, ydocToBlocks } from "./read";
 import { readDeck } from "./read-deck.server";
 import { restoreDeck } from "./deck-write.server";
 
@@ -182,29 +181,9 @@ export async function loadDocument(name: string, doc: Y.Doc): Promise<void> {
   }
 }
 
-/**
- * Extract the plain text of a Y.Doc's body. Reads the "blocknote" fragment
- * (falling back to an in-memory conversion of legacy "default" content) and
- * flattens the blocks — one line per block, table cells joined by spaces.
- *
- * Works on a **temporary clone** of the doc so that the server-side BlockNote
- * schema (which does not include the `comment` mark) cannot trigger y-prosemirror's
- * destructive error-recovery path — which deletes Y.XmlText items from the live
- * document and causes Hocuspocus to broadcast that deletion to all clients.
- */
+/** Plain text of a Y.Doc's body: one line per block, table cells joined by spaces. */
 export function getPlainText(doc: Y.Doc): string {
-  const clone = new Y.Doc();
-  try {
-    Y.applyUpdate(clone, Y.encodeStateAsUpdate(doc));
-    // Strip comment-format attributes before reading through the server schema.
-    const fragment = clone.getXmlFragment(BLOCKNOTE_FRAGMENT);
-    if (fragment.length > 0) {
-      clone.transact(() => stripCommentFormats(fragment));
-    }
-    return blocksToPlainText(ydocToBlocks(clone).blocks);
-  } finally {
-    clone.destroy();
-  }
+  return blocksToPlainText(ydocToBlocks(doc).blocks);
 }
 
 export interface StoredDocState {
@@ -496,14 +475,7 @@ export async function restoreVersion(
     return;
   }
 
-  const tmp = new Y.Doc();
-  let blocks;
-  try {
-    Y.applyUpdate(tmp, new Uint8Array(version.state));
-    blocks = ydocToBlocks(tmp).blocks;
-  } finally {
-    tmp.destroy();
-  }
+  const { blocks } = stateToBlocks(new Uint8Array(version.state));
 
   const conn = await server.hocuspocus.openDirectConnection(name);
   try {

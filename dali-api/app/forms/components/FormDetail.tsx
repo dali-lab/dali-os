@@ -26,11 +26,11 @@ import { PageBarTitle, PageBarMenuItems, PageBarPortal, pageBarTextButton } from
 import { PageBarShareButton } from "~/components/shell/PageBarShareButton";
 import { PageTitleHeader } from "~/components/doc-chrome/PageTitleHeader";
 import { FormQrDialog } from "~/forms/components/FormQrDialog";
-import type { HiringFormLink } from "~/hiring/lib/form-links.server";
+import type { HiringFormLink } from "~/forms/lib/form-links.server";
 import { BADGE, FormBuilderTab } from "~/components/form-builder/FormBuilder";
 import { InfoBody } from "~/components/form-builder/info-body";
-import { isLayoutOnly } from "~/lib/form-answers";
-import { questionNumbers, ruleDepths, showIfSentence } from "~/lib/form-logic";
+import { isLayoutOnly } from "~/forms/lib/form-answers";
+import { questionNumbers, ruleDepths, showIfSentence } from "~/forms/lib/form-logic";
 import { FormPreviewModal } from "~/forms/components/FormPreviewModal";
 import { ShareDialog } from "~/components/sharing/ShareDialog";
 import { FormSettingsDialog } from "~/forms/components/FormSettings";
@@ -47,6 +47,7 @@ import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { formatInTimeZone } from "~/lib/timezone";
 import { cn } from "~/lib/cn";
 import { useOsChrome } from "~/components/os-chrome";
+import { Z } from "~/components/ui/z";
 
 function formatDateTime(iso: string, tz: string) {
   return (
@@ -679,7 +680,7 @@ export function FormDetail() {
                     )}
                     {q.data.showIf && (
                       <p className="text-sm text-os-accent mb-2">
-                        Shown when {showIfSentence(q.data.showIf, questionNumbers(selectedVersion.questions))}
+                        Shown when {showIfSentence(q.data.showIf, questionNumbers(selectedVersion.questions), selectedVersion.questions)}
                       </p>
                     )}
                     <QuestionSourceNote question={q} />
@@ -814,7 +815,7 @@ function FormVersionMenu({
       align="right"
       ariaLabel="Versions"
       panelClassName={cn(
-        "z-[60] w-80 max-w-[calc(100vw-2rem)] overflow-y-auto overflow-x-hidden p-2 focus:outline-none",
+        `${Z.popover} w-80 max-w-[calc(100vw-2rem)] overflow-y-auto overflow-x-hidden p-2 focus:outline-none`,
         popover,
       )}
       trigger={

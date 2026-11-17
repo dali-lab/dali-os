@@ -38,7 +38,6 @@ function submission(i: number, over: Record<string, unknown> = {}) {
     id: `s${i}`,
     createdAt: new Date(Date.UTC(2026, 4, 20, 10, 0, 60 - i)),
     updatedAt: new Date(Date.UTC(2026, 4, 20, 10, 0, 60 - i)),
-    form: { name: "Feedback" },
     staffingCycleId: null,
     educationOfferingId: null,
     educationSessionId: null,
@@ -222,21 +221,32 @@ describe("loadVersionResponses edit and delete state", () => {
     expect((await rowFor({ updatedAt: new Date(Date.UTC(2026, 4, 21)) })).edited).toBe(true);
   });
 
-  it("leaves an ordinary response deletable", async () => {
-    expect((await rowFor({})).lockReason).toBeNull();
+  it("leaves an ordinary response deletable with nothing else removed", async () => {
+    expect(await rowFor({})).toMatchObject({ deleteBlocked: null, deleteEffects: [] });
   });
 
-  it.each([
-    ["slot", { slot: "project-bids" }],
-    ["staffingCycleId", { staffingCycleId: "c1" }],
-    ["educationOfferingId", { educationOfferingId: "o1" }],
-    ["educationSessionId", { educationSessionId: "s1" }],
-    ["partnerApplication", { partnerApplication: { id: "a", title: "T" } }],
-    ["educationApplication", { educationApplication: { id: "a" } }],
-    ["partnerSurveyFor", { partnerSurveyFor: { id: "a" } }],
-    ["the onboarding profile form", { form: { name: "Welcome to DALI! 👋" } }],
-  ])("gives a reason for a response with %s", async (_n, over) => {
-    expect((await rowFor(over)).lockReason).toEqual(expect.any(String));
+  it("lists what a bound response's delete also removes", async () => {
+    expect(await rowFor({ slot: "project-bids", staffingCycleId: "c1" })).toMatchObject({
+      deleteBlocked: null,
+      deleteEffects: ["Removes their project bids for this cycle."],
+    });
+  });
+
+  it("gives the reason when the delete is refused", async () => {
+    const row = await rowFor({
+      partnerApplication: { id: "a", title: "T", resultingProjectId: "p1" },
+    });
+    expect(row).toMatchObject({
+      deleteBlocked: "Its partner application became a project.",
+      deleteEffects: [],
+    });
+  });
+
+  it("hands the table only the partner application's id and title", async () => {
+    const row = await rowFor({
+      partnerApplication: { id: "a", title: "T", resultingProjectId: null },
+    });
+    expect(row.partnerApplication).toEqual({ id: "a", title: "T" });
   });
 });
 
@@ -244,7 +254,9 @@ describe("loadVersionResponses partner application", () => {
   it("selects the partner application title so the table can name it", async () => {
     await loadVersionResponses("f1", "v1");
     const page = db.formSubmission.findMany.mock.calls.find((c) => c[0].select?.partnerApplication)!;
-    expect(page[0].select.partnerApplication).toEqual({ select: { id: true, title: true } });
+    expect(page[0].select.partnerApplication).toEqual({
+      select: { id: true, title: true, resultingProjectId: true },
+    });
     expect(page[0].select.slot).toBe(true);
   });
 });
@@ -254,6 +266,7 @@ describe("loadVersionResponses member columns", () => {
   const history = {
     projects: [{ level: "P2", domainId: "eng", project: { name: "Evergreen" }, domain: { displayName: "Engineering" }, term: f26 }],
     core: [],
+    eligibilities: [{ level: "P2", domainId: "eng", domain: { displayName: "Engineering" } }],
   };
 
   beforeEach(() => {
@@ -268,26 +281,49 @@ describe("loadVersionResponses member columns", () => {
     expect(r.responses[0].rows.map((x) => x.key)).toEqual(["q1"]);
   });
 
-  it("appends the chosen columns in a fixed order and fills them for signed-in respondents", async () => {
+  it("appends the chosen columns in the order given and fills them for signed-in respondents", async () => {
     vi.useFakeTimers({ now: new Date("2026-11-11"), toFake: ["Date"] });
     db.formSubmission.findMany.mockResolvedValue([
       submission(1),
       submission(2, { userId: "u1" }),
       submission(3, { userId: null, user: null, submitterName: "Guest" }),
     ]);
-    const r = await loadVersionResponses("f1", "v1", { memberColumns: ["currentRole", "projectHistory"] });
+    const r = await loadVersionResponses("f1", "v1", {
+      columns: [{ id: "member:currentRole" }, { id: "member:hiredRoles" }, { id: "member:projectHistory" }],
+    });
     vi.useRealTimers();
 
     expect(loadMemberHistories).toHaveBeenCalledWith(["u1"]);
     expect(r.columns).toEqual([
       { key: "q1", label: "Role" },
-      { key: "member:projectHistory", label: "Project history" },
       { key: "member:currentRole", label: "Current role" },
+      { key: "member:hiredRoles", label: "Hired roles" },
+      { key: "member:projectHistory", label: "Project history" },
     ]);
     expect(r.responses[0].rows.slice(1)).toEqual([
-      { key: "member:projectHistory", label: "Project history", value: "Evergreen (26F)" },
       { key: "member:currentRole", label: "Current role", value: "26F: Engineering (P2)" },
+      { key: "member:hiredRoles", label: "Hired roles", value: "Engineering (P2)" },
+      { key: "member:projectHistory", label: "Project history", value: "Evergreen (26F)" },
     ]);
-    expect(r.responses[2].rows.slice(1).map((x) => x.value)).toEqual(["", ""]);
+    expect(r.responses[2].rows.slice(1).map((x) => x.value)).toEqual(["", "", ""]);
+  });
+
+  it("follows saved order, labels and hidden columns, and lists what + can add", async () => {
+    db.formSubmission.findMany.mockResolvedValue([submission(2, { userId: "u1" })]);
+    const r = await loadVersionResponses("f1", "v1", {
+      columns: [
+        { id: "member:termsInLab", label: "Terms" },
+        { id: "q1", hidden: true },
+        { id: "member:hiredRoles", hidden: true },
+      ],
+    });
+    expect(r.columns).toEqual([{ key: "member:termsInLab", label: "Terms" }]);
+    expect(r.hiddenColumns.map((c) => c.key)).toEqual([
+      "q1",
+      "member:hiredRoles",
+      "member:projectHistory",
+      "member:currentRole",
+    ]);
+    expect(r.responses[0].rows.map((x) => x.key)).toEqual(["q1", "member:termsInLab"]);
   });
 });

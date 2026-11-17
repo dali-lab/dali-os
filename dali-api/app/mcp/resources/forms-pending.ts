@@ -1,6 +1,6 @@
 // MCP resource `dali://forms/pending` — published forms attached to one of the
 // caller's unread notifications. Mirrors the form-handling in `listOpenTasks`
-// (`~/lib/tasks.ts`): a notification with `form.published && form.publicToken`
+// (`~/lib/tasks.server`): a notification with `form.published && form.publicToken`
 // links the recipient to the authed fill page, which is what marks the
 // notification read on submit. We expose the title, dueAt, and the fill URL.
 // Requires the `mcp:read` scope.

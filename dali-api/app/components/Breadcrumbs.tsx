@@ -7,7 +7,7 @@ import { Menu } from "~/components/ui/floating";
 import { OS_MENU_ITEM_CLASS } from "~/components/ui/floating/styles";
 import { isNavbarRoute } from '~/lib/navbar-routes'
 import { isAreaSubtabPath } from '~/lib/nav-areas'
-import { stripAppTitle } from '~/lib/page-title'
+import { stripAppTitle } from '~/drive/lib/page-title'
 import { usePageBarTitle } from '~/components/shell/page-bar-slot'
 import { RenameCrumb, TitleCrumbIcon } from '~/components/shell/PageBarTitleCrumb'
 
@@ -29,7 +29,7 @@ export type Crumb = {
 // crumb (e.g. an applicant's name in place of a raw id). Returning a Crumb[]
 // instead expands the segment into a sub-trail — for hierarchy the flat URL
 // can't express, like nested folder ancestry (/forms/:folderId).
-// A route that renders an AreaPillNav row instead exports
+// A route that renders a SegmentedTabs row instead exports
 //   export const handle = { areaPills: true }
 // which suppresses the trail entirely — see the wayfinding contract below.
 // A route can also render a page-specific action at the far right of this

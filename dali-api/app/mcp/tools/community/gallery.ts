@@ -7,9 +7,9 @@
 
 import { prisma } from "~/lib/db.server";
 import { fullName } from "~/lib/display";
-import { getUserRoles, isLabMember } from "~/lib/roles";
+import { getUserRoles, isLabMemberOrAlum } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
-import { getUploadPost, headObject, isS3Configured } from "~/lib/s3";
+import { getUploadPost, headObject, isS3Configured } from "~/lib/s3.server";
 import { fileMatchesAccept, uploadCapForKey } from "~/lib/file-validation";
 import {
   applyGalleryIntent,
@@ -163,7 +163,7 @@ export const MANAGE_GALLERY_POST_DEF = {
 // The web route's gate: members and alumni, behind the `community` flag.
 export async function galleryViewerFor(ctx: McpCtx): Promise<GalleryViewer> {
   const { id } = ctx.user;
-  if (!(await isLabMember(id, ctx.request))) throw new McpForbiddenError();
+  if (!(await isLabMemberOrAlum(id, ctx.request))) throw new McpForbiddenError();
   const roles = await getUserRoles(id, ctx.request);
   if (!(await isFeatureEnabled("community", id, roles, ctx.request))) {
     throw new McpForbiddenError("The gallery is not available");

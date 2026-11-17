@@ -20,7 +20,6 @@ import {
 import { AlertCircle, ArrowUpRight, CheckCircle2, Search, X } from "lucide-react";
 import { Button } from "~/components/ui/Button";
 import { ProjectIcon } from "~/components/ProjectIcon";
-import { useOsChrome } from "~/components/os-chrome";
 import { filterPillClass } from "~/components/ui/floating/styles";
 import { Tooltip } from "~/components/ui/floating";
 import { cn } from "~/lib/cn";
@@ -89,7 +88,6 @@ export function StaffingBoard({
   domainNames,
   canManage,
 }: Props) {
-  const { os } = useOsChrome();
   const dialog = useDialog();
   const [searchParams, setSearchParams] = useSearchParams();
   const revalidator = useRevalidator();
@@ -613,21 +611,13 @@ export function StaffingBoard({
 
   const termCode = terms.find((t) => t.id === termId)?.code ?? "";
 
-  // Per-column tone. The brand shell washes an active project's column in
-  // teal; the os design has no such wash — its columns are all the one card
-  // fill, and the states separate by weight instead: the staging column sits
-  // in the darker well, a paused or archived project fades back.
-  const toneClasses: Record<"muted" | "active" | "dim", string> = os
-    ? {
-        muted: "border-transparent bg-os-well",
-        active: "border-transparent bg-os-card",
-        dim: "border-transparent bg-os-card opacity-60",
-      }
-    : {
-        muted: "border-border bg-muted/20",
-        active: "border-os-accent/40 bg-os-accent/[0.04]",
-        dim: "border-border bg-card",
-      };
+  // Columns share one card fill; states separate by weight: the staging column
+  // sits in the darker well, a paused or archived project fades back.
+  const toneClasses: Record<"muted" | "active" | "dim", string> = {
+    muted: "border-transparent bg-os-well",
+    active: "border-transparent bg-os-card",
+    dim: "border-transparent bg-os-card opacity-60",
+  };
   // pt-1/px on the row (the primitive's default row layout) keeps each column's
   // top + side borders off the scroll-clip edge so they stay visible.
   const shell = (tone: "muted" | "active" | "dim") =>
@@ -636,7 +626,7 @@ export function StaffingBoard({
       // A column is a tall container, not a card: the design's 24px card
       // corner curves away from its own contents at this height, so it takes
       // the 12px item radius instead.
-      os ? "rounded-os-item" : "rounded-lg",
+      "rounded-os-item",
       toneClasses[tone],
     );
   // Only the card list scrolls; the header stays pinned. flex-1 + min-h-0 lets
@@ -685,8 +675,8 @@ export function StaffingBoard({
             : "Lock the roster and set up the project's Slack channel and GitHub team. Run this once all members are placed.";
       const finalizeIconClass = cn(
         "w-4 h-4",
-        finalizeState === "finalized" && (os ? "text-os-green" : "text-os-green"),
-        finalizeState === "drifted" && (os ? "text-os-amber" : "text-os-amber"),
+        finalizeState === "finalized" && "text-os-green",
+        finalizeState === "drifted" && "text-os-amber",
       );
       const finalizeIcon =
         finalizeState === "drifted" ? (
@@ -730,12 +720,7 @@ export function StaffingBoard({
                 onPointerDown={(e) => e.stopPropagation()}
                 onClick={(e) => e.stopPropagation()}
                 aria-label={`Open ${p.name}`}
-                className={cn(
-                  "shrink-0 rounded p-0.5 transition-colors",
-                  os
-                    ? "text-os-muted hover:text-foreground"
-                    : "text-muted-foreground/70 hover:text-os-accent",
-                )}
+                className="shrink-0 rounded p-0.5 text-os-muted transition-colors hover:text-foreground"
               >
                 <ArrowUpRight className="h-3.5 w-3.5" aria-hidden />
               </Link>
@@ -757,9 +742,7 @@ export function StaffingBoard({
                 "flex-shrink-0 transition-colors",
                 finalizeState === "finalized" || finalizeState === "drifted"
                   ? undefined
-                  : os
-                    ? "text-os-muted hover:text-os-accent"
-                    : "text-muted-foreground hover:text-os-accent",
+                  : "text-os-muted hover:text-os-accent",
               )}
             >
               {finalizeIcon}
@@ -855,7 +838,7 @@ export function StaffingBoard({
               selected={termId}
               includeAll={false}
               replace
-              buttonClassName={cn(filterPillClass(os), "w-full sm:w-40")}
+              buttonClassName={cn(filterPillClass(), "w-full sm:w-40")}
             />
           </div>
         </div>
@@ -1042,16 +1025,8 @@ export function StaffingBoard({
 // first). The shared IssueTermAgreementsButton owns the preview/confirm/issue
 // flow — the same control the Core ▸ Agreements hub uses.
 function IssueTermAgreementsBanner({ termId, termCode }: { termId: string; termCode: string }) {
-  const { os } = useOsChrome();
   return (
-    <div
-      className={cn(
-        "w-full px-4 py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between",
-        os
-          ? "rounded-os-card bg-os-card"
-          : "rounded-lg border border-os-accent/30 bg-os-accent/10",
-      )}
-    >
+    <div className="w-full px-4 py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between rounded-os-card bg-os-card">
       <div className="min-w-0">
         <p className="text-sm font-heading font-semibold text-foreground">
           Term agreements{termCode ? ` for ${termCode}` : ""}
@@ -1076,7 +1051,6 @@ function IssueTermAgreementsBanner({ termId, termCode }: { termId: string; termC
 // invite all current-term Core + Admin/staff + everyone assigned to a project
 // this term. The channel name is editable, defaulting to the term code.
 function TermChannelBanner({ termId, termCode }: { termId: string; termCode: string }) {
-  const { os } = useOsChrome();
   const dialog = useDialog();
   const [channel, setChannel] = useState(sanitizeChannelName(termCode));
   const [running, setRunning] = useState(false);
@@ -1120,14 +1094,7 @@ function TermChannelBanner({ termId, termCode }: { termId: string; termCode: str
   }
 
   return (
-    <div
-      className={cn(
-        "w-full px-4 py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between",
-        os
-          ? "rounded-os-card bg-os-card"
-          : "rounded-lg border border-os-accent/30 bg-os-accent/10",
-      )}
-    >
+    <div className="w-full px-4 py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between rounded-os-card bg-os-card">
       <div className="min-w-0">
         <p className="text-sm font-heading font-semibold text-foreground">
           Term Slack channel{termCode ? ` for ${termCode}` : ""}
@@ -1136,7 +1103,7 @@ function TermChannelBanner({ termId, termCode }: { termId: string; termCode: str
           <p
             className={cn(
               "text-xs mt-1",
-              result.ok ? (os ? "text-os-green" : "text-os-green") : "text-destructive",
+              result.ok ? "text-os-green" : "text-destructive",
             )}
           >
             {result.ok ? "✓ " : "✗ "}
@@ -1153,12 +1120,7 @@ function TermChannelBanner({ termId, termCode }: { termId: string; termCode: str
           onChange={(e) => setChannel(e.target.value)}
           placeholder="26x"
           aria-label="Term channel name"
-          className={cn(
-            "w-32 px-2 py-1 text-sm border border-border bg-background text-foreground disabled:opacity-60 focus:outline-none focus:ring-2",
-            os
-              ? "rounded-os-item focus:ring-os-accent/40"
-              : "rounded-md focus:ring-os-accent/30",
-          )}
+          className="w-32 px-2 py-1 text-sm border border-border bg-background text-foreground disabled:opacity-60 focus:outline-none focus:ring-2 rounded-os-item focus:ring-os-accent/40"
         />
         <Tooltip content="Creates the Slack channel and invites all Core, Admins, and everyone staffed this term">
           <Button

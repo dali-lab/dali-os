@@ -7,8 +7,8 @@
 
 import type { Route } from "./+types/api.meeting-recordings.$id.result";
 import { prisma } from "~/lib/db.server";
-import { verifyHmac } from "~/lib/transcription/hmac";
-import { applyResult } from "~/lib/meeting-recording.server";
+import { verifyHmac } from "~/lib/transcription/hmac.server";
+import { applyResult } from "~/calendar/lib/meeting-recording.server";
 import type { ModalCallbackBody, ModalProgress, ModalProgressBody } from "~/lib/transcription/modal";
 
 const PROGRESS_STAGES = ["fetching", "transcribing", "labeling"];

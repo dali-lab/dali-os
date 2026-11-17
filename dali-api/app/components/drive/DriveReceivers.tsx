@@ -12,7 +12,7 @@ import {
 import { Button } from "~/components/ui/Button";
 import { useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
-import type { ReceiverFolderType, ReceiverProcessType } from "~/lib/drive-receivers";
+import type { ReceiverFolderType, ReceiverProcessType } from "~/drive/lib/drive-receivers";
 
 export function DriveReceivers({
   processType,

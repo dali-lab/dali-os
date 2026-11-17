@@ -17,7 +17,7 @@ vi.mock("~/mcp/registry", () => {
 vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
-  return { ...real, isLabMember: vi.fn() };
+  return { ...real, isLabMemberOrAlum: vi.fn() };
 });
 vi.mock("~/members/lib/personal-notes.server", () => ({
   noteAccess: vi.fn(),
@@ -39,7 +39,7 @@ vi.mock("~/members/lib/personal-notes-actions.server", () => ({
 }));
 
 import { prisma } from "~/lib/db.server";
-import { isLabMember } from "~/lib/roles";
+import { isLabMemberOrAlum } from "~/lib/roles";
 import { noteAccess, NoteNotFoundError } from "~/members/lib/personal-notes.server";
 import { createNote, deleteNote } from "~/members/lib/personal-notes-actions.server";
 import {
@@ -71,7 +71,7 @@ describe("list_personal_notes", () => {
   });
 
   it("rejects non-lab-members", async () => {
-    vi.mocked(isLabMember).mockResolvedValue(false);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(false);
     await expect(runListPersonalNotes("u1", {})).rejects.toMatchObject({
       name: "PersonalNoteError",
       status: 403,
@@ -79,7 +79,7 @@ describe("list_personal_notes", () => {
   });
 
   it("returns own notes for a lab member", async () => {
-    vi.mocked(isLabMember).mockResolvedValue(true);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
     mockPrisma.page.findMany.mockResolvedValue([
       { id: "n1", title: "My note", iconEmoji: null, kind: "FreeForm", parentPageId: null, workspaceId: "u1", profileVisible: false, labListing: "None", updatedAt: new Date("2026-01-01"), tags: [], _count: { shares: 0 } },
     ]);
@@ -95,7 +95,7 @@ describe("list_personal_notes", () => {
   });
 
   it("pages own notes with an id tiebreak and a cursor, and the last page has none", async () => {
-    vi.mocked(isLabMember).mockResolvedValue(true);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
     mockPrisma.page.count.mockResolvedValue(3);
     mockPrisma.page.findMany.mockResolvedValueOnce([note("a"), note("b"), note("c")]);
 
@@ -115,7 +115,7 @@ describe("list_personal_notes", () => {
   });
 
   it("pages shared notes by offset with an id tiebreak, since updatedAt changes", async () => {
-    vi.mocked(isLabMember).mockResolvedValue(true);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
     mockPrisma.page.count.mockResolvedValue(3);
     mockPrisma.user.findMany.mockResolvedValue([{ id: "u2", firstName: "Ada", lastName: "Lovelace" }]);
     mockPrisma.page.findMany.mockResolvedValueOnce([note("a", "u2"), note("b", "u2"), note("c", "u2")]);

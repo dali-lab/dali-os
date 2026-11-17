@@ -509,35 +509,33 @@ export default function ApplicationsDatabase() {
         />
         <Popover
           ariaLabel="Filter applications"
-          panelClassName={filterPanelClass(true)}
+          panelClassName={filterPanelClass()}
           trigger={
             <button
               type="button"
-              className={customizeButtonClass(true, activeFilterCount > 0)}
+              className={customizeButtonClass(activeFilterCount > 0)}
             >
               <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden />
               Filter
-              <FilterCountBadge os={true} count={activeFilterCount} />
+              <FilterCountBadge count={activeFilterCount} />
             </button>
           }
         >
           <div className="flex flex-col gap-3">
             <div className="flex items-center justify-between">
-              <FilterSectionLabel os={true}>Filters</FilterSectionLabel>
+              <FilterSectionLabel>Filters</FilterSectionLabel>
               {activeFilterCount > 0 && (
                 <FilterResetButton
-                  os={true}
                   onClick={() =>
                     patch({ domainIds: [], statuses: [], stage: null, engagement: [], eventIds: [] })
                   }
                 />
               )}
             </div>
-            <FilterGroup label="Status" os={true}>
+            <FilterGroup label="Status">
               {STATUSES.map((st) => (
                 <FilterPill
                   key={st}
-                  os={true}
                   selected={statuses.includes(st)}
                   onClick={() => setStatuses((prev) => toggle(prev, st))}
                 >
@@ -546,11 +544,10 @@ export default function ApplicationsDatabase() {
               ))}
             </FilterGroup>
             {data.showPipeline && slices.length > 0 && (
-              <FilterGroup label="Stage" os={true}>
+              <FilterGroup label="Stage">
                 {slices.map((s) => (
                   <FilterPill
                     key={s.status}
-                    os={true}
                     selected={stage === s.status}
                     onClick={() => setStage((prev) => (prev === s.status ? null : s.status))}
                   >
@@ -559,11 +556,10 @@ export default function ApplicationsDatabase() {
                 ))}
               </FilterGroup>
             )}
-            <FilterGroup label="Engagement" os={true}>
+            <FilterGroup label="Engagement">
               {engagementOptions.map((e) => (
                 <FilterPill
                   key={e.key}
-                  os={true}
                   selected={engagement.includes(e.key)}
                   onClick={() => patch({ engagement: toggle(engagement, e.key) })}
                 >
@@ -572,11 +568,10 @@ export default function ApplicationsDatabase() {
               ))}
             </FilterGroup>
             {eventOptions.length > 0 && (
-              <FilterGroup label="Attended event" os={true}>
+              <FilterGroup label="Attended event">
                 {eventOptions.map((e) => (
                   <FilterPill
                     key={e.id}
-                    os={true}
                     selected={eventIds.includes(e.id)}
                     onClick={() => patch({ eventIds: toggle(eventIds, e.id) })}
                   >
@@ -586,11 +581,10 @@ export default function ApplicationsDatabase() {
               </FilterGroup>
             )}
             {showDomainFilter && (
-              <FilterGroup label="Domain" os={true}>
+              <FilterGroup label="Domain">
                 {data.domainOptions.map((d) => (
                   <FilterPill
                     key={d.id}
-                    os={true}
                     selected={domainIds.includes(d.id)}
                     onClick={() => setDomainIds((prev) => toggle(prev, d.id))}
                   >

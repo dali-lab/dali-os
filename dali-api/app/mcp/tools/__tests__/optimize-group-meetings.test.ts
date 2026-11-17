@@ -1,12 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db.server");
-vi.mock("~/lib/google-calendar", () => ({
+vi.mock("~/calendar/lib/google-calendar.server", () => ({
   fetchBusyEvents: vi.fn().mockResolvedValue([]),
 }));
 
 import { prisma } from "~/lib/db.server";
-import { fetchBusyEvents } from "~/lib/google-calendar";
+import { fetchBusyEvents } from "~/calendar/lib/google-calendar.server";
 import {
   runOptimizeGroupMeetings,
   OPTIMIZE_GROUP_MEETINGS_DEF,

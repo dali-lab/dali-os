@@ -35,6 +35,8 @@ const tx = {
 
 const mockPrisma = prisma as unknown as {
   staffingCycle: { findUnique: ReturnType<typeof vi.fn> };
+  project: { findUnique: ReturnType<typeof vi.fn> };
+  domain: { count: ReturnType<typeof vi.fn> };
   $transaction: ReturnType<typeof vi.fn>;
 };
 
@@ -58,6 +60,9 @@ beforeEach(() => {
   mockPrisma.staffingCycle = {
     findUnique: vi.fn().mockResolvedValue({ id: CYCLE, termId: TERM }),
   };
+  tx.staffingAssignment.deleteMany.mockResolvedValue({ count: 0 });
+  mockPrisma.project = { findUnique: vi.fn().mockResolvedValue({ id: PROJ_B }) };
+  mockPrisma.domain = { count: vi.fn().mockResolvedValue(1) };
   mockPrisma.$transaction = vi.fn(async (cb: (t: typeof tx) => unknown) => cb(tx));
 });
 

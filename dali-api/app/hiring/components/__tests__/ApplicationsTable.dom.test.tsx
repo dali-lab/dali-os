@@ -98,4 +98,13 @@ describe("ApplicationsTable", () => {
     await act(async () => bodyRows()[1].dispatchEvent(new MouseEvent("click", { bubbles: true })));
     expect(container.querySelector("#detail")).not.toBeNull();
   });
+
+  it("links each applicant's name to their application", async () => {
+    await mount(table(many(2)));
+    const links = [...container.querySelectorAll("tbody a")];
+    expect(links.map((a) => [a.textContent, a.getAttribute("href")])).toEqual([
+      ["Ada 0", "/hiring/applications/a0"],
+      ["Ada 1", "/hiring/applications/a1"],
+    ]);
+  });
 });

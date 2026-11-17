@@ -1,8 +1,8 @@
 import { useState } from "react";
 import type { Question } from "~/types";
 import { Button } from "~/components/ui/Button";
-import { findMissingRequired } from "~/lib/form-answers";
-import type { FormPage } from "~/lib/form-pages";
+import { findMissingRequired } from "~/forms/lib/form-answers";
+import type { FormPage } from "~/forms/lib/form-pages";
 
 // Shared stepping machinery for paginated forms. Surfaces own their own field
 // rendering and Submit button; this owns the page index, per-page required
@@ -24,11 +24,7 @@ export type FormPagerState = {
   goTo: (index: number) => void;
 };
 
-export function useFormPager(
-  pages: FormPage[],
-  opts?: { excludeFileType?: boolean },
-): FormPagerState {
-  const excludeFileType = opts?.excludeFileType ?? true;
+export function useFormPager(pages: FormPage[]): FormPagerState {
   const [index, setIndex] = useState(0);
   const clamped = Math.min(index, pages.length - 1);
   const page = pages[clamped];
@@ -41,9 +37,7 @@ export function useFormPager(
     multi: pages.length > 1,
     goBack: () => setIndex((i) => Math.max(0, i - 1)),
     goNext: (getValue) => {
-      const missing = findMissingRequired(page.questions, getValue, {
-        excludeFileType,
-      });
+      const missing = findMissingRequired(page.questions, getValue);
       if (missing.length > 0) return missing[0];
       setIndex((i) => Math.min(pages.length - 1, i + 1));
       return null;

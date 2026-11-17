@@ -3,15 +3,15 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
-  return { ...real, isCore: vi.fn(), isLabMember: vi.fn() };
+  return { ...real, isCore: vi.fn(), isLabMemberOrAlum: vi.fn() };
 });
-vi.mock("~/lib/pages", () => ({
+vi.mock("~/lib/pages.server", () => ({
   createLabPage: vi.fn(),
 }));
 
 import { prisma } from "~/lib/db.server";
-import { isCore, isLabMember } from "~/lib/roles";
-import { createLabPage } from "~/lib/pages";
+import { isCore, isLabMemberOrAlum } from "~/lib/roles";
+import { createLabPage } from "~/lib/pages.server";
 import {
   LIST_LAB_DOCUMENTS_TOOL,
   runListLabDocuments,
@@ -41,7 +41,7 @@ describe("list_lab_documents", () => {
   });
 
   it("rejects non-lab-members", async () => {
-    vi.mocked(isLabMember).mockResolvedValue(false);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(false);
     await expect(runListLabDocuments("u1", {})).rejects.toMatchObject({
       name: "LabDocumentError",
       status: 403,
@@ -49,7 +49,7 @@ describe("list_lab_documents", () => {
   });
 
   it("returns documents for a lab member", async () => {
-    vi.mocked(isLabMember).mockResolvedValue(true);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
     mockPrisma.page.findMany.mockResolvedValue([
       { id: "p1", title: "Docs", kind: "FreeForm", parentPageId: null, pinnedAt: null, position: 0, updatedAt: new Date("2026-01-01"), iconEmoji: null, tags: [] },
     ]);
@@ -60,7 +60,7 @@ describe("list_lab_documents", () => {
   });
 
   it("pages with an id tiebreak and a cursor, and the last page has none", async () => {
-    vi.mocked(isLabMember).mockResolvedValue(true);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
     mockPrisma.page.count.mockResolvedValue(3);
     const row = (id: string) => ({ id, title: id, kind: "FreeForm", parentPageId: null, pinnedAt: null, position: 0, updatedAt: new Date("2026-01-01"), iconEmoji: null, tags: [] });
     mockPrisma.page.findMany.mockResolvedValueOnce([row("a"), row("b"), row("c")]);
@@ -88,14 +88,14 @@ describe("create_lab_document", () => {
   });
 
   it("rejects non-lab-members", async () => {
-    vi.mocked(isLabMember).mockResolvedValue(false);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(false);
     await expect(
       runCreateLabDocument("u1", { title: "New doc" }),
     ).rejects.toMatchObject({ name: "LabDocumentError", status: 403 });
   });
 
   it("creates a lab document for a lab member", async () => {
-    vi.mocked(isLabMember).mockResolvedValue(true);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
     vi.mocked(createLabPage).mockResolvedValue({ id: "new-page" } as never);
 
     const out = await runCreateLabDocument("u1", { title: "New doc" });
@@ -104,7 +104,7 @@ describe("create_lab_document", () => {
   });
 
   it("rejects Folder with a parentPageId", async () => {
-    vi.mocked(isLabMember).mockResolvedValue(true);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
     await expect(
       runCreateLabDocument("u1", { title: "Nested folder", kind: "Folder", parentPageId: "parent1" }),
     ).rejects.toMatchObject({ name: "LabDocumentError", status: 400 });

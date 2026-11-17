@@ -6,7 +6,6 @@ import { prisma } from "~/lib/db.server";
 import {
   runTaskAutoArchive,
   archiveIdleTasks,
-  archiveTerminalTasks,
 } from "~/jobs/task-auto-archive.server";
 
 const mockPrisma = prisma as unknown as Record<
@@ -85,26 +84,5 @@ describe("archiveIdleTasks", () => {
     expect(count).toBe(1);
     const arg = mockPrisma.task.updateMany.mock.calls[0][0];
     expect(arg.where.projectId).toBe("proj-1");
-  });
-});
-
-describe("archiveTerminalTasks", () => {
-  it("archives all Done/Cancelled on the project with no idle cutoff", async () => {
-    mockPrisma.task.updateMany.mockResolvedValue({ count: 5 });
-
-    const count = await archiveTerminalTasks({
-      now: NOW,
-      projectId: "proj-1",
-    });
-
-    expect(count).toBe(5);
-    const arg = mockPrisma.task.updateMany.mock.calls[0][0];
-    expect(arg.where).toEqual({
-      projectId: "proj-1",
-      archivedAt: null,
-      status: { in: ["Done", "Cancelled"] },
-    });
-    expect(arg.where.updatedAt).toBeUndefined();
-    expect(arg.data).toEqual({ archivedAt: NOW });
   });
 });

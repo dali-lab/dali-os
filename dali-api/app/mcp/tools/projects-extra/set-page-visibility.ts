@@ -12,27 +12,6 @@ import { prisma } from "~/lib/db.server";
 import { McpNotFoundError, McpForbiddenError, McpInvalidError, requireForAction } from "./errors";
 import { canEditProject } from "../access";
 
-export const SET_PAGE_VISIBILITY_TOOL = {
-  name: "set_page_visibility",
-  description:
-    "Set a project page's partner or public visibility. action: 'partner' toggles the flag that shares the page with the partner portal; 'public' toggles the public write-up flag.",
-  inputSchema: {
-    type: "object" as const,
-    properties: {
-      action: {
-        type: "string",
-        enum: ["partner", "public"],
-        description: "'partner' or 'public'.",
-      },
-      pageId: { type: "string", minLength: 1, description: "Page.id." },
-      visible: { type: "boolean", description: "true to show, false to hide." },
-    },
-    required: ["action", "pageId", "visible"],
-    additionalProperties: false,
-  },
-  requiredScope: "mcp:write" as const,
-};
-
 type SetPageVisibilityInput = { action: string; pageId: string; visible: boolean };
 
 export async function runSetPageVisibility(

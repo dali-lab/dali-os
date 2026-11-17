@@ -1,5 +1,5 @@
 import { prisma } from "~/lib/db.server";
-import { resolveGroupMembers } from "~/lib/groups";
+import { resolveGroupMembers } from "~/lib/groups.server";
 
 export type CoreActor = { actorId: string; coreGroupId: string } | { abort: string };
 

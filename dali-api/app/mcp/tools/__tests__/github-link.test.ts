@@ -8,18 +8,17 @@ vi.mock("~/lib/roles", async (orig) => {
 vi.mock("~/projects/lib/github-task-sync", () => ({
   normalizeRepo: (s: string) => (s.includes("/") ? s : null),
   createIssueForTask: vi.fn().mockResolvedValue(undefined),
+  unlinkTaskFromGithub: vi.fn(),
 }));
 
 import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
-import { createIssueForTask } from "~/projects/lib/github-task-sync";
+import { createIssueForTask, unlinkTaskFromGithub } from "~/projects/lib/github-task-sync";
 import {
   runLinkTaskToGithub,
-  LINK_TASK_TO_GITHUB_TOOL,
 } from "~/mcp/tools/link-task-to-github";
 import {
   runUnlinkTaskFromGithub,
-  UNLINK_TASK_FROM_GITHUB_TOOL,
 } from "~/mcp/tools/unlink-task-from-github";
 
 const mockPrisma = prisma as unknown as {
@@ -29,11 +28,6 @@ const mockPrisma = prisma as unknown as {
 beforeEach(() => vi.clearAllMocks());
 
 describe("github link / unlink", () => {
-  it("scopes are right", () => {
-    expect(LINK_TASK_TO_GITHUB_TOOL.requiredScope).toBe("mcp:write");
-    expect(UNLINK_TASK_FROM_GITHUB_TOOL.requiredScope).toBe("mcp:write");
-  });
-
   it("link rejects when already linked", async () => {
     vi.mocked(isCore).mockResolvedValue(true);
     mockPrisma.task.findUnique.mockResolvedValue({
@@ -78,6 +72,7 @@ describe("github link / unlink", () => {
       githubRepo: null,
       githubIssueUrl: null,
     });
+    vi.mocked(unlinkTaskFromGithub).mockResolvedValue({ noop: true });
     const out = await runUnlinkTaskFromGithub("u1", { taskId: "t1" });
     expect(out).toMatchObject({ noop: true });
   });
@@ -90,12 +85,13 @@ describe("github link / unlink", () => {
       githubRepo: "dali/alpha",
       githubIssueUrl: "https://github.com/dali/alpha/issues/42",
     });
-    mockPrisma.task.update.mockResolvedValue({});
-    const out = await runUnlinkTaskFromGithub("u1", { taskId: "t1" });
-    expect(out).toMatchObject({ previousRepo: "dali/alpha", previousIssueNumber: 42 });
-    expect(mockPrisma.task.update).toHaveBeenCalledWith({
-      where: { id: "t1" },
-      data: { githubRepo: null, githubIssueNumber: null, githubIssueUrl: null },
+    vi.mocked(unlinkTaskFromGithub).mockResolvedValue({
+      noop: false,
+      previousRepo: "dali/alpha",
+      previousIssueNumber: 42,
     });
+    const out = await runUnlinkTaskFromGithub("u1", { taskId: "t1" });
+    expect(out).toEqual({ ok: true, taskId: "t1", previousRepo: "dali/alpha", previousIssueNumber: 42 });
+    expect(unlinkTaskFromGithub).toHaveBeenCalledWith("t1");
   });
 });

@@ -11,7 +11,7 @@
 
 import { prisma } from "~/lib/db.server";
 import { notify } from "~/lib/notify.server";
-import { expandOccurrences } from "~/lib/meeting-occurrences";
+import { expandOccurrences } from "~/calendar/lib/meeting-occurrences";
 import { APPLICATION_TZ, formatInstantWithZoneLabel, resolveUserTimeZone } from "~/lib/timezone";
 import type { JobContext, JobResult } from "~/jobs/registry";
 

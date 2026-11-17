@@ -5,7 +5,7 @@ vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
   return { ...real, isCore: vi.fn(), isProjectMember: vi.fn() };
 });
-vi.mock("~/lib/s3", () => ({
+vi.mock("~/lib/s3.server", () => ({
   getUploadPost: vi.fn(),
   headObject: vi.fn(),
   isS3Configured: vi.fn(() => true),
@@ -14,7 +14,7 @@ vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn().mockResolvedValue(undefin
 
 import { prisma } from "~/lib/db.server";
 import { isCore, isProjectMember } from "~/lib/roles";
-import { getUploadPost, headObject, isS3Configured } from "~/lib/s3";
+import { getUploadPost, headObject, isS3Configured } from "~/lib/s3.server";
 import { logAuditEvent } from "~/lib/audit";
 import { MAX_FILE_STORE_BYTES } from "~/lib/file-validation";
 import {

@@ -50,12 +50,12 @@ describe("areaForPath", () => {
 describe("activeSubtabHref", () => {
   it("highlights the sub-tab owning the path", () => {
     expect(activeSubtabHref(projects, "/projects")).toBe("/projects");
-    expect(activeSubtabHref(projects, "/projects/staffing")).toBe("/projects/staffing");
+    expect(activeSubtabHref(projects, "/core/staffing")).toBe("/core/staffing");
   });
 
   it("keeps the highlight when the sub-tab url carries a filter query", () => {
-    expect(activeSubtabHref(projects, "/projects/staffing?term=25F")).toBe(
-      "/projects/staffing",
+    expect(activeSubtabHref(projects, "/core/staffing?term=25F")).toBe(
+      "/core/staffing",
     );
     expect(activeSubtabHref(projects, "/projects?term=25F")).toBe("/projects");
   });
@@ -68,8 +68,8 @@ describe("activeSubtabHref", () => {
 
 describe("isAreaSubtabPath", () => {
   it("recognises a sub-tab landing page with or without a query", () => {
-    expect(isAreaSubtabPath("/projects/staffing")).toBe(true);
-    expect(isAreaSubtabPath("/projects/staffing?term=25F")).toBe(true);
+    expect(isAreaSubtabPath("/core/staffing")).toBe(true);
+    expect(isAreaSubtabPath("/core/staffing?term=25F")).toBe(true);
   });
 
   it("excludes hubs and record pages", () => {
@@ -79,7 +79,7 @@ describe("isAreaSubtabPath", () => {
 
   it("recognises sub-tabs from BOTH area sets, so favorites survive the flag flip", () => {
     expect(isAreaSubtabPath("/core/staffing")).toBe(true);
-    expect(isAreaSubtabPath("/projects/staffing")).toBe(true);
+    expect(isAreaSubtabPath("/projects/staffing")).toBe(false);
     expect(isAreaSubtabPath("/members/groups")).toBe(true);
   });
 });
@@ -89,7 +89,7 @@ describe("isAreaSubtabPath", () => {
 // that from `handle.areaPills` alone, which broke both ways — calendar
 // (areaSubnav) got a standalone arrow bar stacked on top of its own subnav
 // row, and under the sidebar redesign areaPills pages hid the bar for a pill
-// row AreaPillNav no longer renders.
+// row no longer rendered.
 describe("hasSubnavRow", () => {
   const m = (handle: unknown) => [{ handle }];
 
@@ -689,6 +689,34 @@ describe("core-taskboard flag", () => {
   it("resolves the Milestones path and icon without flag context, for favorites", () => {
     expect(isAreaSubtabPath("/core/milestones")).toBe(true);
     expect(iconForHref("/core/milestones")).not.toBeNull();
+  });
+});
+
+describe("alumni-game flag", () => {
+  const ALUM: RoleFlags = { ...NOBODY, isAlumni: true };
+  const GAME = { "alumni-game": true };
+
+  it("shows the pixel lab under Lab for alumni while the flag is on", () => {
+    const lab = visibleAreas(ALUM, GAME)[0];
+    expect(visibleSubtabs(lab, ALUM).map((t) => t.href)).toContain("/alumni/lab");
+  });
+
+  it("hides the pixel lab while the flag is off, and from members always", () => {
+    const alumLab = visibleAreas(ALUM, REGROUP)[0];
+    expect(visibleSubtabs(alumLab, ALUM).map((t) => t.href)).not.toContain("/alumni/lab");
+    const memberHrefs = visibleAreas(NOBODY, GAME).flatMap((a) =>
+      visibleSubtabs(a, NOBODY).map((t) => t.href),
+    );
+    expect(memberHrefs).not.toContain("/alumni/lab");
+  });
+
+  it("files the game pages under Lab for alumni, including the avatar creator", () => {
+    expect(areaForPath("/alumni/lab", GAME, ALUM)?.key).toBe("projects");
+    expect(areaForPath("/alumni/welcome", GAME, ALUM)?.key).toBe("projects");
+    expect(activeSubtabHref(areaForPath("/alumni/welcome", GAME, ALUM)!, "/alumni/welcome")).toBe(
+      "/alumni/lab",
+    );
+    expect(areaForPath("/alumni/lab", GAME, NOBODY)).toBeUndefined();
   });
 });
 

@@ -14,7 +14,7 @@ vi.mock("~/lib/db.server", () => ({
 vi.mock("~/lib/roles", () => ({
   isCore: vi.fn().mockResolvedValue(false),
   isProjectMember: vi.fn().mockResolvedValue(false),
-  isLabMember: vi.fn().mockResolvedValue(false),
+  isLabMemberOrAlum: vi.fn().mockResolvedValue(false),
 }));
 
 vi.mock("~/partners/lib/partner-access", () => ({
@@ -22,15 +22,15 @@ vi.mock("~/partners/lib/partner-access", () => ({
   partnerOrgIdsForUser: vi.fn().mockResolvedValue([]),
 }));
 
-vi.mock("~/lib/groups", () => ({
+vi.mock("~/lib/groups.server", () => ({
   resolveGroupMembers: vi.fn().mockResolvedValue([]),
   listVisibleGroupIdsForUser: vi.fn().mockResolvedValue([]),
 }));
 
 import { prisma } from "~/lib/db.server";
-import { isCore, isProjectMember, isLabMember } from "~/lib/roles";
+import { isCore, isProjectMember, isLabMemberOrAlum } from "~/lib/roles";
 import { partnerHasProjectAccess, partnerOrgIdsForUser } from "~/partners/lib/partner-access";
-import { resolveGroupMembers, listVisibleGroupIdsForUser } from "~/lib/groups";
+import { resolveGroupMembers, listVisibleGroupIdsForUser } from "~/lib/groups.server";
 import {
   getPageAccess,
   getPageAccessBulk,
@@ -45,7 +45,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   vi.mocked(isCore).mockResolvedValue(false);
   vi.mocked(isProjectMember).mockResolvedValue(false);
-  vi.mocked(isLabMember).mockResolvedValue(false);
+  vi.mocked(isLabMemberOrAlum).mockResolvedValue(false);
   vi.mocked(partnerHasProjectAccess).mockResolvedValue(false);
   vi.mocked(partnerOrgIdsForUser).mockResolvedValue([]);
   vi.mocked(resolveGroupMembers).mockResolvedValue([]);
@@ -188,7 +188,7 @@ describe("Partners general access", () => {
   });
 
   it("keeps out a lab member with no partner account", async () => {
-    vi.mocked(isLabMember).mockResolvedValue(true);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
     expect(await getPageAccess("lab-member", forPartners())).toEqual(denied());
   });
 
@@ -206,12 +206,12 @@ describe("Lab workspace", () => {
     page({ linkAccess: "LabMembers", linkPermission: "Edit", ...over });
 
   it("gives every lab member edit on an 'Everyone in the lab · Edit' doc", async () => {
-    vi.mocked(isLabMember).mockResolvedValue(true);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
     expect(await getPageAccess("lab-member", everyone())).toEqual(full);
   });
 
   it("'Everyone in the lab · View' grants a lab member view only — not edit", async () => {
-    vi.mocked(isLabMember).mockResolvedValue(true);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
     const result = await getPageAccess("lab-member", everyone({ linkPermission: "View" }));
     expect(result).toEqual({ canView: true, canEdit: false, canComment: false });
   });
@@ -221,7 +221,7 @@ describe("Lab workspace", () => {
   });
 
   it("a View share never downgrades a lab member on an open · Edit doc", async () => {
-    vi.mocked(isLabMember).mockResolvedValue(true);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
     withShare("View", "lab-member");
     expect(await getPageAccess("lab-member", everyone())).toEqual(full);
   });
@@ -238,7 +238,7 @@ describe("Lab workspace", () => {
   });
 
   it("an Edit share grants edit to a non-creator on an 'Only people you add' doc", async () => {
-    vi.mocked(isLabMember).mockResolvedValue(true);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
     withShare("Edit", "outsider");
     const result = await getPageAccess("outsider", page({ createdById: "someone-else" }));
     expect(result.canView).toBe(true);
@@ -246,7 +246,7 @@ describe("Lab workspace", () => {
   });
 
   it("'Only people you add' denies an unshared non-creator lab member", async () => {
-    vi.mocked(isLabMember).mockResolvedValue(true);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
     const result = await getPageAccess("outsider", page({ createdById: "someone-else" }));
     expect(result).toEqual(denied());
   });
@@ -265,7 +265,7 @@ describe("Project workspace", () => {
   });
 
   it("grants view+comment to a non-member lab member", async () => {
-    vi.mocked(isLabMember).mockResolvedValue(true);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
     const result = await getPageAccess("lab-member", projectPage());
     expect(result).toEqual({ canView: true, canEdit: false, canComment: true });
   });
@@ -283,7 +283,7 @@ describe("Project workspace", () => {
   });
 
   it("General access LabMembers·Edit grants edit to a lab member", async () => {
-    vi.mocked(isLabMember).mockResolvedValue(true);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
     const result = await getPageAccess(
       "lab-user",
       projectPage({ linkAccess: "LabMembers", linkPermission: "Edit" }),
@@ -292,7 +292,7 @@ describe("Project workspace", () => {
   });
 
   it("General access LabMembers does NOT grant to a non-lab-member", async () => {
-    vi.mocked(isLabMember).mockResolvedValue(false);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(false);
     const result = await getPageAccess(
       "outsider",
       projectPage({ linkAccess: "LabMembers", linkPermission: "Edit" }),
@@ -327,7 +327,7 @@ describe("EducationOffering workspace", () => {
   });
 
   it("grants view+comment to a non-instructor lab member", async () => {
-    vi.mocked(isLabMember).mockResolvedValue(true);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
     const result = await getPageAccess("lab-member", eduPage());
     expect(result).toEqual({ canView: true, canEdit: false, canComment: true });
   });
@@ -357,7 +357,7 @@ describe("pageId string overload", () => {
   });
 
   it("fetches the page and computes access", async () => {
-    vi.mocked(isLabMember).mockResolvedValue(true);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
     mockPrisma.page.findUnique.mockResolvedValue(
       page({ workspaceType: "Lab", linkAccess: "LabMembers", linkPermission: "Edit" }),
     );
@@ -390,7 +390,7 @@ describe("Core drive (Group scope)", () => {
     });
 
   it("grants a Core-group member full access to the Core folder", async () => {
-    vi.mocked(isLabMember).mockResolvedValue(true);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
     vi.mocked(resolveGroupMembers).mockResolvedValue(["core-user"]);
     const result = await getPageAccess("core-user", coreFolder());
     expect(result).toEqual(full);
@@ -398,14 +398,14 @@ describe("Core drive (Group scope)", () => {
   });
 
   it("denies a non-Core lab member the Core folder (no lab-wide leak)", async () => {
-    vi.mocked(isLabMember).mockResolvedValue(true);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
     vi.mocked(resolveGroupMembers).mockResolvedValue(["core-user"]);
     const result = await getPageAccess("lab-user", coreFolder());
     expect(result).toEqual(denied());
   });
 
   it("cascades: a Restricted child under the Core folder is denied to non-Core lab members", async () => {
-    vi.mocked(isLabMember).mockResolvedValue(true);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
     vi.mocked(resolveGroupMembers).mockResolvedValue(["core-user"]);
     // Ancestry walk fetches the governing Core folder by its id.
     mockPrisma.page.findUnique.mockResolvedValue({
@@ -430,7 +430,7 @@ describe("Core drive (Group scope)", () => {
   });
 
   it("cascades: a Core-group member reaches the Restricted child via the folder scope", async () => {
-    vi.mocked(isLabMember).mockResolvedValue(true);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
     vi.mocked(resolveGroupMembers).mockResolvedValue(["core-user"]);
     mockPrisma.page.findUnique.mockResolvedValue({
       id: "core-root",
@@ -518,7 +518,7 @@ describe("Group scope on the object path (non-Core group)", () => {
     });
 
   beforeEach(() => {
-    vi.mocked(isLabMember).mockResolvedValue(true);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
     vi.mocked(resolveGroupMembers).mockResolvedValue(["design-member"]);
   });
 
@@ -638,7 +638,7 @@ describe("ignoreShares option", () => {
   });
 
   it("keeps General access: lab-members link grants a lab member", async () => {
-    vi.mocked(isLabMember).mockResolvedValue(true);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
     const result = await getPageAccessBulk(
       "viewer",
       [page({ linkAccess: "LabMembers", linkPermission: "Edit" })],
@@ -743,7 +743,7 @@ describe("governingScopeMap", () => {
         ...page({ id: r.id, createdById: r.createdById }),
         ...r,
       }));
-      vi.mocked(isLabMember).mockResolvedValue(true);
+      vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
       vi.mocked(resolveGroupMembers).mockImplementation(async (id: string) =>
         id === "g1" ? ["member"] : [],
       );
@@ -769,7 +769,7 @@ describe("governingScopeMap", () => {
       scopePermission: null,
       createdById: "someone-else",
     });
-    vi.mocked(isLabMember).mockResolvedValue(true);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
     const child = { ...page({ id: "child", createdById: "x" }), parentPageId: "folder", scopeKind: null };
     const res = await getPageAccessBulk("viewer", [child], undefined, undefined, new Map());
     expect(res.get("child")).toEqual(denied());

@@ -1,5 +1,5 @@
 import type { prisma } from "~/lib/db.server";
-import { personName } from "./core-members.server";
+import { personName } from "~/lib/core-members.server";
 
 type Db = typeof prisma;
 

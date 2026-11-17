@@ -140,10 +140,15 @@ model User {
   currentLocation     String?
   currentLocationLat  Float?
   currentLocationLng  Float?
+  currentLocationCity String?
+  currentLocationRegion String?
+  currentLocationCountry String?
+  currentLocationGeonameId Int?
   // "I'm open to" on the alumni Home. Off hides the matching request button
   // on this person's profile and refuses new requests.
   openToCoffeeChats   Boolean   @default(true)
   openToResumeReviews Boolean   @default(false)
+  openToPortfolioReviews Boolean @default(false)
   linkedinUrl         String?
   // The member's current resume (PDF). Private: the member and admins only,
   // served through /api/members/:id/resume, never api/upload/url.
@@ -188,6 +193,10 @@ model User {
   // say" choice on the form). Stored as the selected label.
   ethnicity           String?
   dietaryRestrictions String?
+  // Alumni onboarding extras: minors alongside `major`, and an "ask me about"
+  // conversation-starter for the profile.
+  minors              String?
+  funFact             String?
 
   // Manual onboarding step tracking: Figma can't be invited via API, so an admin
   // marks the member as invited to the DALI Figma from the onboarding board.
@@ -277,6 +286,7 @@ model User {
   formsCreated          Form[]
   formVersions          FormVersion[]
   formSubmissions       FormSubmission[]
+  formSubmissionsEntered FormSubmission[] @relation("FormSubmissionEnteredBy")
   formBindingsSet       StaffingCycleFormBinding[]
 
   // ─── Phase 1: education back-relations ────────────────────────────────────
@@ -378,6 +388,10 @@ model User {
   // ─── Easter-egg games ─────────────────────────────────────────────────────
   tetrisScore TetrisScore?
   dinoScore   DinoScore?
+  tunnelScore TunnelScore?
+  tunnelRuns  TunnelRun[]
+  pixelAvatar PixelAvatar?
+  alumniChatMessages AlumniChatMessage[]
 
   // ─── Onboarding journeys ──────────────────────────────────────────────────
   journeysCreated       OnboardingJourney[]
@@ -1111,7 +1125,7 @@ enum AssignmentStatus {
 
 // MemberRole enum dropped in Phase 2. Admin → AdminMembership row;
 // HiringLead → CoreAssignment row with leadTitle="Hiring Lead". See
-// V0_PHASE2_PLAN.md M3 backfill.
+// specs/archive/V0_PHASE2_PLAN.md M3 backfill.
 
 model InterviewAssignment {
   id        String   @id @default(cuid())
@@ -1596,6 +1610,7 @@ model DocComment {
 
   @@index([targetType, targetId, createdAt])
   @@index([parentId])
+  @@index([fileId])
 }
 
 // Per-user emoji reactions on a DocComment. Toggle semantics: upsert on add,
@@ -1778,13 +1793,10 @@ model PageDoc {
   id       String  @id @default(cuid())
   pageKey  String  @unique
   title    String
-  // ProseMirror JSON. Null until the maintainer writes the guide.
+  // Retired: no longer read or written; content lives in sections.
   body     Json?
-  // S3 key of the uploaded walkthrough video (read via presigned URL). Null =
-  // no video yet. Kept in sync with sections[0].videoKey for older clients.
   videoKey String?
-  // Ordered sidebar sections: [{ id, title, body, videoKey }, ...]. Null =
-  // legacy single-body docs (API synthesizes an Overview from body/videoKey).
+  // Ordered sidebar sections: [{ id, title, body, videoKey }, ...].
   sections Json?
 
   maintainerId   String?
@@ -1809,7 +1821,7 @@ enum OAuthProvider {
 }
 
 // Phase 2: collapsed to `member` only. MCP clients are members-only (per
-// V0_PLAN.md Q18). The `dartmouth` and `partner` values were never used in
+// specs/archive/V0_PLAN.md Q18). The `dartmouth` and `partner` values were never used in
 // production — first-party login (/auth/callback/*) doesn't go through this
 // type, and the OAuth provider surface (/oauth/*) is MCP-only.
 enum OAuthAccountType {
@@ -1826,10 +1838,8 @@ model OAuthSession {
   // oAuth params preserved across IDP redirect
   redirectUri String
   state       String
-  provider    OAuthProvider
-  // Optional. Set when the OAuthClient row pins a single accountType
-  // (e.g. MCP clients require "member"). Null = any accountType is OK
-  // for this session, decided by the callback's domain branch.
+  // Retired: no longer read or written.
+  provider    OAuthProvider?
   accountType OAuthAccountType?
 
   // set after IDP authenticates user
@@ -1837,7 +1847,6 @@ model OAuthSession {
   authorizationCode String? @unique
   exchanged         Boolean @default(false)
 
-  // for chained Google → CAS account linking
   linkUserId String?
 
   // MCP foundation track: the OAuthClient that initiated this authorization
@@ -1854,7 +1863,7 @@ model OAuthSession {
 }
 
 // Single-credential session record backing both browser cookie logins and
-// OAuth-issued (MCP) sessions. See SESSION_AUTH_PLAN.md for design.
+// OAuth-issued (MCP) sessions. See specs/archive/SESSION_AUTH_PLAN.md for design.
 //
 // The PK `id` stores SHA-256(raw) so a DB read leak does not surface live
 // credentials. The raw id is what travels in the __dali_sid cookie or in
@@ -2215,6 +2224,70 @@ model DinoScore {
   achievedAt DateTime @default(now())
 
   @@index([score])
+}
+
+// A member's best run down the tunnel on the week 10 (Technigala) home scene.
+// Same shape and trust as DinoScore.
+model TunnelScore {
+  userId     String   @id
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  score      Int
+  achievedAt DateTime @default(now())
+
+  @@index([score])
+}
+
+// Every finished or abandoned tunnel run, for Admin > Insights > Games. The
+// board reads TunnelScore; this is the log behind it. Browser-reported, like
+// the score. durationMs and obstacle are null for runs from clients that
+// predate the log.
+model TunnelRun {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  score      Int
+  durationMs Int?
+  // "fall" or "quit"
+  endedBy    String   @default("fall")
+  // The course piece fallen through: "gap", "strip", "holes" or "spiral".
+  obstacle   String?
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([userId])
+}
+
+// The pixel avatar an alumnus builds in the alumni onboarding game, plus the
+// state of Tim's profile quest. One avatar per user; the parts are keys into
+// the option catalogs in app/components/alumni-game/pixel-avatar.ts, stored as
+// strings so new art drops in without a migration.
+model PixelAvatar {
+  userId           String    @id
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  skinTone         String
+  eyeColor         String    @default("brown")
+  hairColor        String    @default("black")
+  hairstyle        String
+  questAcceptedAt  DateTime?
+  questCompletedAt DateTime?
+  // Quest steps that confirm existing data (name, email, DALI history, the
+  // open-to toggles) rather than filling a column; the step keys land here.
+  confirmedFields  String[]  @default([])
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+}
+
+// The persisted transcript of Tim's profile-quest chat, so reopening the
+// phone shows the conversation where it left off. `from` is "tim" or "you".
+model AlumniChatMessage {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  from      String
+  text      String
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
 }
 
 // A browser- or desktop-captured recording for a collaborative document (any
@@ -2908,6 +2981,8 @@ model ScheduledMeeting {
 
   @@index([iCalUID])
   @@index([notebookId])
+  @@index([organizerId])
+  @@index([projectId])
 }
 
 // A PageShare a meeting justifies on its notebook, so uninviting removes
@@ -3065,6 +3140,7 @@ model TimeEntry {
   @@unique([sourceEventId, userId])
   @@index([userId, date])
   @@index([userId, assignmentType])
+  @@index([projectId])
 }
 
 enum TimeEntrySource {
@@ -3168,6 +3244,8 @@ model Notification {
   @@index([recipientUserId, createdAt])
   @@index([interviewAssignmentId])
   @@index([announcementId])
+  @@index([scheduledMeetingId])
+  @@index([formId])
 }
 
 enum NotificationKind {
@@ -3457,7 +3535,7 @@ model CourseOffering {
 // and the auth-side foundation from `dali-os-mcp.md`. Phase 2 (destructive
 // refactor) runs separately after the live 2026-S cycle closes.
 //
-// See V0_PLAN.md for the locked decisions, deploy sequencing, and the
+// See specs/archive/V0_PLAN.md for the locked decisions, deploy sequencing, and the
 // Phase 2 column-drop / FK-rename plan.
 
 // ─── Term ────────────────────────────────────────────────────────────────────
@@ -3501,6 +3579,7 @@ model Term {
   projectChartStrings   ProjectChartString[]
   mentorshipForms       MentorshipTermForm[]
   coreMilestones        CoreMilestone[]
+  maintenanceStarts     ProjectMaintenance[]
 
   @@index([sortKey])
 }
@@ -4032,6 +4111,7 @@ model Project {
   mailAccounts      MailAccount[]
   roleRequests      ProjectRoleRequest[]
   planningNote      PlanningNote?
+  maintenancePlans  ProjectMaintenance[]
   returnApplications PartnerApplication[] @relation("PartnerApplicationContinues")
   mentorshipPairs   MentorshipPair[]
   externalMentors   ExternalMentor[]
@@ -4503,6 +4583,7 @@ model Task {
 
   @@unique([githubRepo, githubIssueNumber], name: "task_github_issue_unique")
   @@index([projectId])
+  @@index([epicId])
   @@index([storyId])
   @@index([sourceRecordingId])
 }
@@ -4575,6 +4656,7 @@ model TaskAssignee {
   user User @relation(fields: [userId], references: [id])
 
   @@id([taskId, userId])
+  @@index([userId])
 }
 
 model TaskComment {
@@ -5218,6 +5300,7 @@ model Form {
   // Shares its id with the Page (kind Form) that carries placement, title,
   // and access. Create both through createForm() in form-page.server.ts.
   id        String   @id @default(cuid())
+  banners   Banner[]
   page      Page     @relation("FormPage", fields: [id], references: [id], onDelete: Cascade)
   // Mirrored on Page.title until the cleanup PR drops this column.
   name      String
@@ -5299,12 +5382,16 @@ model Form {
   draftQuestions Json?
   draftIntro     String?
 
+  // Extra columns on the Results table, in order: ["member:hiredRoles", ...].
+  responseColumns Json?
+
   versions      FormVersion[]
   submissions   FormSubmission[]
   notifications Notification[]
   cycleBindings StaffingCycleFormBinding[]
 
   partnerApplicationBindings          PartnerApplicationFormBinding[]
+  onboardingProfileBindings           OnboardingProfileFormBinding[]
   partnerSurveyBindings               PartnerSurveyFormBinding[]
   educationOfferingsAsApplicationForm EducationOffering[]             @relation("EducationOfferingApplicationForm")
   educationBindings                   EducationFormBinding[]          @relation("EducationFormBindings")
@@ -5378,6 +5465,11 @@ model FormSubmission {
   // Null for public/external submissions (no authenticated user).
   userId String?
   user   User?   @relation(fields: [userId], references: [id])
+
+  // A staffing manager who added this response for the member; null when the
+  // member submitted it themselves.
+  enteredById String?
+  enteredBy   User?   @relation("FormSubmissionEnteredBy", fields: [enteredById], references: [id], onDelete: SetNull)
 
   // Captured only for public submissions; null for internal ones.
   submitterName  String?
@@ -5804,6 +5896,7 @@ model Page {
   @@unique([defaultMeetingNoteFor])
   @@index([workspaceType, workspaceId, parentPageId])
   @@index([archivedAt])
+  @@index([parentPageId])
   // Trigram index behind the typo-tolerant title match in doc-search.server.ts
   // (`query <% "title"`). Ordinary exact/substring title search still uses the
   // plain ILIKE path.
@@ -6197,7 +6290,7 @@ model FeatureFlag {
   createdAt DateTime @default(now())
 }
 
-// ─── Activities — time-boxed "mode" layer (specs/activities.md) ───────────────
+// ─── Activities — time-boxed "mode" layer (specs/archive/activities.md) ───────────────
 // A generic, term-scoped, audience-targeted experience that changes what the
 // site shows for assigned members during a window, then auto-reverts. The
 // mechanic (Activity.kind) is registry-validated in app code (app/lib/
@@ -6698,7 +6791,7 @@ enum TokenPurpose {
 // one-time handoff code that /auth/handoff redeems into a fresh webview cookie
 // session. All codes are SHA-256 hashed at rest (same scheme as Session.id and
 // OneTimeToken.tokenHash); raw values exist only in transit. See
-// TAURI_DESKTOP_PLAN.md.
+// specs/archive/TAURI_DESKTOP_PLAN.md.
 model DevicePairing {
   id String @id @default(cuid())
 
@@ -6815,7 +6908,7 @@ enum EmailSendPurpose {
 // A best-effort inline drain runs right after enqueue for low latency; the
 // single-leased outbound-drain job sweeps the rest, retrying with backoff,
 // respecting per-sender daily caps, and dead-lettering what it can't deliver.
-// See specs/communication-idempotency.md.
+// See specs/archive/communication-idempotency.md.
 model OutboundMessage {
   id      String @id @default(cuid())
   // "email" | "slack_dm" | "slack_channel"
@@ -7147,6 +7240,10 @@ model PartnerCrmSettings {
   // interview. Empty = every active Core member.
   interviewPanelUserIds String[] @default([])
   staleDays             Int      @default(14)
+  // Price per term for each maintenance tier; null = not set yet.
+  maintenanceHostingCents Int?
+  maintenanceMildCents    Int?
+  maintenanceMediumCents  Int?
   updatedAt             DateTime @updatedAt
 }
 
@@ -7313,6 +7410,19 @@ model PartnerApplicationFormBinding {
   id          String   @id @default(cuid())
   formId      String
   // Loose ref to User.id (same convention as PartnerInvite.invitedByUserId).
+  updatedById String?
+  updatedAt   DateTime @updatedAt
+
+  form Form @relation(fields: [formId], references: [id], onDelete: Cascade)
+
+  @@index([formId])
+}
+
+// The new-member profile form filled at /onboarding. At most one row,
+// app-enforced, set from Hiring → Onboarding.
+model OnboardingProfileFormBinding {
+  id          String   @id @default(cuid())
+  formId      String
   updatedById String?
   updatedAt   DateTime @updatedAt
 
@@ -8174,9 +8284,13 @@ model Banner {
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
 
+  untilFormId String?
+  untilForm   Form?           @relation(fields: [untilFormId], references: [id], onDelete: SetNull)
+
   impressions BannerImpression[]
 
   @@index([published, startsAt, endsAt])
+  @@index([untilFormId])
 }
 
 // One row per (banner, viewer): what frequency and snooze rules read, and what
@@ -8252,4 +8366,31 @@ model CommunityEventRsvp {
 
   @@id([eventId, userId])
   @@index([userId])
+}
+
+enum MaintenancePlan {
+  Hosting
+  Mild
+  Medium
+}
+
+// A project on DALI's recurring maintenance plan instead of continuing as
+// active term work. Ongoing until ended; at most one open row per project.
+model ProjectMaintenance {
+  id          String          @id @default(cuid())
+  projectId   String
+  plan        MaintenancePlan
+  // Per-term fee, copied from the tier price when chosen and editable.
+  feeCents    Int?
+  startTermId String?
+  startedAt   DateTime        @default(now())
+  startedById String?
+  endedAt     DateTime?
+  endedById   String?
+  updatedAt   DateTime        @updatedAt
+
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  startTerm Term?   @relation(fields: [startTermId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, endedAt])
 }

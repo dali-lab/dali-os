@@ -59,7 +59,7 @@ beforeEach(() => {
   // notification keeps the registry's own wording, which is what these assertions
   // describe.
   mockPrisma.emailTemplate.findMany.mockResolvedValue([]);
-  mockPrisma.notification.findFirst.mockResolvedValue(null); // no coalesce suppression by default
+  mockPrisma.notification.findMany.mockResolvedValue([]); // no coalesce suppression by default
   mockPrisma.notification.update.mockResolvedValue({}); // merge path awaits + .catch()es this
   mockPrisma.notification.createManyAndReturn.mockImplementation(
     ({ data }: { data: { recipientUserId: string }[] }) =>
@@ -510,7 +510,7 @@ describe("notify — coalescing / merge", () => {
   // it instead of writing a new row.
   it("merges into an existing row instead of writing a new one", async () => {
     mockPrisma.user.findMany.mockResolvedValue([user("u1")]);
-    mockPrisma.notification.findFirst.mockResolvedValue({ id: "existing-1", coalesceCount: 1 });
+    mockPrisma.notification.findMany.mockResolvedValue([{ id: "existing-1", recipientUserId: "u1", link: "/t/1", coalesceCount: 1 }]);
 
     const res = await notify({
       eventType: "task.comment",
@@ -536,7 +536,7 @@ describe("notify — coalescing / merge", () => {
 
   it("writes a fresh row when nothing recent exists (no suppression)", async () => {
     mockPrisma.user.findMany.mockResolvedValue([user("u1")]);
-    mockPrisma.notification.findFirst.mockResolvedValue(null);
+    mockPrisma.notification.findMany.mockResolvedValue([]);
 
     await notify({
       eventType: "task.comment",
@@ -548,9 +548,30 @@ describe("notify — coalescing / merge", () => {
     expect(mockPrisma.notification.createManyAndReturn).toHaveBeenCalledTimes(1);
   });
 
+  it("looks up recent rows once for many recipients and merges into the newest", async () => {
+    mockPrisma.user.findMany.mockResolvedValue([user("u1"), user("u2"), user("u3")]);
+    mockPrisma.notification.findMany.mockResolvedValue([
+      { id: "newest", recipientUserId: "u1", link: "/t/1", coalesceCount: 2 },
+      { id: "older", recipientUserId: "u1", link: "/t/1", coalesceCount: 7 },
+    ]);
+
+    await notify({
+      eventType: "task.comment",
+      message: { title: "New comment on: Task X", body: "again", link: "/t/1" },
+      recipients: [{ userId: "u1" }, { userId: "u2" }, { userId: "u3" }],
+    });
+
+    expect(mockPrisma.notification.findMany).toHaveBeenCalledTimes(1);
+    expect(mockPrisma.notification.findMany.mock.calls[0][0].orderBy).toEqual({ createdAt: "desc" });
+    expect(mockPrisma.notification.update).toHaveBeenCalledTimes(1);
+    expect(mockPrisma.notification.update.mock.calls[0][0].where).toEqual({ id: "newest" });
+    const created = mockPrisma.notification.createManyAndReturn.mock.calls[0][0].data;
+    expect(created.map((d: { recipientUserId: string }) => d.recipientUserId)).toEqual(["u2", "u3"]);
+  });
+
   it("reflects the running count in the merged body", async () => {
     mockPrisma.user.findMany.mockResolvedValue([user("u1")]);
-    mockPrisma.notification.findFirst.mockResolvedValue({ id: "existing-1", coalesceCount: 4 });
+    mockPrisma.notification.findMany.mockResolvedValue([{ id: "existing-1", recipientUserId: "u1", link: "/t/1", coalesceCount: 4 }]);
 
     await notify({
       eventType: "task.comment",
@@ -693,12 +714,37 @@ describe("community.event_nearby opt-in", () => {
     mockPrisma.notificationPreference.findMany.mockResolvedValue([
       { userId: "u1", eventType: "community.event_nearby", inApp: true, slackDm: false, digestFrequency: null },
     ]);
-    mockPrisma.notification.create.mockResolvedValue({ id: "n1", recipientUserId: "u1" });
     const result = await send(["u1", "u2"]);
     expect(result.inApp).toBe(1);
-    expect(mockPrisma.notification.create.mock.calls[0][0].data).toMatchObject({
+    expect(mockPrisma.notification.createManyAndReturn).toHaveBeenCalledTimes(1);
+    const arg = mockPrisma.notification.createManyAndReturn.mock.calls[0][0];
+    expect(arg.skipDuplicates).toBe(true);
+    expect(arg.data).toHaveLength(1);
+    expect(arg.data[0]).toMatchObject({
       recipientUserId: "u1",
       dedupKey: "community.event_nearby:ev1",
     });
+  });
+
+  it("sends one keyed batch for every recipient and skips outbound for deduped ones", async () => {
+    mockPrisma.user.findMany.mockResolvedValue([user("u1"), user("u2"), user("u3")]);
+    mockPrisma.notificationPreference.findMany.mockResolvedValue(
+      ["u1", "u2", "u3"].map((userId) => ({
+        userId,
+        eventType: "community.event_nearby",
+        inApp: true,
+        slackDm: false,
+        digestFrequency: null,
+      })),
+    );
+    mockPrisma.notification.createManyAndReturn.mockResolvedValue([
+      { id: "n1", recipientUserId: "u1" },
+      { id: "n3", recipientUserId: "u3" },
+    ]);
+    const result = await send(["u1", "u2", "u3"]);
+    expect(mockPrisma.notification.createManyAndReturn).toHaveBeenCalledTimes(1);
+    expect(result.inApp).toBe(2);
+    const enqueuedFor = mockEnqueue.mock.calls.map((c: unknown[]) => (c[0] as { recipientUserId?: string }).recipientUserId);
+    expect(enqueuedFor).not.toContain("u2");
   });
 });

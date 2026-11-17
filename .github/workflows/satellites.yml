@@ -1,0 +1,66 @@
+name: Satellite checks
+
+on:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    uses: ./.github/workflows/changed-paths.yml
+
+  mobile-typecheck:
+    needs: changes
+    if: needs.changes.outputs.mobile == 'true'
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - run: npm ci
+      - run: npx tsc --noEmit
+
+  desktop-test:
+    needs: changes
+    if: needs.changes.outputs.desktop == 'true'
+    runs-on: blacksmith-6vcpu-macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri
+      - run: npm ci
+        working-directory: desktop
+      - run: cargo test --manifest-path desktop/src-tauri/Cargo.toml
+
+  ios-test:
+    needs: changes
+    if: needs.changes.outputs.ios == 'true'
+    runs-on: blacksmith-6vcpu-macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pick an iPad simulator
+        id: sim
+        run: |
+          UDID=$(xcrun simctl list devices available -j | jq -r '[.devices | to_entries[] | select(.key | test("iOS-(1[89]|[2-9][0-9])")) | .value[] | select(.name | test("iPad"))][0].udid')
+          [ -n "$UDID" ] && [ "$UDID" != "null" ] || { echo "No iPad simulator with iOS 18+ available" >&2; exit 1; }
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+      - name: Run unit tests
+        run: >
+          xcodebuild test -project ios/DaliOS.xcodeproj -scheme DaliOS
+          -destination "id=${{ steps.sim.outputs.udid }}"
+          -skip-testing:DaliOSUITests CODE_SIGNING_ALLOWED=NO

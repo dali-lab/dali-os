@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import routes from "~/routes";
+import { LEGACY_REDIRECTS } from "~/lib/legacy-redirects";
 
 type Entry = { file?: string; path?: string; children?: Entry[] };
 
@@ -49,16 +50,7 @@ describe("routes config", () => {
     expect(findByPath(routes as Entry[], "core/communications/email")?.file).toBe(
       "core/routes/core.communications.email.tsx",
     );
-    // /admin/email keeps a route of its own so the source loader can redirect
-    // with `?key=` intact; the older addresses go through the stub.
-    expect(findByPath(routes as Entry[], "admin/email")?.file).toBe(
-      "admin/routes/admin.email.tsx",
-    );
-    for (const old of ["admin/email-templates", "hiring/emails"]) {
-      expect(findByPath(routes as Entry[], old)?.file).toBe(
-        "admin/routes/admin.email.legacy-redirect.ts",
-      );
-    }
+    expect(findByPath(routes as Entry[], "admin/email")?.file).toBe("routes/legacy-redirect.ts");
   });
 
   it("nests every Communications tool under the one layout that draws its tab strip", () => {
@@ -67,5 +59,11 @@ describe("routes config", () => {
     }
     const layout = findByFile(routes as Entry[], "core/routes/core.communications.tsx");
     expect(layout?.children?.map((c) => c.file)).toContain("core/routes/core.communications.listserv.tsx");
+  });
+
+  it("registers every legacy redirect path on the one redirect module", () => {
+    for (const r of LEGACY_REDIRECTS) {
+      expect(findByPath(routes as Entry[], r.path)?.file, r.path).toBe("routes/legacy-redirect.ts");
+    }
   });
 });

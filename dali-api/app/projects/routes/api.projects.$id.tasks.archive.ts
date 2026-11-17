@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.projects.$id.tasks.archive";
 import { requireProjectEditAccess } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
-import { archiveTerminalTasks } from "~/jobs/task-auto-archive.server";
+import { archiveTerminalTasks } from "~/projects/lib/task-archive.server";
 
 // POST /api/projects/:id/tasks/archive
 //

@@ -1,4 +1,4 @@
-// On-page activity chrome (specs/activities.md §7.5). The mechanic's scattered
+// On-page activity chrome (specs/archive/activities.md §7.5). The mechanic's scattered
 // codes/clues for the CURRENT route. Mounted inside pageContent (layout.tsx) —
 // NOT the shell — because that's where on-page codes belong. The "an activity is live" bar + surface modal are the shell's
 // job and live in ActivityLauncher (mounted next to DesktopBanner).

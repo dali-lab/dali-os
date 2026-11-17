@@ -1,0 +1,1001 @@
+/* Alumni onboarding game. The lab canvas and the phone are game art, so they
+   keep their own palette; page chrome outside the game uses the app tokens. */
+
+.ag-lab {
+  position: fixed;
+  inset: 0;
+  background: #17141f;
+  overflow: hidden;
+}
+
+.ag-lab-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+}
+
+.ag-lab-topbar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 16px;
+  pointer-events: none;
+}
+
+.ag-lab-exit {
+  pointer-events: auto;
+  font-family: var(--font-arcade);
+  font-size: 11px;
+  color: #fff;
+  background: rgba(20, 18, 28, 0.82);
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  border-radius: 8px;
+  padding: 8px 12px;
+  text-decoration: none;
+}
+
+.ag-lab-exit:hover {
+  background: rgba(20, 18, 28, 0.95);
+}
+
+.ag-lab-keys {
+  font-family: var(--font-arcade);
+  font-size: 9px;
+  color: rgba(255, 255, 255, 0.75);
+  background: rgba(20, 18, 28, 0.6);
+  border-radius: 8px;
+  padding: 7px 10px;
+}
+
+.ag-lab-bottomleft {
+  position: absolute;
+  left: 16px;
+  bottom: 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.ag-server-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  background: rgba(20, 18, 28, 0.88);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+}
+
+.ag-server-panel button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-arcade);
+  font-size: 9px;
+  color: #cfc9e2;
+  background: transparent;
+  border: 2px solid transparent;
+  border-radius: 7px;
+  padding: 6px 9px;
+  cursor: pointer;
+}
+
+.ag-server-panel button[data-active] {
+  color: #fff;
+  border-color: #8ee6c2;
+  background: rgba(142, 230, 194, 0.12);
+}
+
+.ag-server-panel button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.ag-server-panel em {
+  font-style: normal;
+  margin-left: auto;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.ag-server-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.ag-server-dot[data-status="open"] {
+  background: #58d68d;
+}
+
+.ag-server-dot[data-status="busy"] {
+  background: #ffd24a;
+}
+
+.ag-server-dot[data-status="full"] {
+  background: #ef5765;
+}
+
+.ag-lab-hint {
+  position: absolute;
+  bottom: 22px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--font-arcade);
+  font-size: 11px;
+  color: #ffe9a8;
+  background: rgba(20, 18, 28, 0.88);
+  border: 2px solid rgba(255, 233, 168, 0.4);
+  border-radius: 10px;
+  padding: 10px 14px;
+  max-width: min(90vw, 480px);
+  text-align: center;
+}
+
+.ag-lab-hint--flavor {
+  color: #ffffff;
+  border-color: rgba(76, 213, 197, 0.55);
+  animation: ag-pop-in 260ms ease-out backwards;
+}
+
+/* ── RPG dialogue box ────────────────────────────────────────────────────── */
+
+/* DALI design system: dark navy brand panel, white type, yellow name tag,
+   teal and coral accents. */
+.ag-dialogue {
+  position: absolute;
+  left: 50%;
+  bottom: 22px;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 18px;
+  width: min(940px, calc(100vw - 32px));
+  min-height: 230px;
+  padding: 20px;
+  background: #083858;
+  border: 4px solid #0c4876;
+  border-radius: 16px;
+  box-shadow:
+    0 0 0 3px #0b1c29,
+    0 16px 46px rgba(11, 28, 41, 0.6);
+}
+
+.ag-dialogue-portrait {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.ag-dialogue-portrait img {
+  width: 132px;
+  height: 132px;
+  object-fit: contain;
+  image-rendering: pixelated;
+  background: #0c4876;
+  border: 3px solid #0b1c29;
+  border-radius: 12px;
+}
+
+.ag-dialogue-portrait span {
+  font-family: var(--font-arcade);
+  font-size: 11px;
+  color: #083858;
+  background: #ffcf88;
+  border: 2px solid #0b1c29;
+  border-radius: 7px;
+  padding: 4px 10px;
+}
+
+.ag-dialogue-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ag-dialogue-text {
+  flex: 1;
+  text-align: left;
+  font-family: var(--font-arcade);
+  font-size: 13px;
+  line-height: 2;
+  color: #f5f9ff;
+  background: none;
+  border: 0;
+  padding: 4px 6px;
+  cursor: pointer;
+}
+
+.ag-dialogue-more {
+  display: inline-block;
+  margin-left: 10px;
+  font-style: normal;
+  color: #4cd5c5;
+  animation: ag-arrow-bob 900ms ease-in-out infinite;
+}
+
+.ag-dialogue-nav {
+  display: flex;
+  gap: 8px;
+}
+
+.ag-dialogue-nav button {
+  font-family: var(--font-arcade);
+  font-size: 10px;
+  color: #d4edff;
+  background: #0c4876;
+  border: 2px solid #0b1c29;
+  border-radius: 8px;
+  padding: 9px 13px;
+  cursor: pointer;
+}
+
+.ag-dialogue-nav button:hover:not(:disabled) {
+  background: #24b1b1;
+  color: #ffffff;
+}
+
+.ag-dialogue-nav button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.ag-dialogue-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ag-dialogue-choices button {
+  text-align: left;
+  font-family: var(--font-arcade);
+  font-size: 12px;
+  color: #ffffff;
+  background: #0c4876;
+  border: 2px solid #24b1b1;
+  border-radius: 10px;
+  padding: 12px 16px;
+  cursor: pointer;
+}
+
+.ag-dialogue-choices button:hover {
+  background: #24b1b1;
+  border-color: #4cd5c5;
+}
+
+
+/* ── Quest tracker ───────────────────────────────────────────────────────── */
+
+.ag-quest-tracker {
+  position: absolute;
+  top: 64px;
+  left: 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: rgba(20, 18, 28, 0.88);
+  border: 2px solid rgba(255, 207, 136, 0.5);
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.ag-quest-tracker:hover {
+  border-color: #ffcf88;
+}
+
+.ag-quest-tracker-mark {
+  font-family: var(--font-arcade);
+  font-size: 15px;
+  color: #ffcf88;
+  text-shadow: 2px 2px 0 #083858;
+}
+
+.ag-quest-tracker-label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-family: var(--font-arcade);
+  font-size: 9px;
+  color: #fff;
+  text-align: left;
+}
+
+.ag-quest-tracker-bar {
+  width: 130px;
+  height: 8px;
+  background: #0e0c15;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.ag-quest-tracker-bar i {
+  display: block;
+  height: 100%;
+  background: #8ee6c2;
+}
+
+/* ── The phone ───────────────────────────────────────────────────────────── */
+
+.ag-phone {
+  position: absolute;
+  top: 50%;
+  right: 20px;
+  transform: translateY(-50%);
+  width: min(400px, calc(100vw - 32px));
+  height: min(780px, calc(100vh - 48px));
+  display: flex;
+  flex-direction: column;
+  background: #262335;
+  border: 4px solid #0e0c15;
+  border-radius: 24px;
+  box-shadow:
+    0 0 0 3px #4a4461,
+    0 18px 50px rgba(0, 0, 0, 0.55);
+  image-rendering: pixelated;
+}
+
+.ag-phone-notch {
+  flex: none;
+  width: 90px;
+  height: 10px;
+  margin: 8px auto 0;
+  background: #0e0c15;
+  border-radius: 5px;
+}
+
+.ag-phone-header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px 8px;
+  border-bottom: 2px solid #0e0c15;
+}
+
+.ag-phone-contact {
+  font-family: var(--font-arcade);
+  font-size: 12px;
+  color: #8ee6c2;
+}
+
+.ag-phone-close {
+  font-family: var(--font-arcade);
+  font-size: 10px;
+  color: #cfc9e2;
+  background: #37324c;
+  border: 2px solid #0e0c15;
+  border-radius: 6px;
+  padding: 4px 7px;
+  cursor: pointer;
+}
+
+.ag-phone-progress {
+  flex: none;
+  position: relative;
+  margin: 10px 14px 0;
+  height: 20px;
+  background: #0e0c15;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.ag-phone-progress-bar {
+  height: 100%;
+  background: #8ee6c2;
+  transition: width 300ms steps(6);
+}
+
+.ag-phone-progress-label {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-arcade);
+  font-size: 8px;
+  color: #fff;
+  mix-blend-mode: difference;
+}
+
+.ag-phone-log,
+.ag-phone-offer {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+}
+
+.ag-msg {
+  max-width: 85%;
+  font-family: var(--font-arcade);
+  font-size: 10px;
+  line-height: 1.8;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 2px solid #0e0c15;
+  overflow-wrap: anywhere;
+}
+
+.ag-msg[data-from="tim"] {
+  align-self: flex-start;
+  background: #37324c;
+  color: #efecf7;
+  border-bottom-left-radius: 2px;
+}
+
+.ag-msg[data-from="you"] {
+  align-self: flex-end;
+  background: #2f6b55;
+  color: #eafff5;
+  border-bottom-right-radius: 2px;
+}
+
+.ag-phone-input {
+  flex: none;
+  display: flex;
+  gap: 6px;
+  padding: 10px 12px 14px;
+  border-top: 2px solid #0e0c15;
+}
+
+.ag-phone-input input {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-arcade);
+  font-size: 9px;
+  color: #efecf7;
+  background: #17141f;
+  border: 2px solid #0e0c15;
+  border-radius: 8px;
+  padding: 9px 10px;
+}
+
+.ag-phone-input input::placeholder {
+  color: #6f6889;
+}
+
+.ag-phone-input button,
+.ag-phone-offer-actions button {
+  font-family: var(--font-arcade);
+  font-size: 9px;
+  color: #17141f;
+  background: #8ee6c2;
+  border: 2px solid #0e0c15;
+  border-radius: 8px;
+  padding: 9px 10px;
+  cursor: pointer;
+}
+
+.ag-phone-input button:disabled,
+.ag-phone-offer-actions button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.ag-phone-input button[type="button"],
+.ag-phone-offer-actions button + button {
+  background: #37324c;
+  color: #cfc9e2;
+}
+
+.ag-phone-offer-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+/* ── Avatar creator ──────────────────────────────────────────────────────── */
+/* DALI brand palette (design system): teal #24B1B1, navy #0C4876, coral
+   #E45768, yellow #FFCF88 lead; cool white pages with navy headlines; white
+   type on teal/navy/coral, dark navy on yellow. */
+
+.ag-creator {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 28px;
+  align-items: stretch;
+  justify-content: center;
+}
+
+.ag-creator-stage canvas {
+  filter: drop-shadow(0 8px 0 rgba(8, 56, 88, 0.12));
+  animation: ag-float 3.4s ease-in-out infinite;
+}
+
+.ag-creator-stage {
+  flex: none;
+  display: grid;
+  place-items: center;
+  min-width: 320px;
+}
+
+.ag-creator-options {
+  flex: 1;
+  min-width: min(100%, 320px);
+  max-width: 480px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.ag-creator-options fieldset {
+  background: #ffffff;
+  border: 3px solid #083858;
+  border-radius: 14px;
+  padding: 12px 14px 14px;
+  box-shadow: 0 5px 0 rgba(8, 56, 88, 0.14);
+}
+
+.ag-creator-options legend {
+  font-family: var(--font-arcade);
+  font-size: 11px;
+  color: #083858;
+  background: #ffcf88;
+  border: 2px solid #083858;
+  border-radius: 8px;
+  padding: 5px 10px;
+}
+
+.ag-choice-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ag-choice {
+  font-family: var(--font-arcade);
+  font-size: 10px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 2px solid #d4edff;
+  background: #f5f9ff;
+  color: #0c4876;
+  cursor: pointer;
+}
+
+.ag-choice[data-selected],
+.ag-hair[data-selected] {
+  border-color: #24b1b1;
+  box-shadow: 0 0 0 2px rgba(36, 177, 177, 0.35);
+}
+
+.ag-swatch {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  border: 2px solid #d4edff;
+  box-shadow: inset 0 0 0 2px #ffffff;
+  cursor: pointer;
+  transition: transform 80ms ease-out;
+}
+
+.ag-swatch:hover {
+  transform: translateY(-2px);
+}
+
+.ag-swatch[data-selected] {
+  border-color: #24b1b1;
+  box-shadow:
+    inset 0 0 0 2px #ffffff,
+    0 0 0 2px rgba(36, 177, 177, 0.45);
+}
+
+.ag-custom {
+  display: inline-flex;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  border: 2px solid #d4edff;
+  background: #f5f9ff;
+  overflow: hidden;
+}
+
+.ag-custom[data-selected] {
+  border-color: #24b1b1;
+  box-shadow: 0 0 0 2px rgba(36, 177, 177, 0.45);
+}
+
+.ag-hair {
+  display: grid;
+  place-items: center;
+  padding: 6px;
+  border-radius: 10px;
+  border: 2px solid #d4edff;
+  background: #f5f9ff;
+  cursor: pointer;
+  transition: transform 80ms ease-out;
+}
+
+.ag-hair:hover {
+  transform: translateY(-2px);
+}
+
+.ag-error {
+  font-family: var(--font-arcade);
+  font-size: 10px;
+  color: #cf4253;
+}
+
+.ag-button {
+  font-family: var(--font-arcade);
+  font-size: 13px;
+  color: #ffffff;
+  background: #e45768;
+  border: 3px solid #083858;
+  border-radius: 10px;
+  padding: 15px 22px;
+  cursor: pointer;
+  box-shadow: 0 5px 0 #083858;
+  text-shadow: 0 2px 0 rgba(8, 56, 88, 0.35);
+  transition: transform 60ms steps(2), box-shadow 60ms steps(2);
+}
+
+.ag-button:hover:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: 0 4px 0 #083858;
+}
+
+.ag-button:active:not(:disabled) {
+  transform: translateY(4px);
+  box-shadow: 0 1px 0 #083858;
+}
+
+.ag-button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* ── Full-screen game pages ──────────────────────────────────────────────── */
+
+/* The body shows through at window edges (overscroll, zoom rounding, the
+   desktop shell's rounded corners), so it must match the page behind it. */
+body:has(.ag-page) {
+  background: #f5f9ff;
+}
+
+body:has(.ag-lab) {
+  background: #17141f;
+}
+
+.ag-page {
+  position: relative;
+  min-height: 100dvh;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 22px;
+  padding: 48px 16px;
+  background: #f5f9ff;
+  color: #0c4876;
+  overflow: hidden;
+}
+
+.ag-page h1 {
+  font-family: var(--font-arcade);
+  font-size: clamp(16px, 3vw, 26px);
+  color: #0c4876;
+  text-align: center;
+  text-shadow: 3px 3px 0 #ffcf88;
+  animation: ag-pop-in 420ms ease-out backwards;
+}
+
+.ag-page-sub {
+  font-family: var(--font-arcade);
+  font-size: 10px;
+  line-height: 1.8;
+  color: #404040;
+  max-width: 560px;
+  text-align: center;
+  animation: ag-pop-in 420ms ease-out 80ms backwards;
+}
+
+/* ── Tile illustration (DALI TilePattern, CSS edition) ───────────────────── */
+
+.ag-tiles {
+  position: absolute;
+  pointer-events: none;
+}
+
+.ag-tiles--tr {
+  top: 0;
+  right: 0;
+  width: 230px;
+  height: 140px;
+}
+
+.ag-tiles--bl {
+  bottom: 0;
+  left: 0;
+  width: 230px;
+  height: 140px;
+}
+
+.ag-tile {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  animation: ag-pop-in 420ms ease-out backwards;
+  animation-delay: calc(var(--i) * 60ms);
+}
+
+.ag-tile svg {
+  animation: ag-tile-pulse 4.5s ease-in-out infinite;
+  animation-delay: calc(var(--i) * 350ms);
+}
+
+.ag-tile-dot {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  animation:
+    ag-pop-in 420ms ease-out backwards,
+    ag-tile-pulse 4.5s ease-in-out infinite;
+  animation-delay: calc(var(--i) * 60ms), calc(var(--i) * 350ms);
+}
+
+@media (max-width: 720px) {
+  .ag-tiles {
+    display: none;
+  }
+}
+
+/* ── Choice doors ────────────────────────────────────────────────────────── */
+
+.ag-door-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  justify-content: center;
+  align-items: flex-end;
+}
+
+.ag-door--teal,
+.ag-door--muted {
+  min-height: 210px;
+  justify-content: center;
+}
+
+.ag-door {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+  width: 250px;
+  padding: 24px 18px;
+  background: #ffffff;
+  border: 3px solid #083858;
+  border-radius: 14px;
+  box-shadow: 0 6px 0 #083858;
+  color: #0c4876;
+  text-decoration: none;
+  text-align: center;
+  cursor: pointer;
+  transition: transform 100ms ease-out, box-shadow 100ms ease-out;
+  animation: ag-pop-in 420ms ease-out backwards;
+}
+
+.ag-door-row .ag-door:nth-child(1) {
+  animation-delay: 140ms;
+}
+
+.ag-door-row .ag-door:nth-child(2) {
+  animation-delay: 220ms;
+}
+
+.ag-door:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 10px 0 #083858;
+}
+
+.ag-door:active {
+  transform: translateY(2px);
+  box-shadow: 0 3px 0 #083858;
+}
+
+.ag-door--teal {
+  background: #24b1b1;
+}
+
+.ag-door--muted {
+  background: #a7b5c8;
+  border-color: #40536b;
+  box-shadow: 0 6px 0 #40536b;
+}
+
+.ag-door--muted:hover {
+  box-shadow: 0 10px 0 #40536b;
+}
+
+.ag-door--muted:active {
+  box-shadow: 0 3px 0 #40536b;
+}
+
+.ag-door strong {
+  font-family: var(--font-arcade);
+  font-size: 12px;
+  line-height: 1.5;
+  color: #0c4876;
+}
+
+.ag-door span {
+  font-family: var(--font-arcade);
+  font-size: 8px;
+  line-height: 1.7;
+  color: #404040;
+}
+
+.ag-door--teal strong {
+  color: #ffffff;
+}
+
+.ag-door--teal span {
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.ag-door--muted strong {
+  color: #0b1c29;
+}
+
+.ag-door--muted span {
+  color: rgba(11, 28, 41, 0.75);
+}
+
+.ag-door--muted .ag-door-time {
+  background: #e8eef5;
+  border-color: #40536b;
+  color: #0b1c29;
+}
+
+.ag-door--ghost {
+  width: auto;
+  padding: 14px 20px;
+  box-shadow: 0 4px 0 #083858;
+  animation-delay: 300ms;
+}
+
+.ag-door-time {
+  font-family: var(--font-arcade);
+  font-style: normal;
+  font-size: 9px;
+  color: #083858;
+  background: #ffcf88;
+  border: 2px solid #083858;
+  border-radius: 999px;
+  padding: 5px 10px;
+  margin-top: 2px;
+}
+
+/* The lab door gets the loudest treatment: a teal gradient, confetti corner
+   motifs, and a slow attention pulse, with pixel arrows bouncing above it. */
+.ag-door-wrap {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.ag-door--lab {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(140deg, #24b1b1 0%, #4cd5c5 60%, #8ce0d6 100%);
+  animation:
+    ag-pop-in 420ms ease-out 140ms backwards,
+    ag-beckon 2.6s ease-in-out 1s infinite;
+}
+
+.ag-door--lab::before {
+  content: "";
+  position: absolute;
+  top: -14px;
+  right: -14px;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 9px solid #ffcf88;
+}
+
+.ag-door--lab::after {
+  content: "";
+  position: absolute;
+  bottom: -12px;
+  left: -12px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #e45768;
+}
+
+.ag-arrow-row {
+  display: flex;
+  gap: 14px;
+  justify-content: center;
+  margin-bottom: 6px;
+}
+
+.ag-arrow {
+  animation: ag-arrow-bob 900ms ease-in-out infinite;
+}
+
+@keyframes ag-arrow-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(7px);
+  }
+}
+
+@keyframes ag-beckon {
+  0%,
+  100% {
+    box-shadow: 0 6px 0 #083858;
+  }
+  50% {
+    box-shadow:
+      0 6px 0 #083858,
+      0 0 0 6px rgba(36, 177, 177, 0.25);
+  }
+}
+
+/* ── Motion ──────────────────────────────────────────────────────────────── */
+
+@keyframes ag-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-7px);
+  }
+}
+
+@keyframes ag-pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.85) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes ag-tile-pulse {
+  0%,
+  100% {
+    transform: scale(1) rotate(0deg);
+  }
+  50% {
+    transform: scale(1.12) rotate(3deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ag-creator-stage canvas,
+  .ag-tile,
+  .ag-tile svg,
+  .ag-tile-dot,
+  .ag-page h1,
+  .ag-page-sub,
+  .ag-door,
+  .ag-arrow {
+    animation: none;
+  }
+}

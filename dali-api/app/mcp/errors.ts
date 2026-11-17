@@ -7,12 +7,12 @@
 // thrown with a `.status` maps to the right JSON-RPC code — the classes below
 // are the canonical way to set it.
 
-export class McpError extends Error {
-  status: number;
+import { HttpError } from "~/lib/http-error";
+
+export class McpError extends HttpError {
   constructor(message: string, status = 400) {
-    super(message);
+    super(status, message);
     this.name = "McpError";
-    this.status = status;
   }
 }
 

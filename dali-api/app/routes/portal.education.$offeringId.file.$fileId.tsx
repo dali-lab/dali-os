@@ -2,7 +2,7 @@ import type { Route } from "./+types/portal.education.$offeringId.file.$fileId";
 import { redirect } from "react-router";
 import { requireEnrollment } from "~/education/lib/access.server";
 import { prisma } from "~/lib/db.server";
-import { getDownloadUrl } from "~/lib/s3";
+import { getDownloadUrl } from "~/lib/s3.server";
 
 // Portal (Dartmouth student) access to an offering's uploaded file. The member
 // file viewer (/documents/file/:id) lives in the member shell, which redirects

@@ -3,7 +3,7 @@
 // Popover kit, same optimistic-move hook, same column collapse/menu
 // conventions. specs/partner-crm.md §4.
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useRevalidator } from "react-router";
 import type { DragEndEvent } from "@dnd-kit/core";
 import { ChevronsLeft, ChevronsRight, MoreHorizontal } from "lucide-react";
@@ -16,8 +16,8 @@ import {
   osStatusAccent,
   type StatusAccent,
 } from "~/components/board/status-accent";
-import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
+import { isList, listCodec, usePersistedState } from "~/hooks/usePersistedState";
 import { useOptimisticBoardMove } from "~/components/board/useOptimisticBoardMove";
 import {
   PARTNER_STAGES,
@@ -35,15 +35,16 @@ import {
 } from "../lib/partner-board";
 import { PartnerCard } from "./PartnerCard";
 
-const META_TEXT = (os: boolean) => (os ? "text-xs" : "text-[11px]");
+const META_TEXT = "text-xs";
 
 const COLLAPSED_KEY = "partnerboard:collapsedCols";
+const stageListCodec = listCodec<PartnerStage>((v): v is PartnerStage => PARTNER_STAGES.includes(v as PartnerStage));
 
 // The os shell's accent reads the same status-token families TaskBoard draws
 // its columns from, so the two boards share a palette. Backlog~backlog,
 // New~todo (not yet worked), Interview~progress, Deciding~review,
 // Accepted~done, Rejected~cancelled.
-const STAGE_ACCENT_OS: Record<PartnerStage, StatusAccent> = {
+const STAGE_ACCENT: Record<PartnerStage, StatusAccent> = {
   Backlog: osStatusAccent("backlog"),
   New: osStatusAccent("todo"),
   Interview: osStatusAccent("progress"),
@@ -52,44 +53,7 @@ const STAGE_ACCENT_OS: Record<PartnerStage, StatusAccent> = {
   Rejected: osStatusAccent("cancelled"),
 };
 
-// The classic shell has no dark ground to tint against, so it keeps the soft
-// fill TaskBoard's classic columns always used — same hues, mapped stage for
-// stage onto the equivalent task-board column.
-const STAGE_ACCENT_CLASSIC: Record<PartnerStage, StatusAccent> = {
-  Backlog: {
-    fill: "color-mix(in srgb, var(--color-muted) 70%, transparent)",
-    ink: "var(--color-foreground)",
-    edge: "var(--color-muted-foreground)",
-  },
-  New: {
-    fill: "color-mix(in srgb, #7c5ce0 22%, transparent)",
-    ink: "#5734b8",
-    edge: "#7c5ce0",
-  },
-  Interview: {
-    fill: "color-mix(in srgb, var(--color-accent-teal) 22%, transparent)",
-    ink: "#00706f",
-    edge: "var(--color-accent-teal)",
-  },
-  Deciding: {
-    fill: "color-mix(in srgb, var(--color-accent-coral) 22%, transparent)",
-    ink: "#a8402f",
-    edge: "var(--color-accent-coral)",
-  },
-  Accepted: {
-    fill: "color-mix(in srgb, var(--color-accent-green) 30%, transparent)",
-    ink: "#166a41",
-    edge: "var(--color-accent-green)",
-  },
-  Rejected: {
-    fill: "color-mix(in srgb, var(--color-muted) 50%, transparent)",
-    ink: "var(--color-muted-foreground)",
-    edge: "var(--color-border)",
-  },
-};
-
-export const stageAccent = (stage: PartnerStage, os: boolean): StatusAccent =>
-  (os ? STAGE_ACCENT_OS : STAGE_ACCENT_CLASSIC)[stage];
+export const stageAccent = (stage: PartnerStage): StatusAccent => STAGE_ACCENT[stage];
 
 export function PartnerBoard({
   cards: initialCards,
@@ -110,7 +74,6 @@ export function PartnerBoard({
   sort: PartnerCardSort;
   onOpen: (id: string) => void;
 }) {
-  const { os } = useOsChrome();
   const { items: cards, move, error } = useOptimisticBoardMove<PartnerCardModel>(initialCards);
   const revalidator = useRevalidator();
   const refresh = useCallback(() => {
@@ -119,26 +82,12 @@ export function PartnerBoard({
 
   const [celebrate, setCelebrate] = useState(false);
 
-  const [collapsedCols, setCollapsedCols] = useState<PartnerStage[]>([]);
-  useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(COLLAPSED_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as string[];
-        setCollapsedCols(parsed.filter((s): s is PartnerStage => PARTNER_STAGES.includes(s as PartnerStage)));
-      }
-    } catch {
-      /* unreadable / malformed: start expanded */
-    }
-  }, []);
-  const persistCollapsed = useCallback((next: PartnerStage[]) => {
-    setCollapsedCols(next);
-    try {
-      window.localStorage.setItem(COLLAPSED_KEY, JSON.stringify(next));
-    } catch {
-      /* private-mode / storage-disabled: fall back to in-memory only */
-    }
-  }, []);
+  const [collapsedCols, persistCollapsed] = usePersistedState<PartnerStage[]>(
+    COLLAPSED_KEY,
+    [],
+    isList<PartnerStage>,
+    stageListCodec,
+  );
   const toggleCollapsed = useCallback(
     (stage: PartnerStage) =>
       persistCollapsed(
@@ -209,14 +158,12 @@ export function PartnerBoard({
   }
 
   const columns: KanbanColumn<PartnerCardModel>[] = PARTNER_STAGES.map((stage) => {
-    const accent = stageAccent(stage, os);
+    const accent = stageAccent(stage);
     const label = PARTNER_STAGE_LABELS[stage];
     const stageCards = board[stage] ?? [];
     const collapsed = collapsedCols.includes(stage);
-    const roundedTop = os ? "rounded-t-os-item" : "rounded-t-lg";
-    const shell = os
-      ? "flex-shrink-0 border border-transparent rounded-os-item bg-os-card flex flex-col"
-      : "flex-shrink-0 border rounded-lg border-border bg-card flex flex-col";
+    const roundedTop = "rounded-t-os-item";
+    const shell = "flex-shrink-0 border border-transparent rounded-os-item bg-os-card flex flex-col";
 
     if (collapsed) {
       return {
@@ -246,9 +193,9 @@ export function PartnerBoard({
               onClick={() => toggleCollapsed(stage)}
               className="flex flex-1 flex-col items-center gap-2 text-muted-foreground hover:text-foreground"
             >
-              <span className={cn(META_TEXT(os), "font-medium")}>{stageCards.length}</span>
+              <span className={cn(META_TEXT, "font-medium")}>{stageCards.length}</span>
               <span
-                className={cn("whitespace-nowrap", os ? "text-sm" : "text-xs")}
+                className="whitespace-nowrap text-sm"
                 style={{ writingMode: "vertical-rl" }}
               >
                 {label}
@@ -274,7 +221,7 @@ export function PartnerBoard({
           <span
             className={cn(
               "rounded-full border border-current/30 px-2 py-0.5 font-medium tabular-nums",
-              META_TEXT(os),
+              META_TEXT,
             )}
             style={{ color: accent.ink }}
           >
@@ -311,7 +258,7 @@ export function PartnerBoard({
   });
 
   return (
-    <div className={cn("flex flex-col md:min-h-0 md:flex-1", os ? "gap-4" : "gap-3")}>
+    <div className={"flex flex-col gap-4 md:min-h-0 md:flex-1"}>
       <Confetti trigger={celebrate} onFire={() => setCelebrate(false)} />
 
       {query.trim() && filteredCards.length === 0 && (
@@ -335,14 +282,14 @@ export function PartnerBoard({
           const c = activeId ? cards.find((x) => x.id === activeId) : null;
           return c ? (
             <div className="w-64 rotate-1 shadow-xl">
-              <PartnerCard card={c} accentEdge={stageAccent(c.stage, os).edge} staleDays={staleDays} isDragging={false} onOpen={() => {}} />
+              <PartnerCard card={c} accentEdge={stageAccent(c.stage).edge} staleDays={staleDays} isDragging={false} onOpen={() => {}} />
             </div>
           ) : null;
         }}
         renderCard={(c, { isDragging, dragHandleProps }) => (
           <PartnerCard
             card={c}
-            accentEdge={stageAccent(c.stage, os).edge}
+            accentEdge={stageAccent(c.stage).edge}
             staleDays={staleDays}
             dragHandleProps={dragHandleProps}
             isDragging={isDragging}

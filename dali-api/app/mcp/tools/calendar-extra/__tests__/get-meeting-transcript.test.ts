@@ -25,13 +25,13 @@ vi.mock("~/lib/display", () => ({
   fullName: (u: { firstName: string; lastName: string }) =>
     `${u.firstName} ${u.lastName}`.trim(),
 }));
-vi.mock("~/lib/meeting-recording.server", () => ({
+vi.mock("~/calendar/lib/meeting-recording.server", () => ({
   canReadRecording: vi.fn(),
   storedLines: (rec: { lines: unknown }) => (Array.isArray(rec.lines) ? rec.lines : []),
 }));
 
 import { prisma } from "~/lib/db.server";
-import { canReadRecording } from "~/lib/meeting-recording.server";
+import { canReadRecording } from "~/calendar/lib/meeting-recording.server";
 import {
   runGetMeetingTranscript,
   GET_MEETING_TRANSCRIPT_DEF,

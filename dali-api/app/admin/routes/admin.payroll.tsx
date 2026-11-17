@@ -36,7 +36,8 @@ import {
 } from "~/admin/lib/payroll-reconcile.server";
 import type { JobBreakdown } from "~/admin/lib/payroll-collation";
 import { AdminSectionHeader, adminHandle } from "~/admin/adminNav";
-import { EmptyState, Figure, Pill, adminTable } from "~/admin/components/console-ui";
+import { Figure, Pill, adminTable } from "~/admin/components/console-ui";
+import { EmptyState } from "~/components/ui/EmptyState";
 import { TermFilter } from "~/components/TermFilter";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { Modal, ModalHeader } from "~/components/Modal";

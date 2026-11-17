@@ -1,4 +1,4 @@
-import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
+import { Pill } from "~/components/ui/Pill";
 import type { ModuleStatus } from "~/journeys/lib/types";
 
 const STATUS = {

@@ -11,6 +11,7 @@ import {
 import { AlertTriangle, CheckCircle2, Info, X } from "lucide-react";
 import { cn } from "~/lib/cn";
 import { OS_SURFACE_CLASS } from "./floating/styles";
+import { Z } from "~/components/ui/z";
 
 /**
  * App-wide toasts — a lightweight, non-blocking replacement for `window.alert`
@@ -117,7 +118,7 @@ function ToastViewport({
   onDismiss: (id: number) => void;
 }) {
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-0 z-50 flex flex-col items-end gap-2 p-4 sm:p-6">
+    <div className={`pointer-events-none fixed inset-x-0 bottom-0 ${Z.modal} flex flex-col items-end gap-2 p-4 sm:p-6`}>
       {toasts.map((t) => (
         <ToastItem key={t.id} toast={t} onDismiss={onDismiss} />
       ))}

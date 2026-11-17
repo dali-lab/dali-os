@@ -4,8 +4,8 @@ import { prisma } from "~/lib/db.server";
 import { requireMemberSession } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
-import { createLabPage, pageDepth, MAX_PAGE_DEPTH } from "~/lib/pages";
-import { nameConflictResponse } from "~/lib/page-names.server";
+import { createLabPage, pageDepth, MAX_PAGE_DEPTH } from "~/lib/pages.server";
+import { nameConflictResponse } from "~/drive/lib/page-names.server";
 import { getPageAccess, isUnderGoverningScope } from "~/lib/pageAccess.server";
 
 // POST /api/lab-documents

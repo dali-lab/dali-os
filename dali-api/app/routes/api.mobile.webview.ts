@@ -2,7 +2,7 @@ import type { Route } from "./+types/api.mobile.webview";
 import { z } from "zod";
 import { prisma } from "~/lib/db.server";
 import { parseJson } from "~/lib/validate";
-import { generateRawCode, hashCode, HANDOFF_TTL_MS } from "~/lib/pairing";
+import { generateRawCode, hashCode, HANDOFF_TTL_MS } from "~/lib/pairing.server";
 import { getApiBaseUrl } from "~/lib/app-env";
 import { mobileError, mobileJson, requireMobileUser } from "~/lib/mobile-auth.server";
 

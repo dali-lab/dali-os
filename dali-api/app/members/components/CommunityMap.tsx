@@ -1,15 +1,21 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp } from "lucide-react";
 import type { Map as MapLibreMap, Marker } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
 import { cn } from "~/lib/cn";
+import { initialsFromName } from "~/lib/display";
 import {
   HOME_ZOOM,
   MAP_TILES_ORIGIN,
   clusterPlaces,
+  edgePosition,
+  mergeEdgePins,
   minZoomToFill,
   type CommunityPerson,
   type CommunityPlace,
+  type EdgeSide,
+  type EdgeView,
   type MapBounds,
 } from "~/members/lib/community";
 import { eventDateBlock } from "~/members/lib/community-view";
@@ -46,21 +52,13 @@ const EVENT_PIN = { width: 44, height: 48, lift: 18 };
 const Z = { event: 1, place: 2, selectedPlace: 3, selectedEvent: 4, hover: 5 };
 const CLUSTER_FIT_MAX_ZOOM = 10;
 
-function initials(name: string): string {
-  return name
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((w) => w[0]?.toUpperCase() ?? "")
-    .join("");
-}
-
 // Built as DOM nodes, not an HTML string, so a name or photo URL can never be read as markup.
-function pinElement(cluster: MapPlace[], selected: boolean): HTMLElement {
+function pinElement(cluster: MapPlace[], selected: boolean, dim: boolean): HTMLElement {
   const faded = cluster.every((p) => p.faded);
   const people = (faded ? cluster : cluster.filter((p) => !p.faded)).flatMap((p) => p.people);
   const root = document.createElement("div");
   root.dataset.faded = String(faded);
-  root.style.cssText = `opacity:${faded ? 0.35 : 1};display:flex;align-items:center;gap:6px;width:max-content;cursor:pointer;transition:transform 150ms ease-out;transform-origin:${AVATAR / 2}px 50%`;
+  root.style.cssText = `opacity:${faded ? 0.35 : dim ? 0.5 : 1};display:flex;align-items:center;gap:6px;width:max-content;cursor:pointer;transition:transform 150ms ease-out;transform-origin:${AVATAR / 2}px 50%`;
 
   const faces = document.createElement("div");
   faces.style.cssText = "display:flex";
@@ -75,7 +73,7 @@ function pinElement(cluster: MapPlace[], selected: boolean): HTMLElement {
       faces.append(img);
     } else {
       const span = document.createElement("span");
-      span.textContent = initials(a.name);
+      span.textContent = initialsFromName(a.name);
       span.style.cssText = `${base};display:flex;align-items:center;justify-content:center;background:var(--color-os-accent);color:var(--color-os-bg);font-size:11px;font-weight:700`;
       faces.append(span);
     }
@@ -105,9 +103,10 @@ function eventPinElement(e: MapEvent, tz: string, selected: boolean): HTMLElemen
   return root;
 }
 
-const clusterSignature = (cluster: MapPlace[], selected: boolean) =>
+const clusterSignature = (cluster: MapPlace[], selected: boolean, dim: boolean) =>
   JSON.stringify([
     selected,
+    dim,
     cluster.map((p) => [p.lat, p.lng, p.label, Boolean(p.faded), p.people.length]),
     cluster.flatMap((p) => p.people.slice(0, 3)).slice(0, 3).map((a) => [a.name, a.photoUrl]),
   ]);
@@ -127,6 +126,8 @@ export function CommunityMap({
   onSelect,
   onSelectEvent,
   onBoundsChange,
+  fitRequest = null,
+  dimPeople = false,
   className,
 }: {
   places: MapPlace[];
@@ -138,6 +139,8 @@ export function CommunityMap({
   onSelect: (keys: string[] | null) => void;
   onSelectEvent: (id: string) => void;
   onBoundsChange: (bounds: MapBounds) => void;
+  fitRequest?: { keys: string[]; id: number } | null;
+  dimPeople?: boolean;
   className?: string;
 }) {
   const el = useRef<HTMLDivElement | null>(null);
@@ -151,6 +154,7 @@ export function CommunityMap({
   onSelectEventRef.current = onSelectEvent;
   const onBoundsRef = useRef(onBoundsChange);
   onBoundsRef.current = onBoundsChange;
+  const [edgeView, setEdgeView] = useState<EdgeView | null>(null);
   const viewSet = useRef(false);
   const zoomBucket = useRef(1);
 
@@ -193,11 +197,11 @@ export function CommunityMap({
         item: cluster,
         lng: cluster[0].lng,
         lat: cluster[0].lat,
-        signature: clusterSignature(cluster, isSelected(cluster)),
+        signature: clusterSignature(cluster, isSelected(cluster), dimPeople),
       })),
       (cluster) => {
         const selected = isSelected(cluster);
-        const element = pinElement(cluster, selected);
+        const element = pinElement(cluster, selected, dimPeople);
         element.title = cluster.map((p) => p.label).join(", ");
         const z = selected ? Z.selectedPlace : Z.place;
         element.addEventListener("click", (ev) => {
@@ -262,6 +266,20 @@ export function CommunityMap({
     }
   }
 
+  function readEdgeView() {
+    const m = map.current;
+    const box = el.current;
+    if (!m || !box) return;
+    const b = m.getBounds();
+    const c = m.getCenter();
+    setEdgeView({
+      center: { lat: c.lat, lng: c.lng },
+      bounds: normalizeBounds({ south: b.getSouth(), west: b.getWest(), north: b.getNorth(), east: b.getEast() }),
+      width: box.clientWidth,
+      height: box.clientHeight,
+    });
+  }
+
   // A fit against a 0-height container (the page can mount inside a hidden kept tab) computes a garbage zoom.
   function setInitialView() {
     if (viewSet.current || !map.current || !el.current || el.current.clientHeight === 0) return;
@@ -270,6 +288,8 @@ export function CommunityMap({
     else if (places.length > 0) fitTo(places, 5, true);
     else map.current.jumpTo({ center: [0, 25], zoom: 1 });
   }
+  const edgeRef = useRef(readEdgeView);
+  edgeRef.current = readEdgeView;
   const drawRef = useRef(draw);
   drawRef.current = draw;
   const emitRef = useRef(emitBounds);
@@ -301,6 +321,13 @@ export function CommunityMap({
       m.keyboard.disableRotation();
       m.on("resize", () => m.setMinZoom(minZoomToFill(m.getContainer().clientHeight)));
       m.on("style.load", () => showStateBorders(m));
+      let frame = 0;
+      const scheduleEdges = () => {
+        cancelAnimationFrame(frame);
+        frame = requestAnimationFrame(() => edgeRef.current());
+      };
+      m.on("move", scheduleEdges);
+      m.on("resize", scheduleEdges);
       m.on("moveend", () => emitRef.current());
       m.on("zoomend", () => {
         const bucket = Math.floor(m.getZoom());
@@ -317,6 +344,7 @@ export function CommunityMap({
       themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
       drawRef.current();
       emitRef.current();
+      edgeRef.current();
     });
     // The map can mount at 0×0 in a hidden kept tab; the first view waits until it has a size.
     const ro = new ResizeObserver(() => {
@@ -338,14 +366,93 @@ export function CommunityMap({
   useEffect(() => {
     draw();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [places, events, tz, selectedKeys, selectedEventId]);
+  }, [places, events, tz, selectedKeys, selectedEventId, dimPeople]);
+
+  useEffect(() => {
+    if (!fitRequest) return;
+    const wanted = new Set(fitRequest.keys);
+    const points = places.filter((p) => wanted.has(p.key));
+    if (points.length > 0) fitTo(points, CLUSTER_FIT_MAX_ZOOM);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fitRequest?.id]);
+
+  const edgePins = useMemo(() => {
+    if (!edgeView) return [];
+    return mergeEdgePins(
+      places.flatMap((p) => {
+        if (p.faded) return [];
+        const pos = edgePosition(edgeView, p, EDGE_INSET);
+        return pos ? [{ ...pos, key: p.key, label: p.label, count: p.people.length }] : [];
+      }),
+    );
+  }, [places, edgeView]);
+
+  function pickEdge(keys: string[]) {
+    onSelectRef.current(keys);
+    fitTo(places.filter((p) => keys.includes(p.key)), CLUSTER_FIT_MAX_ZOOM);
+  }
 
   return (
-    <div
-      ref={el}
-      className={cn("isolate", className)}
-      role="application"
-      aria-label="Map of alumni and events"
-    />
+    <div className={cn("relative", className)}>
+      <div ref={el} className="isolate h-full w-full" role="application" aria-label="Map of alumni and events" />
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        {edgePins.map((pin) => (
+          <EdgePinButton key={pin.keys.join("|")} pin={pin} dim={dimPeople} onPick={() => pickEdge(pin.keys)} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+const EDGE_INSET = 26;
+const EDGE_CHEVRON = { left: ChevronLeft, right: ChevronRight, top: ChevronUp, bottom: ChevronDown } as const;
+const EDGE_LABEL_CLASS: Record<EdgeSide, string> = {
+  left: "left-full top-1/2 ml-1 -translate-y-1/2",
+  right: "right-full top-1/2 mr-1 -translate-y-1/2",
+  top: "top-full left-1/2 mt-0.5 -translate-x-1/2",
+  bottom: "bottom-full left-1/2 mb-0.5 -translate-x-1/2",
+};
+const EDGE_CHEVRON_CLASS: Record<EdgeSide, string> = {
+  left: "right-full top-1/2 mr-0.5 -translate-y-1/2",
+  right: "left-full top-1/2 ml-0.5 -translate-y-1/2",
+  top: "bottom-full left-1/2 mb-0 -translate-x-1/2",
+  bottom: "top-full left-1/2 mt-0 -translate-x-1/2",
+};
+
+function EdgePinButton({
+  pin,
+  dim,
+  onPick,
+}: {
+  pin: ReturnType<typeof mergeEdgePins>[number];
+  dim: boolean;
+  onPick: () => void;
+}) {
+  const Chevron = EDGE_CHEVRON[pin.side];
+  return (
+    <button
+      type="button"
+      data-edge-pin={pin.side}
+      aria-label={`${pin.label}, ${pin.count} ${pin.count === 1 ? "person" : "people"}, outside the view`}
+      onClick={onPick}
+      style={{
+        left: pin.x,
+        top: pin.y,
+        opacity: dim ? 0.5 : 1,
+        background: "color-mix(in srgb, var(--os-accent-ink) 75%, transparent)",
+      }}
+      className="pointer-events-auto absolute flex h-[22px] w-[22px] -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-white text-[11px] font-bold leading-none text-white shadow"
+    >
+      {pin.count}
+      <span
+        className={cn(
+          "absolute max-w-[120px] truncate whitespace-nowrap text-[11px] font-semibold text-os-grey",
+          EDGE_LABEL_CLASS[pin.side],
+        )}
+      >
+        {pin.label}
+      </span>
+      <Chevron className={cn("absolute h-3 w-3 text-os-grey", EDGE_CHEVRON_CLASS[pin.side])} aria-hidden />
+    </button>
   );
 }

@@ -1,9 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db.server");
+vi.mock("~/lib/log.server", () => ({ logError: vi.fn() }));
 vi.mock("~/lib/announcements.server", () => ({ sendAnnouncement: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
+import { logError } from "~/lib/log.server";
 import { sendAnnouncement } from "~/lib/announcements.server";
 import { runScheduledAnnouncements } from "~/jobs/scheduled-announcements.server";
 
@@ -124,6 +126,15 @@ describe("runScheduledAnnouncements", () => {
       where: { id: "sa1" },
       data: { lastError: "db down" },
     });
+    expect(result.items).toBe(0);
+  });
+
+  it("logs when recording the error itself fails, and keeps going", async () => {
+    mockSend.mockRejectedValue(new Error("db down"));
+    const writeFailure = new Error("update failed");
+    mockPrisma.scheduledAnnouncement.update.mockRejectedValue(writeFailure);
+    const result = await runScheduledAnnouncements({ now: NOW, lastSuccessAt: null, settings: {} });
+    expect(logError).toHaveBeenCalledWith("jobs.scheduled-announcement.record-error", writeFailure, { id: "sa1" });
     expect(result.items).toBe(0);
   });
 });

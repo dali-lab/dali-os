@@ -5,10 +5,10 @@ const tx = vi.hoisted(() => ({
   page: { findFirst: vi.fn(), create: vi.fn() },
 }));
 vi.mock("~/lib/db.server", () => ({ prisma: { $transaction: (fn: (t: typeof tx) => unknown) => fn(tx) } }));
-vi.mock("~/lib/page-names.server", () => ({ assertUniqueName: vi.fn() }));
-vi.mock("~/lib/meeting-shares.server", () => ({ syncMeetingShares: vi.fn() }));
+vi.mock("~/drive/lib/page-names.server", () => ({ assertUniqueName: vi.fn() }));
+vi.mock("~/calendar/lib/meeting-shares.server", () => ({ syncMeetingShares: vi.fn() }));
 
-import { ensureOfferingFormsFolder } from "~/lib/pages";
+import { ensureOfferingFormsFolder } from "~/lib/pages.server";
 
 beforeEach(() => {
   vi.resetAllMocks();

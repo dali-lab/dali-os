@@ -13,7 +13,7 @@ import {
   notebookErrorResponse,
   setNotebookTemplate,
   trashNotebook,
-} from "~/lib/notebooks.server";
+} from "~/calendar/lib/notebooks.server";
 
 // GET  /api/notebooks/:id — the notebook with its tabs.
 // POST /api/notebooks/:id — { intent: "new-note" | "set-template" | "add-page" | "merge-into" | "dissolve" | "trash", ... }

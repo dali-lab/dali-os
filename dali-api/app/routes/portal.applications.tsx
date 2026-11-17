@@ -1,6 +1,6 @@
 import { redirect, useLoaderData, Link } from "react-router";
 import { applicantPortalPath } from "~/hiring/lib/applicant-groups";
-import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
+import { Pill } from "~/components/ui/Pill";
 import { HIRING_STATUS } from "~/hiring/lib/portal-cycle-card";
 import type { Route } from "./+types/portal.applications";
 import { prisma } from "~/lib/db.server";

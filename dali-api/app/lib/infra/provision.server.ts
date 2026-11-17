@@ -3,6 +3,7 @@
 // already uses, linked to the new project and swept at once. Each step fails on
 // its own; the project itself is already created.
 
+import { logError } from "~/lib/log.server";
 import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 import type { AuditAction } from "~/lib/audit-actions";
@@ -57,7 +58,7 @@ export async function provisionProjectInfra(opts: {
     try {
       const { projectId: neonId, operations } = await neon.createProject(want.neon.orgId, want.neon.name);
       if (!neonId) throw new Error("Neon returned no project id");
-      await neon.pollOperations(neonId, operations).catch(() => {});
+      await neon.pollOperations(neonId, operations).catch((err) => logError("infra.neon-poll", err, { projectId, neonId }));
       await prisma.project.update({
         where: { id: projectId },
         data: { neonOrgId: want.neon.orgId, neonProjectIds: { push: neonId } },

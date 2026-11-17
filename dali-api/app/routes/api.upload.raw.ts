@@ -6,7 +6,7 @@
 // breadth as /api/upload/url.
 
 import { requireAuth } from "~/lib/auth";
-import { getDownloadUrl } from "~/lib/s3";
+import { getDownloadUrl } from "~/lib/s3.server";
 import { isReservedUploadKey } from "~/lib/file-validation";
 
 export async function loader({ request }: { request: Request }) {

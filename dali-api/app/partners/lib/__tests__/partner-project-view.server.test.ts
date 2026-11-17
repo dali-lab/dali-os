@@ -13,7 +13,7 @@ vi.mock("~/lib/db.server", () => ({
 }));
 vi.mock("~/lib/roles", () => ({ currentTerm: vi.fn() }));
 vi.mock("~/lib/photo", () => ({ resolvePhotoUrl: vi.fn(async (u: string | null) => (u ? `resolved:${u}` : null)) }));
-vi.mock("~/lib/s3", () => ({
+vi.mock("~/lib/s3.server", () => ({
   getDownloadUrl: vi.fn(async (key: string, opts?: { fileName?: string }) =>
     opts?.fileName ? `save:${key}:${opts.fileName}` : `view:${key}`,
   ),

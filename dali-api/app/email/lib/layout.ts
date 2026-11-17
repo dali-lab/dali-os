@@ -2,7 +2,7 @@
 //
 // Pure and dependency-free so it can be unit-tested and previewed without the
 // server module graph. Callers pass a body fragment; this adds the document
-// around it. See specs/email-standardization.md §3.1.
+// around it. See specs/archive/email-standardization.md §3.1.
 //
 // Why the markup looks dated: email clients are not browsers. Classic Outlook
 // for Windows renders through the Word engine, which Microsoft supports "until

@@ -1,4 +1,4 @@
-import { isCore, isProjectMember, isLabMember } from "~/lib/roles";
+import { isCore, isProjectMember, isLabMemberOrAlum } from "~/lib/roles";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { sharePermissionForFile } from "~/lib/file-sharing.server";
 import { PERMISSION_RANK } from "~/lib/page-sharing.server";
@@ -25,7 +25,7 @@ export async function inheritedFileView(
   if (file.folderPageId) {
     return (await getPageAccess(userSub, file.folderPageId, request)).canView;
   }
-  return isLabMember(userSub, request);
+  return isLabMemberOrAlum(userSub, request);
 }
 
 export async function inheritedFileEdit(
@@ -40,7 +40,7 @@ export async function inheritedFileEdit(
   if (file.projectId) {
     return (await isCore(userSub, request)) || (await isProjectMember(userSub, file.projectId));
   }
-  if (file.workspaceType === "Lab") return isLabMember(userSub, request);
+  if (file.workspaceType === "Lab") return isLabMemberOrAlum(userSub, request);
   return false;
 }
 
@@ -54,7 +54,7 @@ export async function fileGrantLevel(
   let level = await sharePermissionForFile(file.id, userSub, request);
   const linkPermission = (file.linkPermission as SharePermission | null | undefined) ?? "View";
   const linked =
-    file.linkAccess === "LabMembers" ? await isLabMember(userSub, request) : file.linkAccess === "SignedIn";
+    file.linkAccess === "LabMembers" ? await isLabMemberOrAlum(userSub, request) : file.linkAccess === "SignedIn";
   if (linked && (!level || PERMISSION_RANK[linkPermission] > PERMISSION_RANK[level])) {
     level = linkPermission;
   }

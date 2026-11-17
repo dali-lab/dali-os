@@ -5,7 +5,7 @@ vi.mock("~/lib/outbound.server", () => ({
   enqueueOutbound: vi.fn(async () => ({ id: "om-1", deduped: false })),
   drainNow: vi.fn(async () => {}),
 }));
-vi.mock("~/lib/gmail-integration", () => ({
+vi.mock("~/lib/gmail-integration.server", () => ({
   getApplicationsGmailRefreshToken: vi.fn(),
 }));
 vi.mock("~/hiring/lib/hiring-emails.server", () => ({
@@ -17,7 +17,7 @@ vi.mock("~/lib/audit", () => ({
 
 import { prisma } from "~/lib/db.server";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
-import { getApplicationsGmailRefreshToken } from "~/lib/gmail-integration";
+import { getApplicationsGmailRefreshToken } from "~/lib/gmail-integration.server";
 import { getHiringEmail } from "~/hiring/lib/hiring-emails.server";
 import { logAuditEvent } from "~/lib/audit";
 import { countAnnouncementRecipients, sendEventAnnouncement } from "~/hiring/lib/hiring-event-notice";

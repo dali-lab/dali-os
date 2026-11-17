@@ -1,13 +1,14 @@
 import { useFetcher } from "react-router";
 import { DocEditor } from "~/components/doc";
 import { Modal } from "~/components/Modal";
+import { modalCardClass } from "~/components/os-chrome";
 import {
   DECISION_TONES,
   INTERVIEW_STATUS_TONES,
   RECOMMENDATION_TONES,
   STAGE_LABELS,
 } from "~/hiring/lib/labels";
-import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
+import { Pill } from "~/components/ui/Pill";
 import { useEffect } from "react";
 
 export interface ApplicantContextModalProps {
@@ -46,10 +47,10 @@ export function ApplicantContextModal({
       open
       onClose={onClose}
       labelledBy="applicant-context-title"
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 overflow-y-auto"
-      containerClassName="bg-card rounded-xl shadow-xl w-full max-w-5xl my-8 max-h-[90vh] flex flex-col"
+      placement="top"
+      containerClassName={modalCardClass("max-w-5xl flex flex-col !p-0")}
     >
-      <div className="px-6 py-4 border-b border-border flex items-center justify-between bg-card rounded-t-xl flex-shrink-0">
+      <div className="px-6 py-4 border-b border-border flex items-center justify-between bg-card rounded-t-os-card flex-shrink-0">
         <div>
           {isLoading || isError || !data ? (
             <h2 id="applicant-context-title" className="text-lg font-semibold text-foreground">
@@ -160,7 +161,7 @@ export function InterviewPrepNoteSection({
               features="notes"
               density="compact"
               placeholder="Specific things to bring up in the interview…"
-              className="rounded-lg border border-gray-300 bg-card focus-within:ring-2 focus-within:ring-os-accent focus-within:border-transparent"
+              className="rounded-lg border border-border bg-card focus-within:ring-2 focus-within:ring-os-accent focus-within:border-transparent"
               collab={{
                 documentName: `domainApplication:${domainApplicationId}:prepNote`,
                 token: collabToken,
@@ -352,7 +353,7 @@ export function ReviewsSection({
           No reviewers assigned yet.
         </div>
       ) : (
-        <div className="divide-y divide-gray-100">
+        <div className="divide-y divide-border">
           {reviews.map((review) => {
             const reviewer = review.cycleReviewer?.user;
             const name = reviewer ? `${reviewer.firstName} ${reviewer.lastName}` : "Unknown";

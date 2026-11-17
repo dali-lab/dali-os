@@ -10,7 +10,7 @@ import {
   applyResult,
   finalizeEmpty,
   startProcessing,
-} from "~/lib/meeting-recording.server";
+} from "~/calendar/lib/meeting-recording.server";
 import { deletePrefix } from "~/lib/transcription/chunks.server";
 import type { JobContext, JobResult } from "~/jobs/registry";
 

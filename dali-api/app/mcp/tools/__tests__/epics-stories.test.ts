@@ -11,14 +11,13 @@ import { isCore, isProjectMember } from "~/lib/roles";
 import { runListEpics, LIST_EPICS_TOOL } from "~/mcp/tools/list-epics";
 import {
   runCreateEpic,
-  CREATE_EPIC_TOOL,
   CreateEpicError,
 } from "~/mcp/tools/create-epic";
-import { runUpdateEpic, UPDATE_EPIC_TOOL } from "~/mcp/tools/update-epic";
-import { runDeleteEpic, DELETE_EPIC_TOOL } from "~/mcp/tools/delete-epic";
-import { runCreateStory, CREATE_STORY_TOOL } from "~/mcp/tools/create-story";
-import { runUpdateStory, UPDATE_STORY_TOOL } from "~/mcp/tools/update-story";
-import { runDeleteStory, DELETE_STORY_TOOL } from "~/mcp/tools/delete-story";
+import { runUpdateEpic } from "~/mcp/tools/update-epic";
+import { runDeleteEpic } from "~/mcp/tools/delete-epic";
+import { runCreateStory } from "~/mcp/tools/create-story";
+import { runUpdateStory } from "~/mcp/tools/update-story";
+import { runDeleteStory } from "~/mcp/tools/delete-story";
 
 const mockPrisma = prisma as unknown as {
   epic: {
@@ -47,12 +46,6 @@ beforeEach(() => vi.clearAllMocks());
 describe("epic + story tools", () => {
   it("scopes are right", () => {
     expect(LIST_EPICS_TOOL.requiredScope).toBe("mcp:read");
-    expect(CREATE_EPIC_TOOL.requiredScope).toBe("mcp:write");
-    expect(UPDATE_EPIC_TOOL.requiredScope).toBe("mcp:write");
-    expect(DELETE_EPIC_TOOL.requiredScope).toBe("mcp:write");
-    expect(CREATE_STORY_TOOL.requiredScope).toBe("mcp:write");
-    expect(UPDATE_STORY_TOOL.requiredScope).toBe("mcp:write");
-    expect(DELETE_STORY_TOOL.requiredScope).toBe("mcp:write");
   });
 
   it("list_epics returns epics with their stories", async () => {

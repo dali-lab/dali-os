@@ -5,5 +5,6 @@ export { SEARCH_THRESHOLD } from "./search";
 export { Menu, MenuItem, MenuLinkItem, MenuSeparator, MenuSub, MenuContext } from "./Menu";
 export { ContextMenu } from "./ContextMenu";
 export { Popover } from "./Popover";
+export { AnchoredCard } from "./AnchoredCard";
 export { Tooltip, InfoTip } from "./Tooltip";
 export { isInFloatingLayer, FLOATING_LAYER_SELECTOR } from "./outside";

@@ -3,7 +3,7 @@
 // session instead of proxied through the public media route.
 import { prisma } from "~/lib/db.server";
 import { resolvePhotoUrl } from "~/lib/photo";
-import { teamMembersByProject } from "~/public-api/lib/public-projects.server";
+import { teamMembersByProject } from "~/projects/lib/team-credits.server";
 import {
   parseDetails,
   parseMedia,

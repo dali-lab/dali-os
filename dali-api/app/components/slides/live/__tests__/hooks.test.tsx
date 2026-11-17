@@ -41,10 +41,17 @@ let latest: ReturnType<typeof useFollowDeck> & ReturnType<typeof usePresenterSes
 
 const flush = () => act(async () => { await new Promise((r) => setTimeout(r, 0)); });
 
-function Probe({ kind }: { kind: "follow" | "present" }) {
-  latest = (kind === "follow" ? useFollowDeck("p1") : usePresenterSession("p1")) as typeof latest;
+function FollowProbe() {
+  latest = useFollowDeck("p1") as typeof latest;
   return null;
 }
+
+function PresentProbe() {
+  latest = usePresenterSession("p1") as typeof latest;
+  return null;
+}
+
+const Probe = ({ kind }: { kind: "follow" | "present" }) => (kind === "follow" ? <FollowProbe /> : <PresentProbe />);
 
 async function mount(kind: "follow" | "present") {
   await act(async () => root.render(createElement(Probe, { kind })));

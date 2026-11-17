@@ -6,7 +6,7 @@ vi.mock("~/lib/db.server", () => ({
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn(), isNonMember: vi.fn() }));
 vi.mock("~/lib/login-next", () => ({ redirectToLogin: vi.fn() }));
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn() }));
-vi.mock("~/partners/lib/partner-renewals.server", () => ({ setTermPi: vi.fn() }));
+vi.mock("~/partners/lib/partner-renewals.server", () => ({ setTermPi: vi.fn(), setMaintenancePlan: vi.fn() }));
 vi.mock("~/partners/lib/planning-spots.server", () => ({ setTermSpots: vi.fn(), setApplicationSpots: vi.fn() }));
 vi.mock("~/partners/lib/planning-notes.server", () => ({ PLANNING_NOTE_MAX: 5000, setPlanningNote: vi.fn() }));
 vi.mock("~/partners/lib/partner-returns.server", () => ({ startProjectReturn: vi.fn() }));
@@ -15,7 +15,7 @@ vi.mock("~/partners/lib/planning-gap.server", () => ({ loadPlanningData: vi.fn()
 import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
-import { setTermPi } from "~/partners/lib/partner-renewals.server";
+import { setMaintenancePlan, setTermPi } from "~/partners/lib/partner-renewals.server";
 import { setApplicationSpots, setTermSpots } from "~/partners/lib/planning-spots.server";
 import { setPlanningNote } from "~/partners/lib/planning-notes.server";
 import { startProjectReturn } from "~/partners/lib/partner-returns.server";
@@ -308,5 +308,29 @@ describe("application intents", () => {
     }
     expect(appUpdate).not.toHaveBeenCalled();
     expect(setApplicationSpots).not.toHaveBeenCalled();
+  });
+});
+
+describe("maintenance-plan intent", () => {
+  it("switches the project's maintenance tier", async () => {
+    vi.mocked(setMaintenancePlan).mockResolvedValue("ok");
+    expect(await post({ intent: "maintenance-plan", projectId: "p1", plan: "Medium" })).toEqual({
+      status: 200,
+      body: { ok: true },
+    });
+    expect(setMaintenancePlan).toHaveBeenCalledWith(prisma, { projectId: "p1", plan: "Medium" });
+  });
+
+  it("rejects an unknown tier and a project not on a plan", async () => {
+    expect((await post({ intent: "maintenance-plan", projectId: "p1", plan: "Heavy" })).status).toBe(400);
+    expect(setMaintenancePlan).not.toHaveBeenCalled();
+    vi.mocked(setMaintenancePlan).mockResolvedValue("not-on-plan");
+    expect((await post({ intent: "maintenance-plan", projectId: "p1", plan: "Mild" })).status).toBe(400);
+  });
+
+  it("is Core-only", async () => {
+    vi.mocked(isCore).mockResolvedValue(false);
+    expect((await post({ intent: "maintenance-plan", projectId: "p1", plan: "Mild" })).status).toBe(403);
+    expect(setMaintenancePlan).not.toHaveBeenCalled();
   });
 });

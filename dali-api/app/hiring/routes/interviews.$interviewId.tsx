@@ -7,14 +7,14 @@ import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from '~/lib/login-next'
 import { resolvePhotoUrl } from '~/lib/photo'
 import { getCollabToken } from "~/lib/collab-token.server";
-import { getPresenceUser } from '~/lib/presence-user'
+import { getPresenceUser } from '~/lib/presence-user.server'
 import { requirePageSignedOrRedirect } from '~/hiring/lib/confidentiality'
 import { presignAnswers } from '~/hiring/lib/presign'
 import { ensureBlocks } from '~/collab/legacy/pm-to-blocknote'
 import { safeParseJsonString } from '~/forms/lib/forms-data'
 import { DocEditor, EnhanceReviewContext } from '~/components/doc'
 import { interviewNotesRoomName } from '~/collab/roomName'
-import { latestRecordingFor } from '~/lib/meeting-recording.server'
+import { latestRecordingFor } from '~/calendar/lib/meeting-recording.server'
 import { MeetingRecorder } from '~/components/MeetingRecorder'
 import { RecordingPresencePill } from '~/components/RecordingPresencePill'
 import { RecordingMount } from '~/components/meeting-recorder/RecordingMount'
@@ -33,7 +33,7 @@ import type { Route } from './+types/interviews.$interviewId'
 import type { Question } from '~/types'
 import { INTERVIEW_STATUS_TONES } from '~/hiring/lib/labels'
 import { viewerAssignment } from '~/hiring/lib/interview-status'
-import { Pill } from '~/hiring/components/cycle-setup/SetupCard'
+import { Pill } from '~/components/ui/Pill'
 import { Select, InfoTip } from "~/components/ui/floating";
 import { useOsChrome } from '~/components/os-chrome'
 import { buttonClasses } from '~/components/ui/Button'
@@ -289,7 +289,7 @@ export default function InterviewDetailPage() {
     blinded,
     isCore,
     latestRecording,
-  } = useLoaderData<typeof loader>() as any
+  } = useLoaderData<typeof loader>()
 
   const applicant = interview.domainApplication?.application?.user
   const domain = interview.domainApplication?.domain?.name
@@ -310,10 +310,8 @@ export default function InterviewDetailPage() {
     })
 
   const application = interview.domainApplication?.application
-  const generalQuestions: any[] =
-    application?.applicationFormVersion?.questions ?? []
-  const domainQuestions: any[] =
-    interview.domainApplication?.challengeFormVersion?.questions ?? []
+  const generalQuestions = (application?.applicationFormVersion?.questions ?? []) as unknown as Question[]
+  const domainQuestions = (interview.domainApplication?.challengeFormVersion?.questions ?? []) as unknown as Question[]
   const submittedReviews: any[] = interview.domainApplication?.reviews ?? []
 
   const questionLabels: Record<string, string> = {}

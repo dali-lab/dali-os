@@ -2,12 +2,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn() }));
-vi.mock("~/lib/groups", () => ({ listVisibleGroupsForUser: vi.fn() }));
+vi.mock("~/lib/groups.server", () => ({ listVisibleGroupsForUser: vi.fn() }));
 vi.mock("~/core/lib/announcements-sent.server", () => ({ loadSentAnnouncements: vi.fn() }));
 
 import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
-import { listVisibleGroupsForUser } from "~/lib/groups";
+import { listVisibleGroupsForUser } from "~/lib/groups.server";
 import { loadSentAnnouncements } from "~/core/lib/announcements-sent.server";
 import { loader } from "~/routes/api.announcements.sent";
 

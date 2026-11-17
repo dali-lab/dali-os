@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useRevalidator } from 'react-router'
 import { EyeOff, ListOrdered } from 'lucide-react'
 import { Section } from '~/hiring/components/Section'
-import { Pill } from '~/hiring/components/cycle-setup/SetupCard'
+import { Pill } from '~/components/ui/Pill'
 import { ApplicantContextModal } from '~/hiring/components/delibs/ApplicantContextModal'
 import { ApplicantEngagementChip } from '~/hiring/components/ApplicantEmailPanel'
 import type { EngagementSummary } from '~/hiring/lib/email-engagement.server'
@@ -44,7 +44,7 @@ export function DelibsView({
     <>
       <Section
         title="Delibs View"
-        icon={<ListOrdered className="w-4 h-4 text-blue-600" />}
+        icon={<ListOrdered className="w-4 h-4 text-os-accent" />}
         badge={
           (delibsSessions?.length ?? 0) > 0 ? (
             <Pill dot="accent">

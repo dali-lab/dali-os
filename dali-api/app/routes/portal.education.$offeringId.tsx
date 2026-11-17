@@ -3,7 +3,7 @@ import type { Route } from "./+types/portal.education.$offeringId";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db.server";
-import { withdrawApplication } from "~/education/lib/decisions.server";
+import { withdrawOfferingAction } from "~/education/lib/offering-surface.server";
 import {
   getOfferingDetail,
   registrationOpen,
@@ -75,20 +75,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   };
 }
 
-export async function action({ request, params }: Route.ActionArgs) {
-  const auth = await requireAuth(request);
-  if (!auth.ok) return auth.response;
-  const formData = await request.formData();
-  if (formData.get("intent") !== "withdraw")
-    return Response.json({ error: "Unknown intent" }, { status: 400 });
-  const result = await withdrawApplication({
-    userId: auth.user.sub,
-    offeringId: params.offeringId!,
-  });
-  if ("error" in result && typeof result.error === "string")
-    return Response.json({ error: result.error }, { status: result.status });
-  return { ok: true };
-}
+export const action = withdrawOfferingAction;
 
 export default function PortalOfferingDetail() {
   const { offering, descriptionHtml, tz, myStatus, canApply } =

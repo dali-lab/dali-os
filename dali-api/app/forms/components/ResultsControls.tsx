@@ -77,22 +77,35 @@ export function ExportCsvLink({
   matching?: number;
   search?: boolean;
 }) {
-  const label = matching === undefined ? "Export" : `Export ${matching}`;
+  return (
+    <CsvLink
+      href={exportCsvHref(formId, versionNumber, searchParams, { search })}
+      matching={matching}
+      allTip="Export every response to this version as CSV"
+    />
+  );
+}
+
+export function CsvLink({
+  href,
+  matching,
+  allTip,
+}: {
+  href: string;
+  matching?: number;
+  allTip: string;
+}) {
   return (
     <Tooltip
       content={
         matching === undefined
-          ? "Export every response to this version as CSV"
+          ? allTip
           : "Export the responses that match the current search and filters as CSV"
       }
     >
-      <a
-        href={exportCsvHref(formId, versionNumber, searchParams, { search })}
-        download
-        className={buttonClasses("secondary", "sm", "h-8")}
-      >
+      <a href={href} download className={buttonClasses("secondary", "sm", "h-8")}>
         <Download className="h-4 w-4" aria-hidden />
-        {label}
+        {matching === undefined ? "Export" : `Export ${matching}`}
       </a>
     </Tooltip>
   );

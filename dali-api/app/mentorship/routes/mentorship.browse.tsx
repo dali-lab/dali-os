@@ -30,7 +30,7 @@ import { isCore, currentTerm } from "~/lib/roles";
 import { TemplatesModal } from "../components/TemplatesModal";
 import { NudgeModal } from "../components/NudgeModal";
 import { MentorGridTable } from "../components/MentorGrid";
-import { EmptyState } from "../components/EmptyState";
+import { EmptyState } from "~/components/ui/EmptyState";
 import { BackLink } from "../components/BackLink";
 import { Tooltip } from "~/components/ui/floating";
 import { TermFilter } from "~/components/TermFilter";

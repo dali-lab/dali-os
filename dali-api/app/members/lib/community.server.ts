@@ -1,6 +1,6 @@
 import { prisma } from "~/lib/db.server";
 import { getUserRoles } from "~/lib/roles";
-import { listUpcomingMeetings } from "~/lib/upcoming-meetings";
+import { listUpcomingMeetings } from "~/calendar/lib/upcoming-meetings-list.server";
 import { meetingOccurrenceHref } from "~/calendar/lib/meeting-href";
 import { LAB_MEMBER_WHERE, LEGACY_DOMAIN_ID, MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
 import { resolvePhotoUrl } from "~/lib/photo";
@@ -116,7 +116,7 @@ export async function loadCommunityPeople(
 }> {
   const [users, me, roles] = await Promise.all([
     prisma.user.findMany({
-      where: LAB_MEMBER_WHERE,
+      where: { ...LAB_MEMBER_WHERE, id: { not: viewerId } },
       orderBy: MEMBER_LIST_ORDER_BY,
       select: {
         id: true,
@@ -126,6 +126,8 @@ export async function loadCommunityPeople(
         classYear: true,
         membershipStatus: true,
         currentLocation: true,
+        currentLocationCity: true,
+        currentLocationRegion: true,
         currentLocationLat: true,
         currentLocationLng: true,
         openToCoffeeChats: true,

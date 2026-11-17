@@ -46,6 +46,7 @@ const mockPrisma = prisma as unknown as {
 const coreRoles = {
   isCore: true,
   isDomainLead: false,
+  isLabMemberOrAlum: true,
   isLabMember: true,
   isAdmin: false,
   isInstructor: false,
@@ -59,6 +60,7 @@ const coreRoles = {
 const noRoles = {
   isCore: false,
   isDomainLead: false,
+  isLabMemberOrAlum: true,
   isLabMember: true,
   isAdmin: false,
   isInstructor: false,

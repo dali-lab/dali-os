@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { signHmac, verifyHmac } from "~/lib/transcription/hmac";
+import { signHmac, verifyHmac } from "~/lib/transcription/hmac.server";
 
 const SECRET = "test-secret";
 

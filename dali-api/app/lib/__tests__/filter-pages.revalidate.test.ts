@@ -8,7 +8,7 @@ import * as partnersDirectory from "~/partners/routes/core.partners.directory";
 import * as members from "~/members/routes/members";
 import * as mentorship from "~/mentorship/routes/mentorship.browse";
 import * as infrastructure from "~/admin/routes/admin.infrastructure";
-import * as announcements from "~/admin/routes/admin.announcements";
+import * as announcements from "~/core/routes/core.communications.announcements";
 import * as listserv from "~/core/routes/core.communications.listserv";
 import * as banners from "~/core/routes/core.communications.banners";
 import * as planning from "~/partners/routes/core.partners.planning";
@@ -37,7 +37,7 @@ const PAGES: {
     loaderParams: ["term", "termId", "menteeId", "mentorId", "projectId", "domainId", "status"],
   },
   { name: "Infrastructure", path: "/admin/infrastructure", shouldRevalidate: infrastructure.shouldRevalidate, loaderParams: ["term"] },
-  { name: "Announcements", path: "/admin/announcements", shouldRevalidate: announcements.shouldRevalidate, loaderParams: [] },
+  { name: "Announcements", path: "/core/communications/announcements", shouldRevalidate: announcements.shouldRevalidate, loaderParams: [] },
   { name: "Listserv", path: "/core/communications/listserv", shouldRevalidate: listserv.shouldRevalidate, loaderParams: [] },
   { name: "Banners", path: "/core/communications/banners", shouldRevalidate: banners.shouldRevalidate, loaderParams: [] },
   { name: "Planning", path: "/core/partners/planning", shouldRevalidate: planning.shouldRevalidate, loaderParams: ["term"] },

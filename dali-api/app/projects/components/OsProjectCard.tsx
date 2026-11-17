@@ -2,6 +2,7 @@ import { Link } from "react-router";
 import { Globe } from "lucide-react";
 import { ProjectCoverImage } from "~/projects/components/ProjectCoverImage";
 import { ProjectIcon } from "~/components/ProjectIcon";
+import { Pill } from "~/components/ui/Pill";
 import type { ShowcaseStatusValue } from "~/projects/lib/showcase-filter";
 
 type ProjectStatus = "Active" | "Paused" | "Archived";
@@ -94,9 +95,7 @@ export function OsProjectCard({
         </span>
         {project.firstTermCode && (
           <span className="flex items-center gap-2">
-            <span className="rounded-full bg-os-container px-3 py-1 text-xs font-semibold text-foreground">
-              {project.firstTermCode}
-            </span>
+            <Pill size="sm">{project.firstTermCode}</Pill>
             <span className="text-xs text-os-grey">Start term</span>
           </span>
         )}

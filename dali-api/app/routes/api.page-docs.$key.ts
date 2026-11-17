@@ -1,19 +1,21 @@
 import type { Route } from "./+types/api.page-docs.$key";
 import { z } from "zod";
+import type { Prisma } from "~/generated/prisma/client";
 import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
-import { isCore, isLabMember } from "~/lib/roles";
+import { isCore, isLabMemberOrAlum } from "~/lib/roles";
 import { parseJson } from "~/lib/validate";
-import { getDownloadUrl, isS3Configured } from "~/lib/s3";
+import { getDownloadUrl, isS3Configured } from "~/lib/s3.server";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { notify } from "~/lib/notify.server";
-import { extractMentionUserIds, notifyMentions, pageDocLink } from "~/lib/mentions";
+import { extractMentionUserIds, notifyMentions, pageDocLink } from "~/lib/mentions.server";
 import { fullName } from "~/lib/display";
 import {
+  EMPTY_OVERVIEW,
   mergeSectionsPayload,
-  resolveSections,
+  parseStoredSections,
   type StoredPageDocSection,
-} from "~/lib/page-doc-sections";
+} from "~/drive/lib/page-doc-sections.server";
 
 // Per-page documentation guide, keyed by a stable pageKey a route declares via
 // handle.docKey. Backs the "Docs" modal.
@@ -21,21 +23,18 @@ import {
 //   POST /api/page-docs/:key            → upsert content / maintainer
 //
 // Any lab member may read (and, via /api/comments, post FAQ comments). Editing
-// title/body/video/sections is limited to the maintainer or Core/Admin;
+// title/sections is limited to the maintainer or Core/Admin;
 // assigning the maintainer is Core/Admin only.
 
 const UpdateSchema = z.object({
   // Present only for the field being changed — undefined means "leave as is".
   title: z.string().trim().min(1).max(200).optional(),
-  // Legacy single-body fields (still accepted). Prefer `sections` for new edits.
-  body: z.unknown().optional(),
-  videoKey: z.string().max(500).nullable().optional(),
   sections: z.array(z.unknown()).optional(),
   maintainerId: z.string().nullable().optional(),
   // The page's current path, used to deep-link mention/maintainer notifications
   // back to the guide (with ?doc=1 so the modal auto-opens).
   path: z.string().max(1000).optional(),
-});
+}).strict();
 
 async function resolveVideoUrl(videoKey: string | null): Promise<string | null> {
   if (!videoKey) return null;
@@ -48,8 +47,6 @@ async function serializeSections(sections: StoredPageDocSection[]) {
     sections.map(async (s) => ({
       id: s.id,
       title: s.title,
-      // Legacy ProseMirror bodies convert to block JSON on read; new saves
-      // store blocks directly (the client's DocEditor posts block arrays).
       body: ensureBlocks(s.body),
       videoUrl: await resolveVideoUrl(s.videoKey),
       hasVideo: s.videoKey !== null,
@@ -61,7 +58,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
   const userId = auth.user.sub;
-  if (!(await isLabMember(userId))) {
+  if (!(await isLabMemberOrAlum(userId))) {
     return Response.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -73,12 +70,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const doc = await prisma.pageDoc.upsert({
     where: { pageKey },
     update: {},
-    create: { pageKey, title, createdById: userId },
+    create: { pageKey, title, createdById: userId, sections: [EMPTY_OVERVIEW] as Prisma.InputJsonValue },
     select: {
       id: true,
       title: true,
-      body: true,
-      videoKey: true,
       sections: true,
       maintainerId: true,
       maintainer: { select: { id: true, firstName: true, lastName: true, handle: true } },
@@ -87,18 +82,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const core = await isCore(userId);
   const canEdit = core || doc.maintainerId === userId;
-  const sections = resolveSections(doc);
+  const sections = parseStoredSections(doc.sections);
   const serialized = await serializeSections(sections);
-  const primary = serialized[0]!;
 
   return Response.json({
     doc: {
       id: doc.id,
       title: doc.title,
-      // Legacy single-field mirrors of the first section (older clients / FAQ).
-      body: primary.body,
-      videoUrl: primary.videoUrl,
-      hasVideo: primary.hasVideo,
       sections: serialized,
     },
     maintainer: doc.maintainer
@@ -121,7 +111,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (request.method !== "POST") {
     return Response.json({ error: "Method not allowed" }, { status: 405 });
   }
-  if (!(await isLabMember(userId))) {
+  if (!(await isLabMemberOrAlum(userId))) {
     return Response.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -131,7 +121,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   const pageKey = params.key;
   const existing = await prisma.pageDoc.findUnique({
     where: { pageKey },
-    select: { id: true, body: true, videoKey: true, sections: true, maintainerId: true },
+    select: { id: true, sections: true, maintainerId: true },
   });
   if (!existing) {
     return Response.json({ error: "Guide not found" }, { status: 404 });
@@ -142,8 +132,6 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const changingContent =
     payload.title !== undefined ||
-    payload.body !== undefined ||
-    payload.videoKey !== undefined ||
     payload.sections !== undefined;
   const changingMaintainer =
     payload.maintainerId !== undefined && payload.maintainerId !== existing.maintainerId;
@@ -163,12 +151,12 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   // A named maintainer must be a real lab member.
   if (changingMaintainer && payload.maintainerId) {
-    if (!(await isLabMember(payload.maintainerId))) {
+    if (!(await isLabMemberOrAlum(payload.maintainerId))) {
       return Response.json({ error: "That member can't be a maintainer." }, { status: 400 });
     }
   }
 
-  const priorSections = resolveSections(existing);
+  const priorSections = parseStoredSections(existing.sections);
   let nextSections: StoredPageDocSection[] | undefined;
 
   if (payload.sections !== undefined) {
@@ -177,41 +165,17 @@ export async function action({ request, params }: Route.ActionArgs) {
       return Response.json({ error: merged.error }, { status: 400 });
     }
     nextSections = merged;
-  } else if (payload.body !== undefined || payload.videoKey !== undefined) {
-    // Legacy single-section edit: patch the first section only.
-    const [first, ...rest] = priorSections;
-    const head = first ?? {
-      id: "overview",
-      title: "Overview",
-      body: null,
-      videoKey: null,
-    };
-    nextSections = [
-      {
-        ...head,
-        body: payload.body !== undefined ? payload.body : head.body,
-        videoKey: payload.videoKey !== undefined ? payload.videoKey : head.videoKey,
-      },
-      ...rest,
-    ];
   }
 
   const data: {
     title?: string;
-    body?: unknown;
-    videoKey?: string | null;
     sections?: StoredPageDocSection[];
     maintainerId?: string | null;
     lastEditedById: string;
   } = { lastEditedById: userId };
   if (payload.title !== undefined) data.title = payload.title;
   if (changingMaintainer) data.maintainerId = payload.maintainerId ?? null;
-  if (nextSections) {
-    data.sections = nextSections;
-    // Keep legacy columns aligned with the first section.
-    data.body = nextSections[0]?.body ?? null;
-    data.videoKey = nextSections[0]?.videoKey ?? null;
-  }
+  if (nextSections) data.sections = nextSections;
 
   const updated = await prisma.pageDoc.update({
     where: { id: existing.id },

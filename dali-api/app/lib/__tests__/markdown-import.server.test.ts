@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { strToU8, zipSync } from "fflate";
 
-vi.mock("~/lib/s3", () => ({ putObject: vi.fn() }));
+vi.mock("~/lib/s3.server", () => ({ putObject: vi.fn() }));
 
 import { ImportError, IMPORT_ZIP_BYTES, importLimitFor, importMarkdownFile, readImportFile } from "~/lib/markdown-import.server";
 

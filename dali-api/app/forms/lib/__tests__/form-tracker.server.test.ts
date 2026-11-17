@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db.server");
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn().mockResolvedValue(undefined) }));
-vi.mock("~/lib/groups", () => ({ resolveGroupMembers: vi.fn() }));
+vi.mock("~/lib/groups.server", () => ({ resolveGroupMembers: vi.fn() }));
 vi.mock("~/lib/notify.server", () => ({ notify: vi.fn().mockResolvedValue({ inApp: 0, emailed: 0, slackDmed: 0 }) }));
 vi.mock("~/lib/photo", () => ({ resolvePhotoUrl: vi.fn(async (v: string | null) => v) }));
 vi.mock("~/forms/lib/form-usages.server", () => ({
@@ -12,7 +12,7 @@ vi.mock("~/forms/lib/form-usages.server", () => ({
 
 import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
-import { resolveGroupMembers } from "~/lib/groups";
+import { resolveGroupMembers } from "~/lib/groups.server";
 import { notify } from "~/lib/notify.server";
 import { managingUsage } from "~/forms/lib/form-usages.server";
 import {
@@ -48,6 +48,7 @@ beforeEach(() => {
   db.groupDefinition.findMany.mockResolvedValue([{ id: "g1", name: "Core" }]);
   vi.mocked(resolveGroupMembers).mockResolvedValue(["ada", "bo", "cy"]);
   db.notification.findMany.mockResolvedValue([]);
+  db.bannerImpression.findMany.mockResolvedValue([]);
   db.formSubmission.findMany.mockResolvedValue([]);
   db.user.findMany.mockResolvedValue([]);
 });
@@ -62,6 +63,23 @@ describe("computeFormTracker", () => {
     const tracked = await computeFormTracker("f1");
     expect(tracked!.people.map((p) => p.userId).sort()).toEqual(["ada", "bo", "cy", "di"]);
     expect(await loadTrackerCounts("f1")).toEqual({ expected: 4, responded: 1 });
+  });
+
+  it("counts people who saw a live banner linked to the form, and checks their submissions", async () => {
+    vi.mocked(resolveGroupMembers).mockResolvedValue([]);
+    db.groupDefinition.findMany.mockResolvedValue([]);
+    db.bannerImpression.findMany.mockResolvedValue([{ userId: "ed" }, { userId: "fay" }]);
+    db.formSubmission.findMany.mockResolvedValue([{ userId: "fay" }]);
+    const tracked = await computeFormTracker("f1");
+    expect(db.bannerImpression.findMany).toHaveBeenCalledWith({
+      where: { views: { gt: 0 }, banner: { untilFormId: "f1", published: true } },
+      select: { userId: true },
+    });
+    expect(tracked!.people.map((p) => [p.userId, p.sources, p.responded])).toEqual([
+      ["ed", ["Banner"], false],
+      ["fay", ["Banner"], true],
+    ]);
+    expect(db.formSubmission.findMany.mock.calls[0][0].where.userId.in).toEqual(["ed", "fay"]);
   });
 
   it("queries to-dos only, so a reminder never adds anyone", async () => {

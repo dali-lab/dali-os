@@ -6,6 +6,7 @@
 // work.
 import type { ReactNode } from "react";
 import { cn } from "~/lib/cn";
+import { Pill as UiPill, type PillTone } from "~/components/ui/Pill";
 
 export type Tone = "ok" | "warn" | "bad" | "idle";
 
@@ -108,18 +109,14 @@ export function Sparkline({
   );
 }
 
+const TONE_DOT: Record<Tone, PillTone> = { ok: "success", warn: "warning", bad: "danger", idle: "neutral" };
+
 /** The status pill: one neutral shape, with the state carried by its dot. */
 export function Pill({ tone, children, className }: { tone?: Tone; children: ReactNode; className?: string }) {
   return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full bg-os-container/70 px-2.5 py-0.5 text-xs font-medium text-foreground",
-        className,
-      )}
-    >
-      {tone && <StatusDot tone={tone} />}
+    <UiPill size="sm" dot={tone ? TONE_DOT[tone] : undefined} className={className}>
       {children}
-    </span>
+    </UiPill>
   );
 }
 
@@ -160,13 +157,3 @@ export const adminTable = {
   td: "px-4 py-3.5 text-sm first:pl-6 last:pr-6",
   row: "border-t border-os-container/70",
 };
-
-/** An empty list or table, said plainly. */
-export function EmptyState({ title, children }: { title?: ReactNode; children?: ReactNode }) {
-  return (
-    <div className="px-6 py-12 text-center">
-      {title && <p className="font-semibold text-foreground">{title}</p>}
-      {children && <p className={cn("text-sm text-os-muted", title ? "mt-1" : undefined)}>{children}</p>}
-    </div>
-  );
-}

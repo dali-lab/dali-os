@@ -2,7 +2,7 @@ import type { Route } from "./+types/api.partner-applications.$id";
 import { prisma } from "~/lib/db.server";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
-import { listActiveCoreMembers, resolveApplicationIcon } from "../lib/core-members.server";
+import { listActiveCoreMembers, resolveApplicationIcon } from "~/lib/core-members.server";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { formAnswerRows } from "~/forms/lib/answer-rows.server";
 import type { Question } from "~/types";

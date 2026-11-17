@@ -1,5 +1,5 @@
 import type { Route } from "./+types/api.mobile.projects";
-import { runListMyProjects } from "~/mcp/tools/list-my-projects";
+import { listMyProjects } from "~/projects/lib/my-projects.server";
 import { termFactsForUser } from "~/lib/mobile-members.server";
 import { leadLabels } from "~/lib/mobile-format";
 import { mobileJson, requireMobileUser } from "~/lib/mobile-auth.server";
@@ -9,7 +9,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!guard.ok) return guard.response;
 
   const [{ projects }, facts] = await Promise.all([
-    runListMyProjects(guard.userId, {}),
+    listMyProjects(guard.userId, {}),
     termFactsForUser(guard.userId, null),
   ]);
   const myLeadRole = facts ? leadLabels(facts)[0] ?? null : null;

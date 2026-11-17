@@ -9,7 +9,7 @@ vi.mock("~/lib/photo", () => ({
     v && v !== "uploads/broken" ? `signed:${v}` : null,
   ),
 }));
-vi.mock("~/public-api/lib/public-projects.server", () => ({
+vi.mock("~/projects/lib/team-credits.server", () => ({
   teamMembersByProject: vi.fn(async () => new Map([["p1", ["Ada Lovelace", "Grace Hopper"]]])),
 }));
 

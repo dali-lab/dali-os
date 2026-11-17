@@ -205,7 +205,7 @@ export function ShowcaseMediaEditor({
         className="hidden"
       />
 
-      {error && <p className="text-xs text-red-500">{error}</p>}
+      {error && <p className="text-xs text-os-red">{error}</p>}
 
       {canEdit && (
         <div className="flex flex-wrap items-center gap-2">

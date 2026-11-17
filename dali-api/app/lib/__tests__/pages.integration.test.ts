@@ -9,7 +9,7 @@ import {
   isAncestorOf,
   MAX_PAGE_DEPTH,
   pageDepth,
-} from "~/lib/pages";
+} from "~/lib/pages.server";
 import { makeOffering, makePage, makeProject, makeUser } from "./integration-fixtures.docs";
 
 describe("ensureOfferingFormsFolder", () => {

@@ -21,4 +21,15 @@ describe("EmptyState", () => {
   it("adds the caller's className", () => {
     expect(renderToStaticMarkup(<EmptyState className="py-16">Empty</EmptyState>)).toContain("py-16");
   });
+
+  it("renders a title above the message, and a title on its own", () => {
+    const both = renderToStaticMarkup(<EmptyState title="Nothing here">Seed some terms.</EmptyState>);
+    expect(both.indexOf("Nothing here")).toBeLessThan(both.indexOf("Seed some terms."));
+    expect(both).toContain("data-empty-state-art");
+    expect(renderToStaticMarkup(<EmptyState title="Only a title" />)).toContain("Only a title");
+  });
+
+  it("renders no text block with neither title nor message", () => {
+    expect(renderToStaticMarkup(<EmptyState />)).not.toContain("<p");
+  });
 });

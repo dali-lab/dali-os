@@ -55,9 +55,9 @@ export const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 // Dot colour per response, so the guest list scans by status without needing a
 // badge on every row. Pending is a hollow ring — nothing to report yet.
 export const ATTENDEE_DOT: Record<EventAttendeeDTO["status"], string> = {
-  Accepted: "bg-green-600",
-  Declined: "bg-red-500",
-  Tentative: "bg-yellow-500",
+  Accepted: "bg-os-green",
+  Declined: "bg-os-red",
+  Tentative: "bg-os-amber",
   Pending: "border border-muted-foreground/60",
 };
 

@@ -24,16 +24,39 @@ function privateV4(parts: number[]): boolean {
   );
 }
 
+function parseV6(ip: string): number[] | null {
+  let text = ip;
+  const dotted = /(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(text);
+  if (dotted) {
+    const [a, b, c, d] = dotted.slice(1).map(Number);
+    text = text.slice(0, dotted.index) + ((a << 8) | b).toString(16) + ":" + ((c << 8) | d).toString(16);
+  }
+  const halves = text.split("::");
+  if (halves.length > 2) return null;
+  const head = halves[0] ? halves[0].split(":") : [];
+  const tail = halves.length === 2 && halves[1] ? halves[1].split(":") : [];
+  const fill = 8 - head.length - tail.length;
+  if (halves.length === 2 ? fill < 1 : fill !== 0) return null;
+  const groups = [...head, ...Array<string>(halves.length === 2 ? fill : 0).fill("0"), ...tail].map((g) => parseInt(g, 16));
+  return groups.length === 8 && groups.every((g) => g >= 0 && g <= 0xffff) ? groups : null;
+}
+
+const embeddedV4 = (hi: number, lo: number) => privateV4([hi >> 8, hi & 255, lo >> 8, lo & 255]);
+
 /** Whether an IP literal is loopback, private, link-local, carrier-grade NAT, multicast or otherwise not a public address. */
-export function isPrivateAddress(ip: string): boolean {
+export function isPrivateAddress(input: string): boolean {
+  const ip = input.replace(/^\[|\]$/g, "").replace(/%.*$/, "");
   const kind = isIP(ip);
   if (kind === 4) return privateV4(ip.split(".").map(Number));
   if (kind !== 6) return true;
-  const lower = ip.toLowerCase();
-  const mapped = /^(?:::ffff:|::)(\d+\.\d+\.\d+\.\d+)$/.exec(lower);
-  if (mapped) return privateV4(mapped[1].split(".").map(Number));
-  const first = parseInt(lower.split(":")[0] || "0", 16);
-  return lower === "::" || lower === "::1" || (first & 0xfe00) === 0xfc00 || (first & 0xffc0) === 0xfe80 || (first & 0xff00) === 0xff00;
+  const g = parseV6(ip);
+  if (!g) return true;
+  const [g0, g1, g2, g3, g4, g5, g6, g7] = g;
+  if (g0 === 0 && g1 === 0 && g2 === 0 && g3 === 0 && g4 === 0 && (g5 === 0xffff || g5 === 0)) return embeddedV4(g6, g7);
+  if (g0 === 0x64 && g1 === 0xff9b) return g2 === 1 || (g2 === 0 && g3 === 0 && g4 === 0 && g5 === 0 && embeddedV4(g6, g7));
+  if (g0 === 0x2002) return embeddedV4(g1, g2);
+  if (g0 === 0x2001 && (g1 === 0 || g1 === 0xdb8)) return true;
+  return (g0 & 0xfe00) === 0xfc00 || (g0 & 0xffc0) === 0xfe80 || (g0 & 0xff00) === 0xff00;
 }
 
 export type Resolver = (host: string) => Promise<string[]>;

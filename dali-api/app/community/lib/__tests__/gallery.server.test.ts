@@ -32,8 +32,8 @@ const s3 = vi.hoisted(() => ({
 vi.mock("~/lib/db.server", () => ({ prisma: db }));
 vi.mock("~/lib/notify.server", () => ({ notify }));
 vi.mock("~/lib/photo", () => ({ resolvePhotoUrl: vi.fn(async () => null) }));
-vi.mock("~/lib/s3", () => s3);
-vi.mock("~/lib/mentions", () => mentions);
+vi.mock("~/lib/s3.server", () => s3);
+vi.mock("~/lib/mentions.server", () => mentions);
 vi.mock("~/lib/rate-limit", () => ({ checkRateLimit: vi.fn(() => null) }));
 vi.mock("~/community/lib/community.server", () => ({ requireCommunityViewer: vi.fn() }));
 

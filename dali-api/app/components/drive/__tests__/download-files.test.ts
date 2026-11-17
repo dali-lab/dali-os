@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { downloadItems, hasDownloadable } from "~/components/drive/download-files";
-import type { DriveItem } from "~/lib/drive.server";
+import type { DriveItem } from "~/drive/lib/drive.server";
 
 const item = (type: string, id: string) => ({ type, id, title: id }) as unknown as DriveItem;
 const file = (id: string) => item("file", id);

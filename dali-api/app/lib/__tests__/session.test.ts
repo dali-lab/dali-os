@@ -14,7 +14,7 @@ import {
   ROLLING_TTL_MS,
   ABSOLUTE_TTL_MS,
   ROLL_MIN_INTERVAL_MS,
-} from "~/lib/session";
+} from "~/lib/session.server";
 
 const mockPrisma = prisma as unknown as {
   session: {

@@ -4,7 +4,7 @@
 // dashboard, and the interviewer page, which each wrap it in their own chrome.
 
 import { Avatar } from "~/components/ui/Avatar";
-import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
+import { Pill } from "~/components/ui/Pill";
 import { RECOMMENDATION_TONES } from "~/hiring/lib/labels";
 
 export interface ReviewSummaryProps {

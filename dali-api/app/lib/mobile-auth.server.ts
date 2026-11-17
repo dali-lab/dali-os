@@ -20,6 +20,6 @@ export async function requireMobileUser(request: Request): Promise<MobileAuthRes
   const auth = await requireAuth(request);
   if (!auth.ok) return { ok: false, response: auth.response };
   const roles = await getUserRoles(auth.user.sub, request);
-  if (!roles.isLabMember) return { ok: false, response: mobileError("Not found", 404) };
+  if (!roles.isLabMemberOrAlum) return { ok: false, response: mobileError("Not found", 404) };
   return { ok: true, auth, userId: auth.user.sub };
 }

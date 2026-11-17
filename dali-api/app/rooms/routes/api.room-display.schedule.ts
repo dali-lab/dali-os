@@ -1,10 +1,10 @@
 import type { Route } from "./+types/api.room-display.schedule";
-import { displayUnauthorized, requireRoomDisplay } from "~/lib/room-display.server";
+import { displayUnauthorized, requireRoomDisplay } from "~/rooms/lib/room-display.server";
 import { resolvePhotoUrl } from "~/lib/photo";
-import { currentEvent, getRoomSchedule, parseWindow, serializeScheduleItem } from "~/lib/rooms.server";
+import { currentEvent, getRoomSchedule, parseWindow, serializeScheduleItem } from "~/rooms/lib/rooms.server";
 import { getActiveDisplayScan } from "~/lib/display-scan.server";
 import { getDisplayCheckIns } from "~/lib/display-check-ins.server";
-import { getBroadcastEvent } from "~/hiring/lib/hiring-events.server";
+import { getBroadcastEvent } from "~/lib/display-broadcast.server";
 
 // The room event's check-in list scrolls; the lab-wide scan shows a few.
 const ROOM_EVENT_CHECK_INS = 50;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DRIVE_TYPE_FILTERS, listedUnderFilter, matchesTypeFilter, parseTypeFilter } from "~/components/drive/type-filter";
-import type { DriveItem } from "~/lib/drive.server";
+import type { DriveItem } from "~/drive/lib/drive.server";
 
 const at = new Date("2026-01-01T00:00:00Z");
 const base = { parentFolderId: null, iconEmoji: null, updatedAt: at, href: "/x" };

@@ -23,6 +23,7 @@ import {
   type AgentKind,
   type AgentTouched,
 } from "~/components/collab/agent";
+import { getEnv } from "~/lib/env.server";
 
 export const AGENT_LINGER_MS = 60_000;
 export const AGENT_RENEW_MS = 10_000;
@@ -139,7 +140,7 @@ let attached: Hocuspocus | null = null;
  */
 export function docViewerCount(docRoom: string): number | null {
   const doc = attached?.documents.get(docRoom);
-  if (!doc) return process.env.REDIS_URL ? null : 0;
+  if (!doc) return getEnv().REDIS_URL ? null : 0;
   let count = 0;
   for (const [id, state] of doc.awareness.getStates()) {
     if (id !== doc.awareness.clientID && !isAgentState(state)) count++;

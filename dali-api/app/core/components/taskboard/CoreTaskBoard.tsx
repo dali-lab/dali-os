@@ -3,7 +3,6 @@ import { useSearchParams } from "react-router";
 import { Plus } from "lucide-react";
 import { Confetti } from "~/components/Confetti";
 import { KanbanBoard } from "~/components/board/KanbanBoard";
-import { useOsChrome } from "~/components/os-chrome";
 import { Button } from "~/components/ui/Button";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { ToggleChip } from "~/components/ui/ToggleChip";
@@ -40,7 +39,6 @@ export function CoreTaskBoard({
   currentUserId: string;
   currentUserName: string;
 }) {
-  const { os } = useOsChrome();
   const [searchParams, setSearchParams] = useSearchParams();
   const openTaskId = searchParams.get("task");
   const [query, setQuery] = useSearchParamState("q", { debounceMs: 250 });
@@ -106,7 +104,6 @@ export function CoreTaskBoard({
 
   const columns = buildStatusColumns({
     board,
-    os,
     canManage: true,
     hideEmptyCols,
     collapsedCols,

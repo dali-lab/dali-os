@@ -5,12 +5,12 @@ vi.mock("~/lib/auth", () => ({
   forbidden: vi.fn(() => Response.json({ error: "Forbidden" }, { status: 403 })),
 }));
 vi.mock("~/lib/db.server");
-vi.mock("~/lib/roles", () => ({ isCore: vi.fn(), isLabMember: vi.fn(), isProjectMember: vi.fn() }));
+vi.mock("~/lib/roles", () => ({ isCore: vi.fn(), isLabMemberOrAlum: vi.fn(), isProjectMember: vi.fn() }));
 vi.mock("~/lib/cors", () => ({ withCors: (_req: Request, res: Response) => res, handlePreflight: () => null }));
-vi.mock("~/lib/collabAuth", () => ({ hydrateAuthors: vi.fn().mockResolvedValue([]) }));
+vi.mock("~/lib/collabAuth.server", () => ({ hydrateAuthors: vi.fn().mockResolvedValue([]) }));
 vi.mock("~/lib/notify.server", () => ({ notify: vi.fn() }));
 vi.mock("~/lib/comment-events.server", () => ({ publishCommentChange: vi.fn() }));
-vi.mock("~/lib/mentions", () => ({
+vi.mock("~/lib/mentions.server", () => ({
   extractHandlesFromText: vi.fn(() => []),
   resolveHandles: vi.fn().mockResolvedValue([]),
   notifyMentions: vi.fn(),
@@ -22,7 +22,7 @@ vi.mock("~/lib/pageAccess.server", () => ({ getPageAccess: vi.fn() }));
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db.server";
 import { notify } from "~/lib/notify.server";
-import { notifyMentions } from "~/lib/mentions";
+import { notifyMentions } from "~/lib/mentions.server";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { action } from "~/routes/api.comments";
 
@@ -94,10 +94,17 @@ describe("slide anchors on create", () => {
     expect(db.docComment.create).not.toHaveBeenCalled();
   });
 
-  it("still takes plain doc anchors on any page", async () => {
+  it("still takes inline blocknote anchors on any page", async () => {
+    pageIs("Doc");
+    const res = await post(slideComment({ anchor: { kind: "blocknote" } }));
+    expect(res.status).toBe(201);
+  });
+
+  it("rejects a legacy {from, to} anchor", async () => {
     pageIs("Doc");
     const res = await post(slideComment({ anchor: { from: "a", to: "b" } }));
-    expect(res.status).toBe(201);
+    expect(res.status).toBe(400);
+    expect(db.docComment.create).not.toHaveBeenCalled();
   });
 });
 

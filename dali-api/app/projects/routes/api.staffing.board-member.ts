@@ -6,6 +6,7 @@ import { canManageStaffing } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { logAuditEvent } from "~/lib/audit";
 import { publishCycleChange } from "../lib/staffing-events.server";
+import { memberSearchWhere } from "../lib/member-search";
 
 // Staffing board membership for non-bidders.
 //
@@ -68,21 +69,8 @@ export async function loader({ request }: Route.LoaderArgs) {
     ...board.map((b) => b.userId),
   ]);
 
-  // Per-token AND match across first/last/email, so "ada o" matches "Ada
-  // O'Brien". Members only (daliMember present) — the staff-able pool.
-  const tokens = q.split(/\s+/).filter(Boolean).slice(0, 4);
   const users = await prisma.user.findMany({
-    where: {
-      daliMember: { isNot: null },
-      AND: tokens.map((t) => ({
-        OR: [
-          { firstName: { contains: t, mode: "insensitive" as const } },
-          { lastName: { contains: t, mode: "insensitive" as const } },
-          { daliEmail: { contains: t, mode: "insensitive" as const } },
-          { dartmouthEmail: { contains: t, mode: "insensitive" as const } },
-        ],
-      })),
-    },
+    where: memberSearchWhere(q),
     select: {
       id: true,
       firstName: true,

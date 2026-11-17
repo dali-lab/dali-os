@@ -55,6 +55,7 @@ beforeEach(() => {
   db.partnerApplication.update.mockResolvedValue({});
   db.partnerMeeting.create.mockResolvedValue({});
   db.partnerMeeting.update.mockResolvedValue({});
+  db.partnerMeeting.updateMany = vi.fn().mockResolvedValue({ count: 1 });
 });
 
 describe("partner application CRM action — guards", () => {
@@ -185,16 +186,30 @@ describe("meeting intents", () => {
     expect(db.partnerMeeting.create).not.toHaveBeenCalled();
   });
 
-  it("meeting-debrief validates the outcome enum", async () => {
+  it("meeting-debrief validates the outcome enum and scopes the update to the application", async () => {
     await callAction({ intent: "meeting-debrief", meetingId: "m-1", debrief: "Good", outcome: "Advance" });
-    expect(db.partnerMeeting.update).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: "m-1" }, data: { debrief: "Good", outcome: "Advance" } }),
+    expect(db.partnerMeeting.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "m-1", applicationId: APP_ID },
+        data: { debrief: "Good", outcome: "Advance" },
+      }),
     );
 
-    db.partnerMeeting.update.mockClear();
+    db.partnerMeeting.updateMany.mockClear();
     await callAction({ intent: "meeting-debrief", meetingId: "m-1", debrief: "x", outcome: "Bogus" });
-    const arg = db.partnerMeeting.update.mock.calls[0][0];
-    expect(arg.data.outcome).toBeUndefined(); // invalid outcome dropped
+    const arg = db.partnerMeeting.updateMany.mock.calls[0][0];
+    expect(arg.data.outcome).toBeUndefined();
+  });
+
+  it("meeting-debrief clears the debrief when it is empty", async () => {
+    await callAction({ intent: "meeting-debrief", meetingId: "m-1", debrief: "  " });
+    expect(db.partnerMeeting.updateMany.mock.calls[0][0].data).toEqual({ debrief: null });
+  });
+
+  it("meeting-debrief for a meeting on another application returns an error", async () => {
+    db.partnerMeeting.updateMany.mockResolvedValue({ count: 0 });
+    const res = await callAction({ intent: "meeting-debrief", meetingId: "m-other", debrief: "x" });
+    expect(res).toEqual({ error: "That meeting no longer exists." });
   });
 });
 

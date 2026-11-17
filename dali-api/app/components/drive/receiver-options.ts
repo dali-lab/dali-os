@@ -3,7 +3,7 @@ import {
   RECEIVER_SLOTS,
   type ReceiverFolderType,
   type ReceiverProcessType,
-} from "~/lib/drive-receivers";
+} from "~/drive/lib/drive-receivers";
 
 import { pickDrives, type PickerRows } from "~/components/drive/picker-rows";
 

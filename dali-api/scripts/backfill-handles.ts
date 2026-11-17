@@ -1,12 +1,12 @@
 /**
  * Backfill User.handle for existing DALI members who don't have one, so they
  * can be @-mentioned in page-doc guides and FAQ comments. New users get a
- * handle seeded on login/provision (app/lib/handle.ts assignHandleIfMissing);
+ * handle seeded on login/provision (app/lib/handle.server.ts assignHandleIfMissing);
  * this is the one-off pass for everyone who predates that.
  *
  * Scoped to users with a DALIMember row (lab members), not applicants/partners.
  *
- * Derivation mirrors app/lib/handle.ts exactly: first-initial + last-name,
+ * Derivation mirrors app/lib/handle.server.ts exactly: first-initial + last-name,
  * lowercased and stripped to [a-z0-9], then a numeric suffix ("spark", "spark2",
  * …) to stay unique. Uniqueness is checked against both already-set handles and
  * the ones this run has assigned, so two "S. Park"s get distinct handles.

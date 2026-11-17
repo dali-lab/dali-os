@@ -7,7 +7,7 @@
 // Gate: canEditProject (Core or project member).
 
 import { canEditProject } from "../access";
-import { archiveTerminalTasks } from "~/jobs/task-auto-archive.server";
+import { archiveTerminalTasks } from "~/projects/lib/task-archive.server";
 import { McpNotFoundError, McpForbiddenError } from "./errors";
 import { prisma } from "~/lib/db.server";
 

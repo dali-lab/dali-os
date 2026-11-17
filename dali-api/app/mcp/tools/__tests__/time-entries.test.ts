@@ -8,7 +8,7 @@ vi.mock("~/lib/roles", () => ({
   // asserts stay tied to the one definition in ~/lib/roles.
   coreRoleLabel: (leadTitle: string | null) => leadTitle || "Core",
 }));
-vi.mock("~/lib/time-entries.server", () => ({
+vi.mock("~/calendar/lib/time-entries.server", () => ({
   addTimeEntry: vi.fn(),
   updateTimeEntry: vi.fn(),
   deleteTimeEntry: vi.fn(),
@@ -16,15 +16,16 @@ vi.mock("~/lib/time-entries.server", () => ({
 
 import { prisma } from "~/lib/db.server";
 import { resolveRoleRef, currentTerm } from "~/lib/roles";
-import { addTimeEntry, updateTimeEntry, deleteTimeEntry } from "~/lib/time-entries.server";
+import { addTimeEntry, updateTimeEntry, deleteTimeEntry } from "~/calendar/lib/time-entries.server";
 import {
   runAddTimeEntry,
   runUpdateTimeEntry,
   runDeleteTimeEntry,
   runListMyTimeEntries,
   runListMyRoles,
-  ADD_TIME_ENTRY_TOOL,
-  DELETE_TIME_ENTRY_TOOL,
+  ADD_TIME_ENTRY_PROPERTIES,
+  ADD_TIME_ENTRY_REQUIRED,
+  DELETE_TIME_ENTRY_PROPERTIES,
   TimeEntryNotFoundError,
   TimeEntryInvalidError,
 } from "~/mcp/tools/time-entries";
@@ -141,12 +142,11 @@ describe("add_time_entry validation", () => {
   });
 
   it("requires start and end in its schema, and declares confirmed without requiring it", () => {
-    expect(ADD_TIME_ENTRY_TOOL.inputSchema.required).toEqual(
+    expect(ADD_TIME_ENTRY_REQUIRED).toEqual(
       expect.arrayContaining(["startTime", "endTime"]),
     );
-    expect(ADD_TIME_ENTRY_TOOL.inputSchema.properties).toHaveProperty("confirmed");
-    expect(ADD_TIME_ENTRY_TOOL.inputSchema.required).not.toContain("confirmed");
-    expect(ADD_TIME_ENTRY_TOOL.requiredScope).toBe("mcp:write");
+    expect(ADD_TIME_ENTRY_PROPERTIES).toHaveProperty("confirmed");
+    expect(ADD_TIME_ENTRY_REQUIRED).not.toContain("confirmed");
   });
 });
 
@@ -308,7 +308,7 @@ describe("delete_time_entry", () => {
     expect(await runDeleteTimeEntry(ME, { id: "te-1" })).toEqual({ ok: true });
     expect(deleteTimeEntry).toHaveBeenCalledWith(ME, "te-1");
     expect(mockPrisma.timeEntry.delete).not.toHaveBeenCalled();
-    expect(DELETE_TIME_ENTRY_TOOL.inputSchema.properties).not.toHaveProperty("confirmed");
+    expect(DELETE_TIME_ENTRY_PROPERTIES).not.toHaveProperty("confirmed");
   });
 
   it("refuses another member's entry", async () => {

@@ -17,6 +17,7 @@ const info: PlanningProjectInfo = {
   spotsByTerm: { t26s: [{ domainId: "eng", name: "Engineering", slots: 2 }] },
   note: { body: "Waiting on budget", updatedAt: "2026-11-05T15:00:00.000Z", updatedByName: "Ada Lovelace" },
   lastTerm: null,
+  maintenance: null,
 };
 
 const domains = [

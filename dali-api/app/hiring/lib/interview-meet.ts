@@ -20,8 +20,8 @@ import {
   patchGoogleCalendarEvent,
   type GoogleAttendee,
   type GoogleCalendarAuth,
-} from "~/lib/google-calendar";
-import { getHiringCalendarSender, noteSenderHealth } from "~/lib/gmail-integration";
+} from "~/calendar/lib/google-calendar.server";
+import { getHiringCalendarSender, noteSenderHealth } from "~/lib/gmail-integration.server";
 import { getGmailAccessToken } from "~/lib/gmail";
 
 const HIRING_CALENDAR_EMAIL =

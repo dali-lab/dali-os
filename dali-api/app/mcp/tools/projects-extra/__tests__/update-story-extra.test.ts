@@ -30,7 +30,7 @@ vi.mock("~/lib/roles", async (orig) => {
 
 import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
-import { runUpdateStory, UPDATE_STORY_TOOL } from "~/mcp/tools/update-story";
+import { runUpdateStory, UPDATE_STORY_PROPERTIES } from "~/mcp/tools/update-story";
 
 const mockPrisma = prisma as unknown as {
   userStory: {
@@ -60,7 +60,7 @@ beforeEach(() => {
 
 describe("update_story schema additions", () => {
   it("new fields appear in inputSchema", () => {
-    const props = UPDATE_STORY_TOOL.inputSchema.properties;
+    const props = UPDATE_STORY_PROPERTIES;
     expect(props).toHaveProperty("startsAt");
     expect(props).toHaveProperty("endsAt");
     expect(props).toHaveProperty("priority");

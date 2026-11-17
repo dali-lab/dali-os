@@ -4,7 +4,8 @@ import { Form, redirect, useLoaderData, useSearchParams, useSubmit } from "react
 import type { Route } from "./+types/admin.site-users";
 import type { Prisma } from "~/generated/prisma/client";
 import { AdminSectionHeader, adminHandle } from "~/admin/adminNav";
-import { EmptyState, Pill, adminTable } from "~/admin/components/console-ui";
+import { Pill, adminTable } from "~/admin/components/console-ui";
+import { EmptyState } from "~/components/ui/EmptyState";
 import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";

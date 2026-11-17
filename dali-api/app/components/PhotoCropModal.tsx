@@ -200,7 +200,7 @@ export function PhotoCropModal({
         />
       </label>
 
-      {error && <p className="text-xs text-red-500 mt-2">{error}</p>}
+      {error && <p className="text-xs text-os-red mt-2">{error}</p>}
 
       <div className="flex justify-end gap-2 mt-4">
         <button

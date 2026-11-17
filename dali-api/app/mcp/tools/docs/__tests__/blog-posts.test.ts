@@ -10,8 +10,8 @@ vi.mock("~/lib/db.server", () => ({
 }));
 vi.mock("~/lib/roles", () => ({ isAdmin: vi.fn() }));
 vi.mock("~/lib/resources.server", () => ({ resourcesAccess: vi.fn() }));
-vi.mock("~/lib/blog-post.server", async (orig) => {
-  const real = await orig<typeof import("~/lib/blog-post.server")>();
+vi.mock("~/blog/lib/blog-post.server", async (orig) => {
+  const real = await orig<typeof import("~/blog/lib/blog-post.server")>();
   return {
     ...real,
     findBlogPost: vi.fn(),
@@ -31,7 +31,7 @@ vi.mock("../../set-page-content", () => ({ MAX_MARKDOWN_LENGTH: 300_000 }));
 import { prisma } from "~/lib/db.server";
 import { isAdmin } from "~/lib/roles";
 import { resourcesAccess } from "~/lib/resources.server";
-import { findBlogPost, publishBlogPost, unpublishBlogPost } from "~/lib/blog-post.server";
+import { findBlogPost, publishBlogPost, unpublishBlogPost } from "~/blog/lib/blog-post.server";
 import { blocksToMarkdown, markdownToBlocks } from "~/collab/blocknote-server";
 import { replaceCollabDocContent } from "~/collab/write";
 import {

@@ -4,7 +4,7 @@
 // pages. Excludes archived pages by default.
 
 import { prisma } from "~/lib/db.server";
-import { MAX_PAGE_DEPTH } from "~/lib/pages";
+import { MAX_PAGE_DEPTH } from "~/lib/pages.server";
 import { pageArray, pageProps, type PageArgs } from "~/mcp/pagination";
 
 const PAGE_LIMITS = { defaultLimit: 50, maxLimit: 200 };

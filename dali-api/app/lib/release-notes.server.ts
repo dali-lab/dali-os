@@ -1,18 +1,15 @@
 import { redirect } from "react-router";
 import type { Prisma } from "~/generated/prisma/client";
 import { prisma } from "~/lib/db.server";
-import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";
-import { redirectToLogin } from "~/lib/login-next";
-import { getUserRoles } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
-import { listVisibleGroupIdsForUser } from "~/lib/groups";
-import { copyObject, getDownloadUrl, isS3Configured } from "~/lib/s3";
+import { requireLabViewer, labMemberOrCore } from "~/lib/lab-viewer.server";
+import { listVisibleGroupIdsForUser } from "~/lib/groups.server";
+import { copyObject, getDownloadUrl, isS3Configured } from "~/lib/s3.server";
 import { logAuditEvent } from "~/lib/audit";
 import { invalidateLayoutCache } from "~/lib/layout-cache.server";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import { notify } from "~/lib/notify.server";
 import { getFrontendUrl } from "~/lib/app-env";
-import { resolveAllLabMembers, resolveGroupMembers } from "~/lib/groups";
+import { resolveAllLabMembers, resolveGroupMembers } from "~/lib/groups.server";
 import {
   groupRecapsByWeek,
   releaseNotePost,
@@ -35,21 +32,14 @@ export type ReleaseNoteViewerContext = ReleaseNoteViewer & { userId: string };
 export async function requireReleaseNoteViewer(
   request: Request,
 ): Promise<ReleaseNoteViewerContext> {
-  const auth = await requireAuth(request);
-  if (!auth.ok) throw redirectToLogin(request);
-  if (await isNonMember(auth, request)) throw redirect("/portal");
-  const partnerRedirect = await redirectPartnerToPortal(auth);
-  if (partnerRedirect) throw partnerRedirect;
+  const { userId, roles } = await requireLabViewer(request, {
+    flag: "release-notes",
+    allow: labMemberOrCore,
+  });
 
-  const roles = await getUserRoles(auth.user.sub, request);
-  const allowed =
-    (roles.isLabMember || roles.isCore) &&
-    (await isFeatureEnabled("release-notes", auth.user.sub, roles, request));
-  if (!allowed) throw new Response("Not found", { status: 404 });
-
-  const groups = await listVisibleGroupIdsForUser(auth.user.sub, request);
+  const groups = await listVisibleGroupIdsForUser(userId, request);
   return {
-    userId: auth.user.sub,
+    userId,
     isCore: roles.isCore,
     groupIds: groups.map((g) => g.id),
   };

@@ -14,8 +14,8 @@ import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles, isCore } from "~/lib/roles";
 import { coreHandle } from "~/core/coreNav";
 import { logAuditEvent } from "~/lib/audit";
-import { resolveFilingFolder, singletonSlot } from "~/lib/drive-receivers.server";
-import { editableFolderInRoot } from "~/lib/drive-roots.server";
+import { resolveFilingFolder, singletonSlot } from "~/drive/lib/drive-receivers.server";
+import { editableFolderInRoot } from "~/drive/lib/drive-roots.server";
 import type {
   SigningGateScope,
   SigningAudience,
@@ -59,7 +59,7 @@ async function uniqueSlug(base: string): Promise<string> {
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  const roles = await getUserRoles(auth.user.sub);
+  const roles = await getUserRoles(auth.user.sub, request);
   if (!roles.isCore) return redirect("/");
 
   // Path-keyed: only render the console on the Core URL. The documents/agreement

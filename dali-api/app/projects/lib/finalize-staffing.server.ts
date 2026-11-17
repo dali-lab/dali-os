@@ -2,14 +2,13 @@
 
 import { prisma } from "~/lib/db.server";
 import {
-  postMessage,
   ensureChannel,
   inviteUsersToChannel,
   slackErrorMessage,
   slackConfigured,
   SLACK_NOT_CONFIGURED_MESSAGE,
 } from "~/slack/lib/slack-client";
-import { resolveSlackIdsForInvite } from "~/members/lib/slack-sync.server";
+import { resolveSlackIdsForInvite } from "~/slack/lib/slack-sync.server";
 import { ensureTeam, addTeamMember, isNo2fa } from "~/lib/github";
 import {
   workspaceConfigured,
@@ -23,6 +22,8 @@ import {
 } from "~/projects/lib/finalize-external.server";
 import { logAuditEvent } from "~/lib/audit";
 import { notify } from "~/lib/notify.server";
+import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
+import { staffingFinalizeWelcomeKey } from "~/lib/outbound-keys.server";
 import { notifyAdminsOfPromotion, isLevelAdvance } from "~/lib/promotion-notify.server";
 import type { Level } from "~/lib/level";
 import { dedupeLiveAssignments } from "./staffing-board";
@@ -501,14 +502,22 @@ export async function finalizeStaffing(
           } for the term :tada:\n\n` +
           `*Team*\n${teamBlock}` +
           (repoLines.length > 0 ? `\n\n*Repos*\n${repoLines.join("\n")}` : "");
-        await postMessage(channelId!, text);
+        const welcome = await enqueueOutbound({
+          channel: "slack_channel",
+          target: channelId!,
+          slackText: text,
+          dedupKey: staffingFinalizeWelcomeKey(cycle.id, project.id),
+          eventType: "staffing.finalize",
+          createdByUserId: actorId,
+        });
+        await drainNow([welcome.id]);
 
         results.slack = {
           status: "ok",
           message: summarize(
             channelNote,
             `${inv.invited} invited`,
-            `${roster.length} announced`,
+            welcome.deduped ? "welcome already posted" : `${roster.length} announced`,
             missingMembers > 0 && `${missingMembers} no Slack account`,
           ),
         };

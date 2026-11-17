@@ -5,6 +5,10 @@ import {
   readEmojiSuggestionsPreference,
   setEmojiSuggestionsPreference,
 } from "~/lib/emoji-suggestions";
+import {
+  readTabAcceptsSuggestionPreference,
+  setTabAcceptsSuggestionPreference,
+} from "~/lib/tab-accepts-suggestion";
 import { Toggle } from "~/components/ui/Toggle";
 import { useToast } from "~/components/ui/toast";
 import { SettingRow } from "~/components/settings/SettingsSection";
@@ -29,6 +33,7 @@ export function WorkspaceSettingsBlock() {
   // Render defaults on the server, then correct to the cookie-backed values on
   // mount to avoid a hydration mismatch.
   const [emoji, setEmoji] = useState(false);
+  const [tabAccepts, setTabAccepts] = useState(false);
   const toast = useToast();
   const inDesktopApp = useDesktopVersion() !== null;
   const inBrowser = useIsBrowserDesktopCandidate();
@@ -39,6 +44,7 @@ export function WorkspaceSettingsBlock() {
     setShowTabs(tabsPreferred(readTabStripCookie()));
     setOpenInApp(readOpenInAppCookie());
     setEmoji(readEmojiSuggestionsPreference());
+    setTabAccepts(readTabAcceptsSuggestionPreference());
   }, []);
 
   return (
@@ -118,6 +124,22 @@ export function WorkspaceSettingsBlock() {
               setEmoji(e.target.checked);
               setEmojiSuggestionsPreference(e.target.checked);
               toast.success(`Emoji suggestions ${e.target.checked ? "on" : "off"}`);
+            }}
+          />
+        }
+      />
+      <SettingRow
+        label="Tab accepts suggestions"
+        help="In a doc, Tab picks the highlighted / command or @ mention, like Enter. Saved on this device."
+        control={
+          <Toggle
+            tone="os"
+            aria-label="Tab accepts suggestions"
+            checked={tabAccepts}
+            onChange={(e) => {
+              setTabAccepts(e.target.checked);
+              setTabAcceptsSuggestionPreference(e.target.checked);
+              toast.success(`Tab accepts suggestions ${e.target.checked ? "on" : "off"}`);
             }}
           />
         }

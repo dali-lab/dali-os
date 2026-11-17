@@ -3,7 +3,7 @@ import type { CalendarView } from "~/calendar/lib/types";
 
 // The visible-range maths, shared by the loader and the calendar screen.
 //
-// This lives outside `calendar.server.ts` on purpose. Switching month / week /
+// This lives outside `calendar-loader.server.ts` on purpose. Switching month / week /
 // day used to be a navigation whose result the client could only learn from the
 // loader — so every toggle waited on a server round-trip that went out to
 // Google. With the same functions available on the client, the screen computes

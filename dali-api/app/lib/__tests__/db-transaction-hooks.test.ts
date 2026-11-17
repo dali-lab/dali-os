@@ -4,7 +4,7 @@ import {
   deferHooksInTransactions,
   runOrDeferDbOperationHooks,
   withDeferredDbHooks,
-} from "~/lib/db-transaction-hooks";
+} from "~/lib/db-transaction-hooks.server";
 
 const hook = vi.fn();
 onDbOperation("tx-test", hook);

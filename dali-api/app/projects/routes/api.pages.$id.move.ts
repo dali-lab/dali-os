@@ -2,7 +2,7 @@ import type { Route } from "./+types/api.pages.$id.move";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
-import { movePage, MovePageBodySchema } from "~/lib/page-move.server";
+import { movePage, MovePageBodySchema } from "~/drive/lib/page-move.server";
 
 // POST /api/pages/:id/move. The rules live in movePage (~/lib/page-move.server).
 export async function action({ request, params }: Route.ActionArgs) {

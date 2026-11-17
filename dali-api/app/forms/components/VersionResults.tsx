@@ -16,11 +16,14 @@ import { ResultsFilterBar, responseCountText, useAnswerFilters } from "~/forms/c
 import type { TrackerCounts } from "~/forms/lib/form-tracker";
 import { MultiSelect } from "~/components/ui/floating";
 import { ChevronDown } from "lucide-react";
+import { ResponseTable, type ColumnControls } from "~/forms/components/ResponseTable";
+import { ResponseDrawer } from "~/forms/components/ResponseDrawer";
 import {
   MEMBER_COLUMNS_PARAM,
   MEMBER_HISTORY_COLUMNS,
   parseMemberColumns,
 } from "~/projects/lib/member-history";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, {
@@ -40,17 +43,34 @@ function formatTimestamp(iso: string): string {
   });
 }
 
+function responseSubtitle(response: ResponseRow): string {
+  return [
+    response.email,
+    formatTimestamp(response.createdAt),
+    response.edited && "Edited",
+    response.slot,
+    response.submitterIp && `IP ${response.submitterIp}`,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function PartnerApplicationLink({ response }: { response: ResponseRow }) {
+  if (!response.partnerApplication) return null;
+  return (
+    <Link
+      to={`/core/partners/applications/${response.partnerApplication.id}`}
+      className="mb-4 inline-block text-xs font-medium text-os-accent hover:underline"
+    >
+      Partner application: {response.partnerApplication.title} →
+    </Link>
+  );
+}
+
 function ResponseDetailBody({ response }: { response: ResponseRow }) {
   return (
     <div className="space-y-4">
-      {response.partnerApplication && (
-        <Link
-          to={`/core/partners/applications/${response.partnerApplication.id}`}
-          className="inline-block text-xs font-medium text-os-accent hover:underline"
-        >
-          Partner application: {response.partnerApplication.title} →
-        </Link>
-      )}
+      <PartnerApplicationLink response={response} />
       <dl className="flex flex-col gap-3">
         {response.rows.map((row) => (
           <div key={row.key}>
@@ -58,7 +78,23 @@ function ResponseDetailBody({ response }: { response: ResponseRow }) {
               {row.label}
             </dt>
             <dd className="text-sm text-foreground whitespace-pre-wrap">
-              {row.value || "—"}
+              {row.files?.length ? (
+                <span className="flex flex-col gap-1">
+                  {row.files.map((f) => (
+                    <a
+                      key={f.key}
+                      href={`/api/upload/raw?key=${encodeURIComponent(f.key)}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-os-accent hover:underline break-all"
+                    >
+                      {f.name}
+                    </a>
+                  ))}
+                </span>
+              ) : (
+                row.value || "—"
+              )}
             </dd>
           </div>
         ))}
@@ -67,15 +103,13 @@ function ResponseDetailBody({ response }: { response: ResponseRow }) {
   );
 }
 
-// Owner delete of one response, or the reason it has to stay. The form action
-// refuses locked responses too; this just says why instead of offering a button.
 function ResponseDelete({ response }: { response: ResponseRow }) {
   const fetcher = useFetcher<{ ok?: true; error?: string }>();
   const confirmSubmit = useConfirmSubmit();
-  if (response.lockReason) {
+  if (response.deleteBlocked) {
     return (
-      <p className="mt-6 text-xs text-muted-foreground">
-        This response can't be deleted. {response.lockReason}
+      <p className="text-xs text-muted-foreground">
+        This response can't be deleted. {response.deleteBlocked}
       </p>
     );
   }
@@ -83,10 +117,10 @@ function ResponseDelete({ response }: { response: ResponseRow }) {
   return (
     <fetcher.Form
       method="post"
-      className="mt-6 flex items-center gap-3"
+      className="flex items-center gap-3"
       onSubmit={confirmSubmit({
         title: `Delete this response from ${response.name}?`,
-        description: "This can't be undone.",
+        description: [...response.deleteEffects, "This can't be undone."].join(" "),
         tone: "destructive",
         confirmLabel: "Delete",
       })}
@@ -133,6 +167,18 @@ function MemberColumnsPicker() {
   );
 }
 
+function useResultColumns(available: { key: string; label: string }[]): ColumnControls {
+  const fetcher = useFetcher<{ ok?: true; error?: string }>();
+  return {
+    available,
+    edit: (op) =>
+      fetcher.submit(
+        { intent: "response-column", op: JSON.stringify(op) },
+        { method: "post", preventScrollReset: true },
+      ),
+  };
+}
+
 // One version's responses: a page of submissions with a detail modal, a slot
 // filter when staffing fills are present, answer filters, and CSV export of
 // what matches. Page, search, slot and answer filters live in the URL and are
@@ -162,6 +208,8 @@ export function VersionResults({
     responses,
   } = results;
   const [searchParams, setSearchParams] = useSearchParams();
+  const canAddColumns = useFeatureFlag("form-response-views");
+  const columnControls = useResultColumns(results.hiddenColumns);
   const urlQuery = searchParams.get("q") ?? "";
   const slot = searchParams.get("slot") ?? "";
   const [query, setQuery] = useState(urlQuery);
@@ -248,7 +296,7 @@ export function VersionResults({
                 size="sm"
                 containerClassName="w-full sm:w-64 min-w-[12rem]"
               />
-              <MemberColumnsPicker />
+              {!canAddColumns && <MemberColumnsPicker />}
               <ExportCsvLink
                 formId={formId}
                 versionNumber={versionNumber}
@@ -277,91 +325,68 @@ export function VersionResults({
                 )}
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm min-w-[640px]">
-                  <thead className="text-os-grey text-xs">
-                    <tr>
-                      <th className="text-left font-medium px-4 py-3">
-                        Respondent ({matchCount})
-                      </th>
-                      <th className="text-left font-medium px-4 py-3">Email</th>
-                      <th className="text-left font-medium px-4 py-3">
-                        Submitted
-                      </th>
-                      {hasSlotColumn && (
-                        <th className="text-left font-medium px-4 py-3">Slot</th>
-                      )}
-                      {columns.map((c) => (
-                        <th key={c.key} className="text-left font-medium px-4 py-3">
-                          <div className="max-w-[16rem] truncate" title={c.label}>
-                            {c.label}
-                          </div>
-                        </th>
-                      ))}
-                      {isPartnerApplicationForm && (
-                        <th className="text-left font-medium px-4 py-3">
-                          Partner app
-                        </th>
-                      )}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map((r) => (
-                      <tr
-                        key={r.id}
-                        onClick={() => setOpenId(r.id)}
-                        className="border-t border-os-container hover:bg-os-card-hover cursor-pointer"
+              <ResponseTable
+                lead={[
+                  {
+                    key: "name",
+                    label: `Respondent (${matchCount})`,
+                    cell: (r) => (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setOpenId(r.id);
+                        }}
+                        className="text-left hover:underline"
                       >
-                        <td className="px-4 py-2.5 text-foreground font-medium whitespace-nowrap">
-                          {r.name}
-                        </td>
-                        <td className="px-4 py-2.5 text-muted-foreground">
-                          {r.email ?? "—"}
-                        </td>
-                        <td className="px-4 py-2.5 text-muted-foreground whitespace-nowrap">
-                          {formatDate(r.createdAt)}
-                          {r.edited && (
-                            <span className="ml-1.5 text-xs text-os-grey">Edited</span>
-                          )}
-                        </td>
-                        {hasSlotColumn && (
-                          <td className="px-4 py-2.5 text-muted-foreground">
-                            {r.slot ?? "—"}
-                          </td>
-                        )}
-                        {columns.map((c) => {
-                          const value = r.values.get(c.key) ?? "";
-                          return (
-                            <td key={c.key} className="px-4 py-2.5 text-foreground">
-                              <div
-                                className="max-w-[16rem] truncate"
-                                title={value || undefined}
-                              >
-                                {value || "—"}
-                              </div>
-                            </td>
-                          );
-                        })}
-                        {isPartnerApplicationForm && (
-                          <td className="px-4 py-2.5">
-                            {r.partnerApplication ? (
+                        {r.name}
+                      </button>
+                    ),
+                  },
+                  { key: "email", label: "Email", cell: (r) => r.email ?? "—" },
+                  {
+                    key: "submitted",
+                    label: "Submitted",
+                    className: "px-4 py-2.5 text-muted-foreground whitespace-nowrap",
+                    cell: (r) => (
+                      <>
+                        {formatDate(r.createdAt)}
+                        {r.edited && <span className="ml-1.5 text-xs text-os-grey">Edited</span>}
+                      </>
+                    ),
+                  },
+                  ...(hasSlotColumn
+                    ? [{ key: "slot", label: "Slot", cell: (r: (typeof rows)[number]) => r.slot ?? "—" }]
+                    : []),
+                ]}
+                columns={columns}
+                trailing={
+                  isPartnerApplicationForm
+                    ? [
+                        {
+                          key: "partner",
+                          label: "Partner app",
+                          cell: (r) =>
+                            r.partnerApplication ? (
                               <Link
                                 to={`/core/partners/applications/${r.partnerApplication.id}`}
-                                onClick={(e) => e.stopPropagation()}
                                 className="text-xs font-medium text-os-accent hover:underline whitespace-nowrap"
                               >
                                 {r.partnerApplication.title} →
                               </Link>
                             ) : (
                               <span className="text-muted-foreground">—</span>
-                            )}
-                          </td>
-                        )}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                            ),
+                        },
+                      ]
+                    : []
+                }
+                rows={rows}
+                rowKey={(r) => r.id}
+                value={(r, key) => r.values.get(key) ?? ""}
+                onOpen={(r) => setOpenId(r.id)}
+                controls={canAddColumns ? columnControls : null}
+              />
             )}
           </div>
           {(page > 1 || hasNext) && (
@@ -376,33 +401,39 @@ export function VersionResults({
         </>
       )}
 
-      <Modal
-        open={selected !== null}
-        onClose={() => setOpenId(null)}
-        labelledBy="response-detail-title"
-        containerClassName={modalCardClass("max-w-2xl")}
-      >
-        {selected && (
-          <>
-            <ModalHeader
-              titleId="response-detail-title"
-              title={selected.name}
-              subtitle={[
-                selected.email,
-                formatTimestamp(selected.createdAt),
-                selected.edited && "Edited",
-                selected.slot,
-                selected.submitterIp && `IP ${selected.submitterIp}`,
-              ]
-                .filter(Boolean)
-                .join(" · ")}
-              onClose={() => setOpenId(null)}
-            />
-            <ResponseDetailBody response={selected} />
-            <ResponseDelete response={selected} />
-          </>
-        )}
-      </Modal>
+      {canAddColumns ? (
+        <ResponseDrawer
+          open={selected !== null}
+          onClose={() => setOpenId(null)}
+          title={selected?.name ?? ""}
+          subtitle={selected ? responseSubtitle(selected) : undefined}
+          fields={selected?.rows ?? []}
+          lead={selected && <PartnerApplicationLink response={selected} />}
+          footer={selected && <ResponseDelete response={selected} />}
+        />
+      ) : (
+        <Modal
+          open={selected !== null}
+          onClose={() => setOpenId(null)}
+          labelledBy="response-detail-title"
+          containerClassName={modalCardClass("max-w-2xl")}
+        >
+          {selected && (
+            <>
+              <ModalHeader
+                titleId="response-detail-title"
+                title={selected.name}
+                subtitle={responseSubtitle(selected)}
+                onClose={() => setOpenId(null)}
+              />
+              <ResponseDetailBody response={selected} />
+              <div className="mt-6">
+                <ResponseDelete response={selected} />
+              </div>
+            </>
+          )}
+        </Modal>
+      )}
     </div>
   );
 }

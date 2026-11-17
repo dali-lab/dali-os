@@ -1,45 +1,7 @@
-// manage_page `update`: rename / re-icon / move / archive a project workspace
-// page. Mirrors the app's rules (api.documents.$id.ts + api.projects.$id
-// .documents.ts): pages (documents and folders alike) nest inside any Folder up
-// to MAX_PAGE_DEPTH, and archiving a Folder requires it to be empty. Archive is the Page model's soft delete, so this
-// doubles as the delete tool — idempotent re-syncs unarchive/rename instead of
-// duplicating. Gate mirrors web project-edit access: Core, or staffed on the
-// page's project.
-
 import { prisma } from "~/lib/db.server";
-import { canEditProject } from "./access";
-import { pageDepth, MAX_PAGE_DEPTH, isAncestorOf } from "~/lib/pages";
+import { canEditPageMetadata, isRenamableWorkspace, resolveRenameTitle } from "~/drive/lib/page-rename.server";
+import { pageDepth, MAX_PAGE_DEPTH, isAncestorOf } from "~/lib/pages.server";
 import { announceAgent, pagePresenceRoom } from "~/collab/agent-presence.server";
-
-export const UPDATE_PAGE_TOOL = {
-  name: "update_page",
-  description:
-    "Update a project workspace page: rename, set icon, move under a folder (or to top level), archive/unarchive (soft delete/restore). Requires Core or being staffed on the project.",
-  inputSchema: {
-    type: "object" as const,
-    properties: {
-      pageId: { type: "string", minLength: 1 },
-      title: { type: "string", minLength: 1, maxLength: 200 },
-      iconEmoji: {
-        type: "string",
-        maxLength: 8,
-        description: "Empty string clears the icon.",
-      },
-      parentPageId: {
-        type: "string",
-        description:
-          "Move under this Folder page (documents or folders alike, up to the nesting cap). Empty string moves to top level.",
-      },
-      archived: {
-        type: "boolean",
-        description: "true soft-deletes (archives) the page; false restores it.",
-      },
-    },
-    required: ["pageId"],
-    additionalProperties: false,
-  },
-  requiredScope: "mcp:write" as const,
-};
 
 type Input = {
   pageId: string;
@@ -68,11 +30,15 @@ export async function runUpdatePage(callerId: string, input: Input) {
       archivedAt: true,
     },
   });
-  if (!page || page.workspaceType !== "Project" || !page.workspaceId) {
+  if (!page || !isRenamableWorkspace(page)) {
     throw new UpdatePageError("Page not found", 404);
   }
-  if (!(await canEditProject(callerId, page.workspaceId))) {
-    throw new UpdatePageError("Forbidden", 403);
+  const isProject = page.workspaceType === "Project";
+  if (!(await canEditPageMetadata(callerId, page))) {
+    throw isProject ? new UpdatePageError("Forbidden", 403) : new UpdatePageError("Page not found", 404);
+  }
+  if (!isProject && (input.parentPageId !== undefined || input.archived !== undefined)) {
+    throw new UpdatePageError("Only project pages can be moved or archived here", 400);
   }
 
   const data: {
@@ -85,9 +51,7 @@ export async function runUpdatePage(callerId: string, input: Input) {
   } = {};
 
   if (input.title !== undefined) {
-    const title = input.title.trim();
-    if (!title) throw new UpdatePageError("Title is required", 400);
-    data.title = title;
+    data.title = await resolveRenameTitle(page, input.title, callerId);
     data.lastEditedById = callerId;
   }
 

@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db.server", () => ({ prisma: { room: { findUnique: vi.fn() } } }));
-vi.mock("~/lib/roles", () => ({ isLabMember: vi.fn() }));
-vi.mock("~/lib/meeting-occurrences", () => ({ buildRule: vi.fn() }));
-vi.mock("~/lib/rooms.server", () => {
+vi.mock("~/lib/roles", () => ({ isLabMemberOrAlum: vi.fn() }));
+vi.mock("~/calendar/lib/meeting-occurrences", () => ({ buildRule: vi.fn() }));
+vi.mock("~/rooms/lib/rooms.server", () => {
   const parseWindowParams = (start: string, end: string) => {
     const window = { start: new Date(start), end: new Date(end) };
     return window.end > window.start ? window : null;
@@ -20,15 +20,15 @@ vi.mock("~/lib/rooms.server", () => {
 });
 
 import { prisma } from "~/lib/db.server";
-import { buildRule } from "~/lib/meeting-occurrences";
-import { isLabMember } from "~/lib/roles";
+import { buildRule } from "~/calendar/lib/meeting-occurrences";
+import { isLabMemberOrAlum } from "~/lib/roles";
 import {
   cancelRoomBookingAsMember,
   createRoomBooking,
   getRoomSchedule,
   listBookableRooms,
   listRoomAvailability,
-} from "~/lib/rooms.server";
+} from "~/rooms/lib/rooms.server";
 import {
   BOOK_ROOM_DEF,
   CANCEL_ROOM_BOOKING_DEF,
@@ -47,7 +47,7 @@ const roomFindUnique = prisma.room.findUnique as unknown as ReturnType<typeof vi
 
 beforeEach(() => {
   vi.resetAllMocks();
-  vi.mocked(isLabMember).mockResolvedValue(true);
+  vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
 });
 
 describe("room tool scopes", () => {
@@ -66,7 +66,7 @@ describe("lab membership", () => {
     ["book_room", () => runBookRoom("u1", { roomId: "r1", start: START, end: END })],
     ["cancel_room_booking", () => runCancelRoomBooking("u1", { bookingId: "b1" })],
   ])("%s refuses a non-member", async (_name, call) => {
-    vi.mocked(isLabMember).mockResolvedValue(false);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(false);
     await expect(call()).rejects.toMatchObject({ status: 403 });
     expect(createRoomBooking).not.toHaveBeenCalled();
     expect(cancelRoomBookingAsMember).not.toHaveBeenCalled();

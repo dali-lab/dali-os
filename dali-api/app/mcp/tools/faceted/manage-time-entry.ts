@@ -6,9 +6,9 @@
 import type { McpTool, McpCtx } from "../../registry";
 import { McpInvalidError, requireForAction } from "../../errors";
 import {
-  ADD_TIME_ENTRY_TOOL,
-  UPDATE_TIME_ENTRY_TOOL,
-  DELETE_TIME_ENTRY_TOOL,
+  ADD_TIME_ENTRY_PROPERTIES, ADD_TIME_ENTRY_REQUIRED,
+  UPDATE_TIME_ENTRY_PROPERTIES, UPDATE_TIME_ENTRY_REQUIRED,
+  DELETE_TIME_ENTRY_PROPERTIES, DELETE_TIME_ENTRY_REQUIRED,
   runAddTimeEntry,
   runUpdateTimeEntry,
   runDeleteTimeEntry,
@@ -29,11 +29,11 @@ const MANAGE_TIME_ENTRY_DEF = {
         description: "Operation to perform.",
       },
       // add fields
-      ...ADD_TIME_ENTRY_TOOL.inputSchema.properties,
+      ...ADD_TIME_ENTRY_PROPERTIES,
       // update fields
-      ...UPDATE_TIME_ENTRY_TOOL.inputSchema.properties,
+      ...UPDATE_TIME_ENTRY_PROPERTIES,
       // delete fields
-      ...DELETE_TIME_ENTRY_TOOL.inputSchema.properties,
+      ...DELETE_TIME_ENTRY_PROPERTIES,
     },
     required: ["action"],
     additionalProperties: false,
@@ -42,9 +42,9 @@ const MANAGE_TIME_ENTRY_DEF = {
 };
 
 const ACTION_REQUIRED: Record<string, string[]> = {
-  add: ADD_TIME_ENTRY_TOOL.inputSchema.required,
-  update: UPDATE_TIME_ENTRY_TOOL.inputSchema.required,
-  delete: DELETE_TIME_ENTRY_TOOL.inputSchema.required,
+  add: ADD_TIME_ENTRY_REQUIRED,
+  update: UPDATE_TIME_ENTRY_REQUIRED,
+  delete: DELETE_TIME_ENTRY_REQUIRED,
 };
 
 async function run(ctx: McpCtx, args: Record<string, unknown>) {

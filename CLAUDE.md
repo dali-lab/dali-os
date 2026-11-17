@@ -5,21 +5,21 @@ Project conventions for Claude working on this repo, locally or in the `claude.y
 ## Stack
 
 - **App**: `dali-api/` — React Router 7 (full-stack), TypeScript, React 19.
-- **DB**: Postgres 16 via Prisma 7 ORM. Hosted on Neon (serverless). Adapters: `@prisma/adapter-neon` (prod-ish), `@prisma/adapter-pg` (local).
+- **DB**: Postgres 16 via Prisma 7 ORM. Hosted on Neon (serverless). Runtime uses `@prisma/adapter-pg` in every environment (`app/lib/db.server.ts`).
 - **Realtime collab**: Hocuspocus server + Yjs CRDT + BlockNote editor (one shared `<DocEditor>` in `dali-api/app/components/doc/`, capability presets in `features.ts`). Legacy TipTap-era content converts lazily on load (`app/collab/persistence.ts`); server reads go through `app/collab/read.ts`.
 - **AI (docs)**: BlockNote writing assistant at `POST /api/ai/doc` — provider from `ANTHROPIC_API_KEY` (first-party) or `DARTMOUTH_CHAT_API_KEY` (Dartmouth Chat gateway, same Anthropic SDK via `resolveAiProvider()` in `app/lib/ai.server.ts`; `AI_PROVIDER` forces one). Models come from the registry in that file: add a task to `AI_TASKS` and call `modelParams(provider, task)`, never name a model at a call site; per-user rate limits (in-memory burst + Postgres `AiUsage` daily quota) with token usage on the same table (Admin → AI Usage). Surfaces opt in per-mount via the `aiEnabled` prop on `DocEditor`.
 - **Redis** (`REDIS_URL`, ioredis): fans Hocuspocus updates across machines (`app/collab/server.ts`) and carries the realtime bus behind every SSE stream (`app/lib/realtime-bus.server.ts`; build SSE routes with `busEventStream` from `app/lib/sse.server.ts`, not a per-route poller). Prod has Redis, staging and local don't; without it both fall back to single-process, so cross-machine sync only shows up in prod.
 - **Background jobs**: in-process 60s runner (`dali-api/app/jobs/`), cross-machine dedup via a Postgres CAS lease on `ScheduledJob` rows (no Redis). Per-job toggles/intervals/settings live in Admin → Jobs.
-- **Outbound messages**: email, Slack DMs and Slack channel posts go through the outbox (`enqueueOutbound()` in `app/lib/outbound.server.ts`), drained by a job, with dedup keys built in `app/lib/outbound-keys.ts` (never put a credential or one-time URL in a key; keys outlive message bodies). Don't call `sendEmail` (`app/lib/gmail.ts`) or the Slack client directly from feature code.
+- **Outbound messages**: email, Slack DMs and Slack channel posts go through the outbox (`enqueueOutbound()` in `app/lib/outbound.server.ts`), drained by a job, with dedup keys built in `app/lib/outbound-keys.server.ts` (never put a credential or one-time URL in a key; keys outlive message bodies). Don't call `sendEmail` (`app/lib/gmail.ts`) or the Slack client directly from feature code.
 - **Notifications**: three channels (in-app, email/digest, Slack DM) dispatched by `notify()` per user preference, which enqueues email and Slack through the outbox — see "Background jobs & notifications" below. The desktop app layers native banners on the in-app feed: gated per event by the `desktop` sub-preference and flagged urgent via registry `timeSensitive`, resolved at feed-read time (`/api/notifications`), with `/api/notifications/stream` (SSE) for live delivery.
-- **Auth**: Google OAuth, Dartmouth CAS, all on BetterAuth (`app/lib/betterauth.server.ts`). `requireAuth` (`app/lib/auth.ts`) still accepts legacy opaque session ids (`__dali_sid` cookie or Bearer, `app/lib/session.ts`) first, then BetterAuth, until the last legacy session expires (`specs/betterauth-legacy-auth-cleanup.md`). New auth code targets BetterAuth only.
+- **Auth**: Google OAuth, Dartmouth CAS, all on BetterAuth (`app/lib/betterauth.server.ts`). `requireAuth` (`app/lib/auth.ts`) still accepts legacy opaque session ids (`__dali_sid` cookie or Bearer, `app/lib/session.server.ts`) first, then BetterAuth, until the last legacy session expires (`specs/betterauth-legacy-auth-cleanup.md`). New auth code targets BetterAuth only.
 - **MCP server**: `/mcp` (`app/routes/mcp.ts`), OAuth-scoped `mcp:read` / `mcp:write` / `mcp:admin`. New tools go in `app/mcp/tools/` as an `McpTool` and get spread into `REGISTRY_TOOLS` in `app/mcp/registry.ts`, the only list the route dispatches from. Tools enforce the same role checks as the web routes (reuse `app/mcp/tools/access.ts` and `app/lib/roles`), and writes need `mcp:write`.
 - **Help articles**: Markdown in `dali-api/app/help/articles/` (format and writing rules in `app/help/README.md`), served at `/help/articles/<slug>` and read by Ask DALI and MCP clients through `read_help`. Each header can limit an article by audience and feature flag. A PR that changes what members can do or where they do it updates the matching article.
 - **Public API**: `api/public/*` (`app/public-api/`) serves dali.website server-to-server behind a shared secret that fails closed. It returns a deliberately narrow projection; never widen it to raw models.
 - **Styling**: Tailwind CSS 4.
-- **Deploy**: Fly.io. Branches: `staging` → `prod`. Migrations require `DIRECT_URL` (non-pooled Neon endpoint) in addition to pooled `DATABASE_URL` — see `dali-api/prisma/MIGRATIONS.md`.
+- **Deploy**: Fly.io. Branches: `staging` → `prod`. Migrations need a non-pooled URL: `prisma.config.ts` derives it from `DATABASE_URL`, and `DIRECT_URL` is an optional override (see `dali-api/prisma/MIGRATIONS.md`).
 - **Package manager**: npm. Node 22.
-- **Other packages**: `asr/` (Modal transcription service, Python + uv, deployed by `deploy-asr.yml`), `ios/` (SwiftUI iPad room display), `mobile/` (Expo React Native member app for iOS and Android; reads `/api/mobile/*` and records meeting notes through `/api/meeting-recordings/*`; needs a dev build, not Expo Go), `jobx-extension/` (Chrome timesheet extension). Each has its own README.
+- **Other packages**: `asr/` (Modal transcription service, Python + uv, deployed by `deploy-asr.yml`), `ios/` (SwiftUI iPad room display), `mobile/` (Expo React Native member app for iOS and Android; reads `/api/mobile/*` and records meeting notes through `/api/meeting-recordings/*`; runs in Expo Go for most work; background recording needs a dev or store build), `jobx-extension/` (Chrome timesheet extension). Each has its own README.
 
 ## Commands (run from `dali-api/`)
 
@@ -32,11 +32,12 @@ Project conventions for Claude working on this repo, locally or in the `claude.y
 | E2E tests | `npm run test:e2e` (Playwright — needs seeded Postgres) |
 | Demo videos | `npx playwright test -c playwright.demos.config.ts demos/<name>.demo.ts`, then `npx tsx demos/lib/encode.ts` |
 | Typecheck | `npm run typecheck` (runs `react-router typegen && tsc`) |
+| Lint | `npm run lint` |
 | Build | `npm run build` |
 | Dev server | `npm run dev` |
 | Seed DB (dangerous, local only) | `npm run db:reset:local` |
 
-No ESLint/Prettier script is wired up today — don't invent lint commands.
+`npm run lint` runs ESLint with `react-hooks` rules only (rules-of-hooks blocks, exhaustive-deps is hidden by `--quiet`). No Prettier; don't invent other lint commands.
 
 ## Local dev
 
@@ -65,7 +66,7 @@ The DALI OS MCP server (the `dalios` tools, when connected) reads real staging/p
 
 These live in `.github/workflows/`. Gating on PRs (treat failures as blocking):
 - `test.yml` — Vitest unit tests (Prisma mocked), Vitest integration tests (`*.integration.test.ts`, real Postgres), and Playwright E2E against a real Postgres service container. Use an integration test when the behavior depends on the database itself: raw SQL, transactions, unique constraints, cascades, locking. The unit job also reports V8 coverage to the run summary and uploads the HTML report as the `coverage-report` artifact; coverage is reported, not gated.
-- `build-check.yml` — Docker build validation via flyctl. The build runs `react-router build`, not `tsc`, so **no CI job typechecks**; run `npm run typecheck` yourself when you touch TS.
+- `build-check.yml` — Docker build validation via flyctl. The build runs `react-router build`, not `tsc`, so it doesn't typecheck. `typecheck-api` in `test.yml` does, but is non-blocking while baseline errors remain; run `npm run typecheck` yourself when you touch TS.
 - `migration-check.yml` — Prisma migration safety: no schema drift, no deleted applied migrations, pgfence safety analysis.
 - `codeql.yml` — static security scanning.
 - `preview-deploy.yml` — per-PR Neon branch + Fly app, opt-in: add the `preview` label to a PR (don't worry about this one unless it's failing specifically). `preview-teardown.yml` and `preview-sweeper.yml` clean them up.
@@ -95,15 +96,18 @@ Automation:
 ## External API consumers
 
 Some routes serve clients you can't hot-fix. Changes to them must be additive (new fields and routes are fine; never rename, remove or change the shape of existing ones), and the PR description must say which client is affected:
-- **Mobile app**: `/api/mobile/*` and `/api/meeting-recordings/*`. Builds already on phones keep calling the old shape until users update.
+- **Mobile app**: `/api/mobile/*` and `/api/meeting-recordings/*`, plus calls outside those prefixes: `/api/tasks/:id/move`, `/api/notebooks`, `/api/notebooks/:id`, `/api/notifications/:id/rsvp`, `/api/wallet/google/save-url`, `/auth/handoff`, and `/documents/:id?embed=1` (WebView). Builds already on phones keep calling the old shape until users update.
+- **iOS room display**: `/api/room-display/*`.
+- **JobX extension**: `/api/timesheets/export`.
+- **dali-kiosk**: reads `TaskStatusChange` directly from Postgres, so don't rename or reshape that table or its columns.
 - **dali.website**: `api/public/*`.
-- **MCP clients**: tool names and input schemas in `app/mcp/`. To rename a tool, keep the old name as a deprecated alias (a registry entry with `aliasOf`).
+- **MCP clients**: tool names and input schemas in `app/mcp/`. Rename or merge tools outright; clients refetch `tools/list`.
 - **Desktop app**: see Desktop app below.
 
 ## Realtime / collab caveats
 
 - The `@blocknote/*`, `@hocuspocus/*`, and `yjs` bits are CRDT-based. Schema changes to collaboratively edited documents need extra care — tests may pass locally but break document sync in production. Flag any such change in the PR description.
-- `@tiptap/*` remains a dependency ONLY for the legacy decode layer (`dali-api/app/collab/legacy/` reads pre-BlockNote `"default"` fragments forever) — don't remove it, and don't use it for new editor work.
+- `@tiptap/pm` is BlockNote's ProseMirror and fine to import; `@tiptap/core` and the other `@tiptap/*` packages are not used for new work. The legacy decode layer (`dali-api/app/collab/legacy/`) reads pre-BlockNote `"default"` fragments forever, so don't remove it.
 - Never decode a live Y.Doc server-side without cloning it first — y-prosemirror deletes content it can't decode and Hocuspocus broadcasts the deletion (`persistence.ts` enforces the clone rule).
 
 ## Background jobs & notifications
@@ -145,7 +149,7 @@ The `desktop/` directory is a Tauri v2 shell, a thin native wrapper around the h
 - **Separate build pipeline.** Desktop is built and released by `desktop-release.yml` when the `version` in `src-tauri/tauri.conf.json` changes on `prod` (or on a `desktop-v*` tag / manual dispatch), not by the main `deploy.yml`. Don't conflate them.
 - **Two signing layers.** Apple Developer ID (Gatekeeper) + a Tauri updater minisign keypair. The private minisign key lives in CI secrets (`TAURI_SIGNING_PRIVATE_KEY`). Never hardcode or log it.
 - **IPC security boundary.** The main webview window loads a remote origin and has zero IPC access (no capability grants it). All native escalation happens in Rust directly or from the local bundled pairing windows. Don't add `remote.urls` entries to any capability file for the prod origin.
-- **Additive server routes only.** The desktop shell depends on `/auth/pair/*`, `/auth/handoff`, `/link`, `/api/notifications`, `/api/notifications/stream`, and the `/api/notifications/:id/read` + `/:id/rsvp` actions (banner buttons post to them) in `dali-api`. Changes to those routes affect the native app — note that in the PR description.
+- **Additive server routes only.** The desktop shell depends on `/auth/pair/*`, `/auth/handoff`, `/link`, `/api/notifications`, `/api/notifications/stream`, and the `/api/notifications/:id/read` + `/:id/rsvp` actions (banner buttons post to them), `/api/desktop/*`, and `/calendar/meeting/:id` (the native agenda opens it) in `dali-api`. Changes to those routes affect the native app — note that in the PR description.
 - **Don't touch signing config** (`src-tauri/tauri.conf.json` `plugins.updater.pubkey`, or `src-tauri/capabilities/`) without flagging it. Signing mismatches break auto-update for all installed clients.
 - Desktop dev: `npm install && npm run tauri:dev` from `desktop/`. Requires Rust (stable) plus the platform toolchain (Xcode Command Line Tools on macOS).
 

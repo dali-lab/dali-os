@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import { createElement, act, type ReactElement } from "react";
 import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -240,5 +240,51 @@ describe("Modal portal", () => {
       createElement(Modal, { open: true, onClose: () => {}, labelledBy: "t", children: createElement("button", { id: "b" }, "Go") }),
     );
     expect(document.activeElement?.id).toBe("b");
+  });
+});
+
+describe("Modal overlay dress", () => {
+  const overlay = (props: Record<string, unknown> = {}) =>
+    renderToStaticMarkup(
+      createElement(Modal, { open: true, onClose: () => {}, labelledBy: "t", children: "x", ...props }),
+    );
+
+  it("uses the overlay token for the scrim, centered by default", () => {
+    const html = overlay();
+    expect(html).toContain("bg-os-overlay");
+    expect(html).not.toContain("bg-black");
+    expect(html).toContain("items-center");
+  });
+
+  it("pins the card to the top with placement top", () => {
+    const html = overlay({ placement: "top" });
+    expect(html).toContain("items-start");
+    expect(html).not.toContain("items-center");
+  });
+
+  it("takes the layer class", () => {
+    expect(overlay({ layer: "z-[70]" })).toContain("z-[70]");
+    expect(overlay()).toContain("z-50");
+  });
+});
+
+describe("Modal Escape with stacked modals", () => {
+  it("closes only the topmost modal", () => {
+    const outer = vi.fn();
+    const inner = vi.fn();
+    const m = (id: string, onClose: () => void) =>
+      createElement(Modal, { open: true, onClose, labelledBy: id, children: createElement("h3", { id }, id) });
+    mount(m("outer", outer));
+    const second = mount(m("inner", inner));
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+    expect(inner).toHaveBeenCalledTimes(1);
+    expect(outer).not.toHaveBeenCalled();
+    second.unmount();
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+    expect(outer).toHaveBeenCalledTimes(1);
   });
 });

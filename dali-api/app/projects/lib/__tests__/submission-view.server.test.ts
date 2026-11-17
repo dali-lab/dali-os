@@ -35,7 +35,7 @@ const MAPPING = {
 };
 
 function sub(userId: string | null, first: string, last: string, answers: Record<string, unknown>, email: string | null = null) {
-  return { userId, answers, user: { firstName: first, lastName: last, daliEmail: email } };
+  return { id: `s-${userId}`, userId, answers, user: { firstName: first, lastName: last, daliEmail: email }, enteredBy: null };
 }
 
 beforeEach(() => {
@@ -49,6 +49,20 @@ beforeEach(() => {
   db.projectAssignment.findMany.mockResolvedValue([]);
   db.coreAssignment.findMany.mockResolvedValue([]);
   db.staffingCycle.findUnique.mockResolvedValue({ term: { code: "27S" } });
+});
+
+describe("buildSubmissionView row identity", () => {
+  it("carries the response id and who added it for the member", async () => {
+    db.formSubmission.findMany.mockResolvedValue([
+      { ...sub("u1", "Ada", "Lovelace", {}), enteredBy: { firstName: "Grace", lastName: "Hopper" } },
+      sub("u2", "Alan", "Turing", {}),
+    ]);
+    const view = await buildSubmissionView({ cycleIds: ["c1"], slot: "intent-to-work" as never, formId: "f1" });
+    expect(view.rows.map((r) => [r.submissionId, r.enteredBy])).toEqual([
+      ["s-u1", "Grace Hopper"],
+      ["s-u2", null],
+    ]);
+  });
 });
 
 describe("buildSubmissionView lookups", () => {

@@ -245,9 +245,9 @@ function Pill({ children, tone }: { children: ReactNode; tone?: "amber" | "green
     <span
       className={`rounded px-1.5 py-0.5 ${
         tone === "amber"
-          ? "bg-amber-100 text-amber-800"
+          ? "bg-os-amber/15 text-os-amber"
           : tone === "green"
-            ? "bg-green-100 text-green-800"
+            ? "bg-os-green/15 text-os-green"
             : "bg-muted text-muted-foreground"
       }`}
     >
@@ -271,9 +271,9 @@ function NeedsAttentionCard({
   const scopeSuffix =
     agreement.cadence === "PerTerm" && termCode ? ` for ${termCode}` : "";
   return (
-    <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-4">
+    <div className="rounded-xl border border-os-amber/30 bg-os-amber/10 p-4">
       <div className="flex items-start gap-2">
-        <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+        <AlertTriangle className="w-4 h-4 text-os-amber shrink-0 mt-0.5" />
         <div className="min-w-0 flex-1">
           <Link
             to={driveHref(agreement.id)}
@@ -282,11 +282,11 @@ function NeedsAttentionCard({
             {agreement.name}
           </Link>
           {agreement.needsActivation ? (
-            <p className="mt-0.5 text-xs text-amber-800">
+            <p className="mt-0.5 text-xs text-os-amber">
               Nothing in force{termCode ? ` for ${termCode}` : ""}.
             </p>
           ) : (
-            <p className="mt-0.5 text-xs text-amber-800">
+            <p className="mt-0.5 text-xs text-os-amber">
               An unpublished draft is waiting to be published.
             </p>
           )}
@@ -327,7 +327,7 @@ function NeedsAttentionCard({
             )}
           </div>
           {fetcher.data?.error && (
-            <p className="mt-1.5 text-xs text-red-600">{fetcher.data.error}</p>
+            <p className="mt-1.5 text-xs text-os-red">{fetcher.data.error}</p>
           )}
         </div>
       </div>
@@ -387,7 +387,7 @@ function BindingRow({
 
       {binding.outstanding.length > 0 && (
         <details className="mt-2 group">
-          <summary className="cursor-pointer text-xs font-medium text-amber-700 marker:content-none inline-flex items-center gap-1">
+          <summary className="cursor-pointer text-xs font-medium text-os-amber marker:content-none inline-flex items-center gap-1">
             <ChevronRight className="w-3 h-3 transition-transform group-open:rotate-90" />
             {binding.outstanding.length} outstanding
           </summary>
@@ -436,7 +436,7 @@ function RemindButton({ binding, tz }: { binding: ConsoleBinding; tz: string }) 
               disabled={sending || throttled || justSent}
               className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs font-medium text-foreground/80 hover:bg-muted/50 disabled:opacity-50 disabled:hover:bg-card"
             >
-              {justSent ? <CheckCircle2 className="w-3.5 h-3.5 text-green-600" /> : <Send className="w-3.5 h-3.5" />}
+              {justSent ? <CheckCircle2 className="w-3.5 h-3.5 text-os-green" /> : <Send className="w-3.5 h-3.5" />}
               {sending ? "Sending…" : justSent ? "Sent" : "Remind"}
             </button>
           </span>
@@ -447,7 +447,7 @@ function RemindButton({ binding, tz }: { binding: ConsoleBinding; tz: string }) 
           <Clock className="w-3 h-3" /> {timeAgo(binding.lastRemindedAt)}
         </p>
       )}
-      {fetcher.data?.error && <p className="mt-1 text-[11px] text-red-600">{fetcher.data.error}</p>}
+      {fetcher.data?.error && <p className="mt-1 text-[11px] text-os-red">{fetcher.data.error}</p>}
     </div>
   );
 }

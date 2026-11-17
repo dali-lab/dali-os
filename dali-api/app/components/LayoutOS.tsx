@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { TOGGLE_SIDEBAR_SHORTCUT } from '~/lib/shortcuts'
+import { readStorage, writeStorage } from '~/lib/safe-storage'
 import { useToggleSidebarShortcut } from '~/components/shell/useToggleSidebarShortcut'
 import { Link, useLocation, useNavigation } from 'react-router'
 import { Tooltip } from "~/components/ui/floating";
@@ -27,7 +28,7 @@ import { DesktopTabStrip, useDesktopTabs } from '~/components/DesktopTabs'
 import { TabsShowingProvider } from '~/components/shell/TabKeepAlive'
 import { tabActions } from '~/lib/desktop-tabs-store'
 import type { DesktopTabsState } from '~/lib/desktop-tabs'
-import { buildPageLink, cleanTabUrl, COPY_PAGE_LINK_EVENT, stripHash, writePageLink } from '~/lib/page-link'
+import { buildPageLink, cleanTabUrl, COPY_PAGE_LINK_EVENT, stripHash, writePageLink } from '~/drive/lib/page-link'
 import { useToast } from '~/components/ui/toast'
 import { TOGGLE_FAVORITE_EVENT, useCurrentPageFavorite } from '~/components/favorites-live'
 import { setFocusPreference } from '~/lib/focus-mode'
@@ -196,8 +197,7 @@ export function LayoutOS({
   const [lastAreaKey, setLastAreaKey] = useState('projects')
 
   useEffect(() => {
-    if (typeof window === 'undefined') return
-    const savedArea = window.localStorage.getItem(LAST_AREA_KEY)
+    const savedArea = readStorage(LAST_AREA_KEY)
     if (savedArea) setLastAreaKey(savedArea)
   }, [])
 
@@ -226,6 +226,7 @@ export function LayoutOS({
     'onboarding-journeys': useFeatureFlag('onboarding-journeys'),
     'refer-a-partner': useFeatureFlag('refer-a-partner'),
     'core-taskboard': useFeatureFlag('core-taskboard'),
+    'alumni-game': useFeatureFlag('alumni-game'),
   }
   const releaseNotesEnabled = useFeatureFlag('release-notes')
   const askEnabled = useFeatureFlag('ask-dali')
@@ -251,12 +252,12 @@ export function LayoutOS({
   useEffect(() => {
     if (!routeAreaKey) return
     setLastAreaKey(routeAreaKey)
-    if (typeof window !== 'undefined') window.localStorage.setItem(LAST_AREA_KEY, routeAreaKey)
+    writeStorage(LAST_AREA_KEY, routeAreaKey)
   }, [routeAreaKey])
 
   const selectArea = (area: NavArea, e: React.MouseEvent) => {
     setLastAreaKey(area.key)
-    if (typeof window !== 'undefined') window.localStorage.setItem(LAST_AREA_KEY, area.key)
+    writeStorage(LAST_AREA_KEY, area.key)
     tabClickProps({ url: area.hubPath, label: area.label }).onClick(e)
   }
 

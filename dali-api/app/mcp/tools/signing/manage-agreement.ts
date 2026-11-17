@@ -11,7 +11,7 @@ import { resolveAdminScope } from "~/signing/lib/scope.server";
 import { applyAdminSignatures } from "~/signing/lib/presign.server";
 import { notifySignRequest } from "~/signing/lib/notify.server";
 import { SCOPES, AUDIENCES, CADENCES } from "~/signing/lib/document-config";
-import { resolveFilingFolder, singletonSlot } from "~/lib/drive-receivers.server";
+import { resolveFilingFolder, singletonSlot } from "~/drive/lib/drive-receivers.server";
 import {
   requireForAction,
   McpNotFoundError,

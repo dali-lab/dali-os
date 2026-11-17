@@ -48,7 +48,7 @@ vi.mock("~/signing/lib/state.server", () => ({
 vi.mock("~/signing/lib/audiences", () => ({
   AUDIENCE_RESOLVERS: { Members: { includes: h.includes }, Group: { includes: h.includes } },
 }));
-vi.mock("~/lib/groups", () => ({ resolveGroupMembers: h.resolveGroupMembers }));
+vi.mock("~/lib/groups.server", () => ({ resolveGroupMembers: h.resolveGroupMembers }));
 vi.mock("~/signing/lib/sign.server", () => ({ recordSignature: h.recordSignature }));
 vi.mock("~/signing/lib/notify.server", () => ({
   notifyCountersignRequest: h.notifyCountersignRequest,

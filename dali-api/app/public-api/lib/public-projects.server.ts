@@ -1,11 +1,11 @@
 import { prisma } from "~/lib/db.server";
-import { fullName } from "~/lib/display";
 import { publicMediaUrl } from "./public-media";
 import {
   parseDetails,
   parseMedia,
   type ShowcaseDetail,
 } from "~/projects/lib/showcase-content";
+import { teamMembersByProject } from "~/projects/lib/team-credits.server";
 
 // One gallery item as the site consumes it: the stored src resolved to a
 // publicly reachable URL (media proxy path or a passed-through absolute URL).
@@ -106,38 +106,6 @@ function toPublicProject(row: ShowcaseRow, teamMembers: string[]): PublicProject
     coverImage: publicMediaUrl(row.heroImageUrl ?? row.project.imageUrl) ?? "",
     projectUrls,
   };
-}
-
-// Credit lines for a set of projects in one query, rather than one per
-// project — the list endpoint serves every published project at once.
-export async function teamMembersByProject(
-  projectIds: string[],
-): Promise<Map<string, string[]>> {
-  if (projectIds.length === 0) return new Map();
-  const rows = await prisma.projectAssignment.findMany({
-    where: { projectId: { in: projectIds } },
-    select: {
-      projectId: true,
-      user: { select: { id: true, firstName: true, lastName: true } },
-    },
-  });
-  // Dedupe per project: a member staffed across several terms or domains is
-  // one credit, not several.
-  const seen = new Map<string, Map<string, string>>();
-  for (const r of rows) {
-    let forProject = seen.get(r.projectId);
-    if (!forProject) {
-      forProject = new Map();
-      seen.set(r.projectId, forProject);
-    }
-    forProject.set(r.user.id, fullName(r.user));
-  }
-  return new Map(
-    [...seen].map(([projectId, users]) => [
-      projectId,
-      [...users.values()].sort((a, b) => a.localeCompare(b)),
-    ]),
-  );
 }
 
 export async function listPublicProjects(): Promise<PublicProject[]> {

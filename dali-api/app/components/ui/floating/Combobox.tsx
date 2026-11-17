@@ -56,6 +56,10 @@ export function Combobox<T extends string = string>({
    *  this and merge the results into `options`, which this component then
    *  filters/displays like any other row. */
   onQueryChange,
+  filterLocally = true,
+  autoFocus,
+  displayValue,
+  renderLabel,
 }: {
   value: T;
   options: SelectOption<T>[];
@@ -69,6 +73,13 @@ export function Combobox<T extends string = string>({
   emptyLabel?: string;
   allowCustom?: (query: string) => SelectOption<T> | null;
   onQueryChange?: (query: string) => void;
+  /** Off when `options` already hold only what matches the query. */
+  filterLocally?: boolean;
+  autoFocus?: boolean;
+  /** Text the closed input shows, when it differs from the selected option's row label. */
+  displayValue?: string;
+  /** Replaces the plain label in each row, given what is currently typed. */
+  renderLabel?: (option: SelectOption<T>, query: string) => ReactNode;
 }) {
   const panelClass = usePanelClass();
   const [open, setOpen] = useState(false);
@@ -78,13 +89,13 @@ export function Combobox<T extends string = string>({
   const listRef = useRef<Array<HTMLElement | null>>([]);
 
   const current = options.find((o) => o.value === value);
-  const selectedLabel = current?.label ?? "";
+  const selectedLabel = displayValue ?? current?.label ?? "";
 
   // Typing filters; opening without typing shows everything, so the control
   // still works as a plain dropdown for anyone who never touches the keyboard.
   const filtered = useMemo(() => {
     const q = query.trim();
-    const base = q ? options.filter((o) => matchesQuery(o, q)) : options;
+    const base = q && filterLocally ? options.filter((o) => matchesQuery(o, q)) : options;
     // Offer a typed-but-unlisted value (e.g. a custom number) as its own row so
     // Enter/click can commit it — unless it already resolves to a known option.
     if (allowCustom && q) {
@@ -94,7 +105,7 @@ export function Combobox<T extends string = string>({
       }
     }
     return base;
-  }, [options, query, allowCustom]);
+  }, [options, query, allowCustom, filterLocally]);
 
   function close() {
     setOpen(false);
@@ -169,6 +180,7 @@ export function Combobox<T extends string = string>({
           aria-autocomplete="list"
           aria-label={ariaLabel}
           disabled={disabled}
+          autoFocus={autoFocus}
           placeholder={placeholder}
           // Closed, the field reads as the current value; open, it holds
           // whatever is being typed (empty = "everything", not "nothing").
@@ -257,7 +269,7 @@ export function Combobox<T extends string = string>({
                       <span className="flex min-w-0 flex-col">
                         <span className="flex items-center gap-1.5 font-medium text-foreground">
                           {o.icon}
-                          {o.label}
+                          {renderLabel ? renderLabel(o, query.trim()) : o.label}
                         </span>
                         {o.description && (
                           <span className="text-xs text-muted-foreground">{o.description}</span>

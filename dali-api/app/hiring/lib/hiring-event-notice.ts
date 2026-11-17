@@ -8,7 +8,7 @@
 
 import { prisma } from "~/lib/db.server";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
-import { getApplicationsGmailRefreshToken } from "~/lib/gmail-integration";
+import { getApplicationsGmailRefreshToken } from "~/lib/gmail-integration.server";
 import { APPLICATION_TZ, APPLICATION_TZ_LABEL } from "~/lib/timezone";
 import { renderForSlot, notificationSlot } from "./email-variables";
 import { getHiringEmail } from "~/hiring/lib/hiring-emails.server";

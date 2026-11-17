@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { redirect, useLoaderData, useSearchParams, type ShouldRevalidateFunctionArgs } from "react-router";
+import { useLoaderData, useSearchParams, type ShouldRevalidateFunctionArgs } from "react-router";
 import { useSearchParamChoice, useSearchParamState } from "~/hooks/useSearchParamState";
 import { skipClientOnlySearchChange } from "~/lib/should-revalidate";
-import { ExternalLink, RotateCcw } from "lucide-react";
+import { Briefcase, ExternalLink, History, Inbox, RotateCcw } from "lucide-react";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { LoadMore } from "~/components/ui/Pager";
 import { fetchCursorPage, useLoadMore } from "~/hooks/useLoadMore";
-import { SegmentedTabButtons } from "~/components/AreaPillNav";
+import { PageTabRow } from "~/components/os-page";
+import { SegmentedTabButtons } from "~/components/ui/SegmentedTabs";
 import { getUserRoles } from "~/lib/roles";
-import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";
-import { redirectToLogin } from "~/lib/login-next";
+import { requireLabViewer } from "~/lib/lab-viewer.server";
 import {
   listOpenTasksPage,
   listMyProjectTasksPage,
@@ -21,8 +21,8 @@ import {
   type NotificationHistoryItem,
   type NotificationHistoryResult,
   type NotificationState,
-} from "~/lib/tasks";
-import { listMyNotifications } from "~/lib/notifications";
+} from "~/lib/tasks.server";
+import { listMyNotifications } from "~/lib/notifications.server";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { formatInTimeZone, getZonedYMD, zonedDayLabel } from "~/lib/timezone";
 import { RsvpButtons } from "~/components/RsvpButtons";
@@ -59,6 +59,7 @@ export const handle = {
 // fetches incrementally from /api/notifications with the additive history
 // params. The open tabs render the same cards as the bell's drawer.
 type PageTab = "work" | "open" | "history";
+const PAGE_TAB_ICONS = { work: Briefcase, open: Inbox, history: History } as const;
 
 // History's status and search fetch their own pages; only the tab reloads.
 export function shouldRevalidate(args: ShouldRevalidateFunctionArgs) {
@@ -66,11 +67,7 @@ export function shouldRevalidate(args: ShouldRevalidateFunctionArgs) {
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
-  const auth = await requireAuth(request);
-  if (!auth.ok) return redirectToLogin(request);
-  if (await isNonMember(auth, request)) return redirect("/portal");
-  const partnerRedirect = await redirectPartnerToPortal(auth);
-  if (partnerRedirect) return partnerRedirect;
+  const { auth } = await requireLabViewer(request);
 
   const userId = auth.user.sub;
   const url = new URL(request.url);
@@ -444,20 +441,19 @@ export default function NotificationsRoute() {
 
   return (
     <div className="w-full flex flex-col gap-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <h1 className={pageTitle}>My Tasks ({count})</h1>
-        {!data.singleFeed && (
-          <SegmentedTabButtons
-            label="Task type"
-            items={tabs.map((t) => ({
-              label: t.label,
-              count: t.count,
-              active: tab === t.key,
-              onClick: () => switchTab(t.key),
-            }))}
-          />
-        )}
-      </div>
+      <h1 className={pageTitle}>My Tasks ({count})</h1>
+      {!data.singleFeed && (
+        <PageTabRow
+          label="Task type"
+          tabs={tabs.map((t) => ({
+            label: t.label,
+            count: t.count,
+            icon: PAGE_TAB_ICONS[t.key],
+            active: tab === t.key,
+            onClick: () => switchTab(t.key),
+          }))}
+        />
+      )}
 
       {data.singleFeed ? (
         <>

@@ -6,29 +6,35 @@ vi.mock("~/lib/cors", () => ({
   handlePreflight: () => null,
   withCors: (_req: Request, res: Response) => res,
 }));
-vi.mock("~/lib/roles", () => ({ isLabMember: vi.fn() }));
-vi.mock("~/lib/groups", () => ({ listVisibleGroupsForUser: vi.fn() }));
-vi.mock("~/lib/page-sharing.server", () => ({
-  addPageShare: vi.fn(),
-  listPageShares: vi.fn(),
-  removePageShare: vi.fn(),
-  SharePrincipalError: class SharePrincipalError extends Error {},
-}));
-vi.mock("~/lib/page-share-access.server", () => ({
-  requirePageShareManager: vi.fn(),
-  setGeneralAccess: vi.fn(),
-  setFolderScope: vi.fn(),
-  notifyDocumentShared: vi.fn(),
-  PageShareForbiddenError: class PageShareForbiddenError extends Error {},
-  PageShareNotFoundError: class PageShareNotFoundError extends Error {},
-  GeneralAccessError: class GeneralAccessError extends Error {},
-}));
-vi.mock("~/lib/page-audience.server", () => ({ describePageAudience: vi.fn() }));
+vi.mock("~/lib/roles", () => ({ isLabMemberOrAlum: vi.fn() }));
+vi.mock("~/lib/groups.server", () => ({ listVisibleGroupsForUser: vi.fn() }));
+vi.mock("~/lib/page-sharing.server", async () => {
+  const { BadRequestError } = await import("~/lib/http-error");
+  return {
+    addPageShare: vi.fn(),
+    listPageShares: vi.fn(),
+    removePageShare: vi.fn(),
+    SharePrincipalError: class SharePrincipalError extends BadRequestError {},
+  };
+});
+vi.mock("~/lib/page-share-access.server", async () => {
+  const { BadRequestError, ForbiddenError, NotFoundError } = await import("~/lib/http-error");
+  return {
+    requirePageShareManager: vi.fn(),
+    setGeneralAccess: vi.fn(),
+    setFolderScope: vi.fn(),
+    notifyDocumentShared: vi.fn(),
+    PageShareForbiddenError: class PageShareForbiddenError extends ForbiddenError {},
+    PageShareNotFoundError: class PageShareNotFoundError extends NotFoundError {},
+    GeneralAccessError: class GeneralAccessError extends BadRequestError {},
+  };
+});
+vi.mock("~/drive/lib/page-audience.server", () => ({ describePageAudience: vi.fn() }));
 
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db.server";
-import { isLabMember } from "~/lib/roles";
-import { listVisibleGroupsForUser } from "~/lib/groups";
+import { isLabMemberOrAlum } from "~/lib/roles";
+import { listVisibleGroupsForUser } from "~/lib/groups.server";
 import { listPageShares, addPageShare, removePageShare, SharePrincipalError } from "~/lib/page-sharing.server";
 import {
   requirePageShareManager,
@@ -39,7 +45,7 @@ import {
   PageShareNotFoundError,
   GeneralAccessError,
 } from "~/lib/page-share-access.server";
-import { describePageAudience } from "~/lib/page-audience.server";
+import { describePageAudience } from "~/drive/lib/page-audience.server";
 import { action } from "../api.pages.$id.share";
 
 const USER_ID = "user-1";
@@ -273,7 +279,7 @@ describe("POST /api/pages/:id/share — share-remove, general-access, folder-sco
 
 describe("POST /api/pages/:id/share — share-options", () => {
   beforeEach(() => {
-    vi.mocked(isLabMember).mockResolvedValue(true);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
     vi.mocked(listVisibleGroupsForUser).mockResolvedValue([{ id: "g1", name: "Core" }] as never);
     vi.mocked(prisma.user.findMany).mockResolvedValue([
       { id: "u2", firstName: "Grace", lastName: "Hopper" },
@@ -281,7 +287,7 @@ describe("POST /api/pages/:id/share — share-options", () => {
   });
 
   it("is forbidden for non-lab-members and queries nothing", async () => {
-    vi.mocked(isLabMember).mockResolvedValue(false);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(false);
     const res = await run("share-options", { q: "gr" });
     expect(res.status).toBe(403);
     expect(prisma.user.findMany).not.toHaveBeenCalled();

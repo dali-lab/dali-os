@@ -11,7 +11,7 @@ function collabEditor() {
   const editor = BlockNoteEditor.create(
     withCollaboration({
       collaboration: { fragment: ydoc.getXmlFragment("doc"), user: { name: "Ada", color: "#336699" } },
-    }) as never,
+    }),
   );
   keepCollabUndoAlive(editor);
   const el = document.createElement("div");

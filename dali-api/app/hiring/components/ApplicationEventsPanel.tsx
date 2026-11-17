@@ -1,7 +1,7 @@
 import { formatSessionWhen } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
-import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
-import { ApplicantPanel, PANEL_ROW } from "~/hiring/components/ApplicantPanel";
+import { Pill } from "~/components/ui/Pill";
+import { ApplicantPanel, PANEL_ROW } from "~/components/ApplicantPanel";
 import type { HiringEventKind } from "~/generated/prisma/enums";
 
 const EVENT_KIND_LABELS: Record<HiringEventKind, string> = {

@@ -5,8 +5,8 @@
 // endpoint (/api/partner/availability, which must never return a per-user
 // breakdown) can build the identical aggregate shape without duplicating it.
 
-import type { Interval } from "~/lib/availability";
-import { intersectFreeIntervals } from "~/lib/availability";
+import type { Interval } from "~/calendar/lib/availability.server";
+import { intersectFreeIntervals } from "~/calendar/lib/availability.server";
 import { getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
 import type { GroupAvailDay } from "~/calendar/lib/types";
 

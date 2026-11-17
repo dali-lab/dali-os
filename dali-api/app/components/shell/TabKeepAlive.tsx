@@ -12,7 +12,7 @@ import { UNSAFE_DataRouterStateContext, UNSAFE_LocationContext, UNSAFE_RouteCont
 import { PageBarVisibility } from '~/components/shell/page-bar-slot'
 import { sameUrl } from '~/lib/desktop-tabs'
 import { getTabsSnapshot } from '~/lib/desktop-tabs-store'
-import { scrollPageTo } from '~/lib/page-scroll'
+import { scrollPageTo } from '~/drive/lib/page-scroll'
 import { useDesktopTabsState } from '~/components/DesktopTabs'
 import { publishDisplayedTab } from '~/components/shell/displayed-tab'
 

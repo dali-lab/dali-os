@@ -44,6 +44,7 @@ import {
 } from "../feature-flags.server";
 
 const noRoles: UserRoles = {
+  isLabMemberOrAlum: true,
   isLabMember: true,
   isCore: false,
   isAdmin: false,

@@ -1,6 +1,7 @@
 import { Popover, Tooltip } from "~/components/ui/floating";
 import { cn } from "~/lib/cn";
 import { OS_SURFACE_CLASS } from "~/components/ui/floating/styles";
+import { Z } from "~/components/ui/z";
 
 // Notion-style page icon. Surfaces Page.iconEmoji (persisted by the host via
 // onChange). No emoji-picker dependency in the repo, so this is a small curated
@@ -17,19 +18,14 @@ export function PageIconPicker({
   iconEmoji,
   canEdit,
   onChange,
-  // Legacy compat: editing was the old prop name — if canEdit is absent but
-  // editing is present, treat them the same. Callers should migrate to canEdit.
-  editing,
   size = "lg",
 }: {
   iconEmoji: string | null;
   canEdit?: boolean;
   onChange: (emoji: string | null) => void;
-  /** @deprecated use canEdit */
-  editing?: boolean;
   size?: "lg" | "md";
 }) {
-  const editable = canEdit ?? editing ?? false;
+  const editable = canEdit ?? false;
   const emojiSize = size === "md" ? "text-2xl" : "text-4xl";
 
   // Read-only: show the icon if set, otherwise render nothing so the title
@@ -45,7 +41,7 @@ export function PageIconPicker({
   return (
     <Popover
       ariaLabel="Page icon"
-      panelClassName={cn("z-[60] w-max p-2 focus:outline-none", OS_SURFACE_CLASS)}
+      panelClassName={cn(`${Z.popover} w-max p-2 focus:outline-none`, OS_SURFACE_CLASS)}
       trigger={
         <Tooltip content={iconEmoji ? "Change icon" : "Add icon"}>
           <button

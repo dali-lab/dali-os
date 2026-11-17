@@ -17,12 +17,13 @@ import { isReferenceSourceKey, referenceSourceNeedsTerm } from "./reference-sour
 import { isPrefillFieldKey, prefillFieldFits } from "./prefill-fields";
 import { formDeletionBlockers, formUsages, managingUsage } from "./form-usages.server";
 import { newPublicToken, setFormPublished } from "./form-publish.server";
-import { isGroupArchived, loadGroupArchiveContext } from "~/lib/groups";
+import { isGroupArchived, loadGroupArchiveContext } from "~/lib/groups.server";
 import { isEmptyBlocks } from "~/lib/blocks";
-import { isLayoutOnly } from "~/lib/form-answers";
-import { showIfProblems } from "~/lib/form-logic";
+import { isLayoutOnly } from "~/forms/lib/form-answers";
+import { showIfProblems } from "~/forms/lib/form-logic";
 import { mappedQuestionFeatures } from "./mapped-questions.server";
 import { normalizeQuestionBodies } from "~/lib/question-blocks.server";
+import { parseResultColumns, type ResultColumnEntry } from "./response-columns";
 
 function prefillFits(q: Question): boolean {
   const key = q.data.prefill;
@@ -93,15 +94,15 @@ export function validateVersionQuestions(
   // saved. A mapped question can't carry a rule.
   mapped?: ReadonlyMap<string, string>,
 ): { ok: true; questions: Question[] } | { error: string; status: number } {
-  let questions: unknown;
+  let parsed: unknown;
   try {
-    questions = JSON.parse(raw);
+    parsed = JSON.parse(raw);
   } catch {
     return { error: "Could not parse questions.", status: 400 };
   }
-  if (!isQuestionArray(questions) || questions.length === 0)
+  if (!isQuestionArray(parsed) || parsed.length === 0)
     return { error: "Add at least one valid question.", status: 400 };
-  questions = dropRepeatedKeys(questions);
+  const questions = dropRepeatedKeys(parsed);
   for (const q of questions) {
     if (q.type === "info" && !hasInfoBody(q.data.body))
       return { error: "Every text block needs some text.", status: 400 };
@@ -254,6 +255,7 @@ export type FormDetail = {
   draft: { questions: Question[]; description: unknown } | null;
   workspaceType: string | null;
   iconEmoji: string | null;
+  responseColumns: ResultColumnEntry[];
 };
 
 // The full form + every version (newest last), for the dedicated editor page.
@@ -301,6 +303,7 @@ export async function loadFormForEdit(
     audienceGroupIds: form.audienceGroupIds,
     workspaceType: form.page?.workspaceType ?? null,
     iconEmoji: form.page?.iconEmoji ?? null,
+    responseColumns: parseResultColumns(form.responseColumns),
     versions: form.versions.map((v) => ({
       id: v.id,
       versionNumber: v.versionNumber,

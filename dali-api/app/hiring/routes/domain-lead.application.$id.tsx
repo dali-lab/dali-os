@@ -27,7 +27,8 @@ import {
   ApplicationTimeline,
   StageMoveControl,
 } from "~/hiring/components/ApplicationTimeline";
-import { Pill, type PillTone, SetupCard } from "~/hiring/components/cycle-setup/SetupCard";
+import { Pill, type PillTone } from "~/components/ui/Pill";
+import { SetupCard } from "~/hiring/components/cycle-setup/SetupCard";
 import { buildApplicationTimeline } from "~/hiring/lib/application-timeline";
 import { findRound, groupByInterviewRound, parseTimeline } from "~/hiring/lib/cycle-timeline";
 import { buildCriteriaLabelMap } from "~/hiring/lib/rubric-criteria";
@@ -373,10 +374,10 @@ export default function DomainLeadApplicationView() {
     priorApplications,
     emailEngagement,
     blinded,
-  } = useLoaderData<typeof loader>() as any;
+  } = useLoaderData<typeof loader>();
 
-  const generalQuestions: any[] = application.generalChallengeVersion?.questions ?? [];
-  const challengeQuestions: any[] = da.challengeVersion?.questions ?? [];
+  const generalQuestions = (application.generalChallengeVersion?.questions ?? []) as unknown as Question[];
+  const challengeQuestions = (da.challengeVersion?.questions ?? []) as unknown as Question[];
   const reviews: any[] = da.reviews ?? [];
   const statusInfo = STATUS_BADGE[inferredStatus] ?? STATUS_BADGE.Pending;
 

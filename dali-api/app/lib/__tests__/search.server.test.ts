@@ -35,6 +35,7 @@ const mockPrisma = prisma as unknown as Record<
 
 // Plain lab member — no elevated flags, so only the ungated categories run.
 const MEMBER: UserRoles = {
+  isLabMemberOrAlum: true,
   isLabMember: true,
   isCore: false,
   isAdmin: false,
@@ -68,7 +69,7 @@ describe("runSearch gating", () => {
   it("returns nothing for a non-member session without querying", async () => {
     const results = await runSearch({
       userId: "u1",
-      roles: { ...MEMBER, isLabMember: false },
+      roles: { ...MEMBER, isLabMemberOrAlum: false },
       q: "query",
     });
     expect(results).toEqual([]);
@@ -117,7 +118,7 @@ describe("runSearchWithOverflow", () => {
   });
 
   it("returns nothing for a non-member", async () => {
-    expect(await runSearchWithOverflow({ userId: "u1", roles: { ...MEMBER, isLabMember: false }, q: "atlas" })).toEqual({
+    expect(await runSearchWithOverflow({ userId: "u1", roles: { ...MEMBER, isLabMemberOrAlum: false }, q: "atlas" })).toEqual({
       results: [],
       categoriesWithMore: [],
     });
@@ -239,7 +240,7 @@ describe("runCategorySearch", () => {
   it("returns nothing for a non-member", async () => {
     const rows = await runCategorySearch({
       userId: "u1",
-      roles: { ...MEMBER, isLabMember: false },
+      roles: { ...MEMBER, isLabMemberOrAlum: false },
       q: "ada",
       category: "person",
       skip: 0,
@@ -619,7 +620,7 @@ describe("runSearch — guides", () => {
       id: "projects.staffing",
       title: "Staffing",
       subtitle: "Guide",
-      url: "/projects/staffing?doc=1",
+      url: "/core/staffing?doc=1",
     });
   });
 
@@ -628,7 +629,6 @@ describe("runSearch — guides", () => {
       {
         pageKey: "drive.mine",
         title: "My Drive",
-        body: null,
         sections: [
           {
             id: "s1",
@@ -658,7 +658,7 @@ describe("runSearch — guides", () => {
   it("does not run for a non-member session", async () => {
     const results = await runSearch({
       userId: "u1",
-      roles: { ...MEMBER, isLabMember: false },
+      roles: { ...MEMBER, isLabMemberOrAlum: false },
       q: "calendar",
     });
     expect(results).toEqual([]);

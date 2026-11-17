@@ -10,10 +10,10 @@ vi.mock("~/lib/mobile-auth.server", async (importOriginal) => ({
   ...(await importOriginal<typeof import("~/lib/mobile-auth.server")>()),
   requireMobileUser: (...a: unknown[]) => requireMobileUser(...a),
 }));
-vi.mock("~/lib/upcoming-meetings", () => ({ listUpcomingMeetings: (...a: unknown[]) => listUpcomingMeetings(...a) }));
-vi.mock("~/lib/google-calendar", () => ({ fetchCalendarEvents: vi.fn().mockResolvedValue([]) }));
+vi.mock("~/calendar/lib/upcoming-meetings-list.server", () => ({ listUpcomingMeetings: (...a: unknown[]) => listUpcomingMeetings(...a) }));
+vi.mock("~/calendar/lib/google-calendar.server", () => ({ fetchCalendarEvents: vi.fn().mockResolvedValue([]) }));
 vi.mock("~/lib/mobile-members.server", () => ({ listMemberSummaries: (...a: unknown[]) => listMemberSummaries(...a) }));
-vi.mock("~/lib/scheduled-meeting", () => ({ createScheduledMeeting: (...a: unknown[]) => createScheduledMeeting(...a) }));
+vi.mock("~/calendar/lib/scheduled-meeting.server", () => ({ createScheduledMeeting: (...a: unknown[]) => createScheduledMeeting(...a) }));
 
 import { prisma } from "~/lib/db.server";
 import { action, loader } from "../api.mobile.calendar";

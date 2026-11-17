@@ -10,14 +10,14 @@ vi.mock("~/lib/cors", () => ({
   withCors: (_req: unknown, res: unknown) => res,
   handlePreflight: vi.fn(() => null),
 }));
-vi.mock("~/lib/scheduled-meeting", () => ({ updateScheduledMeeting: vi.fn() }));
-vi.mock("~/lib/rooms.server", () => ({ assertMeetingRoomsFree: vi.fn() }));
+vi.mock("~/calendar/lib/scheduled-meeting.server", () => ({ updateScheduledMeeting: vi.fn() }));
+vi.mock("~/rooms/lib/rooms.server", () => ({ assertMeetingRoomsFree: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
 import { requireAuth, isNonMember } from "~/lib/auth";
 import { handlePreflight } from "~/lib/cors";
-import { updateScheduledMeeting } from "~/lib/scheduled-meeting";
-import { assertMeetingRoomsFree } from "~/lib/rooms.server";
+import { updateScheduledMeeting } from "~/calendar/lib/scheduled-meeting.server";
+import { assertMeetingRoomsFree } from "~/rooms/lib/rooms.server";
 import { MAX_GUEST_EMAILS } from "~/calendar/lib/guest-emails";
 import { action } from "../api.scheduled-meetings.$id.update";
 
@@ -148,6 +148,7 @@ describe("POST /api/scheduled-meetings/:id/update", () => {
       roomIds: ["r1"],
       newRoomIds: [],
       meetingId: "m1",
+      bookerId: "org-1",
       selectedAt: new Date(START),
       durationMinutes: 30,
       recurrenceRule: "RRULE:FREQ=WEEKLY",

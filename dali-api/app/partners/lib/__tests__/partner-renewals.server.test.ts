@@ -17,6 +17,7 @@ function fakeDb() {
     projectTerm: { upsert: vi.fn(), deleteMany: vi.fn() },
     projectRoleRequest: { deleteMany: vi.fn(), createMany: vi.fn() },
     projectAssignment: { count: vi.fn().mockResolvedValue(0) },
+    projectMaintenance: { updateMany: vi.fn(), findFirst: vi.fn().mockResolvedValue(null), create: vi.fn(), update: vi.fn() },
   };
   const db = {
     $transaction: vi.fn(async (cb: (t: typeof tx) => unknown) => cb(tx)),

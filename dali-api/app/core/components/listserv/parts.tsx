@@ -15,7 +15,7 @@ import { Avatar } from "~/components/ui/Avatar";
 import { IconButton } from "~/components/ui/IconButton";
 import { useToast } from "~/components/ui/toast";
 import { useOsChrome } from "~/components/os-chrome";
-import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
+import { Pill } from "~/components/ui/Pill";
 import { uploadFileToS3, formatBytes } from "~/lib/upload-client";
 import { rawUploadUrl } from "~/components/doc/upload";
 import { cn } from "~/lib/cn";

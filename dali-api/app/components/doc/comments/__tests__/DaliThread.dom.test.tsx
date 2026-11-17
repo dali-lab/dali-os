@@ -44,17 +44,18 @@ import { DaliThread } from "../DaliThread";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const at = new Date("2026-11-03T12:00:00Z");
-const comment = (id: string, userId: string, over: Partial<CommentData> = {}): CommentData => ({
-  type: "comment",
-  id,
-  userId,
-  createdAt: at,
-  updatedAt: at,
-  reactions: [],
-  metadata: { author: userId === "me" ? "Ada Lovelace" : "Grace Hopper", authorPhotoUrl: null },
-  body: [],
-  ...over,
-});
+const comment = (id: string, userId: string, over: Partial<CommentData> = {}) =>
+  ({
+    type: "comment",
+    id,
+    userId,
+    createdAt: at,
+    updatedAt: at,
+    reactions: [],
+    metadata: { author: userId === "me" ? "Ada Lovelace" : "Grace Hopper", authorPhotoUrl: null },
+    body: [],
+    ...over,
+  }) as CommentData;
 const thread = (comments: CommentData[]): ThreadData => ({
   type: "thread",
   id: comments[0].id,

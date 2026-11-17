@@ -3,7 +3,7 @@
 // owned here outright; a desktop recording is only tracked (the app captures).
 
 import { useEffect, useSyncExternalStore } from "react";
-import { stripAppTitle } from "~/lib/page-title";
+import { stripAppTitle } from "~/drive/lib/page-title";
 import workletUrl from "./worklet-processor.js?url";
 import { WorkletCapture } from "./capture";
 import { ChunkConflictError, ChunkUploadQueue } from "./upload-queue";

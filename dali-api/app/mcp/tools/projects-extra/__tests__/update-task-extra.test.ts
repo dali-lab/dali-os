@@ -25,7 +25,7 @@ vi.mock("~/projects/lib/github-task-sync", () => ({
 import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { syncIssueForTask } from "~/projects/lib/github-task-sync";
-import { runUpdateTask, UPDATE_TASK_TOOL } from "~/mcp/tools/update-task";
+import { runUpdateTask, UPDATE_TASK_PROPERTIES } from "~/mcp/tools/update-task";
 
 const mockPrisma = prisma as unknown as {
   task: { findUnique: ReturnType<typeof vi.fn> };
@@ -56,7 +56,7 @@ beforeEach(() => {
 
 describe("update_task schema additions", () => {
   it("description and startsAt appear in inputSchema", () => {
-    const props = UPDATE_TASK_TOOL.inputSchema.properties;
+    const props = UPDATE_TASK_PROPERTIES;
     expect(props).toHaveProperty("description");
     expect(props).toHaveProperty("startsAt");
   });

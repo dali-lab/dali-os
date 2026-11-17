@@ -16,6 +16,8 @@ vi.mock("~/components/os-chrome", () => ({ useOsChrome: () => ({ iconBtn: "" }),
 vi.mock("~/components/Modal", () => ({
   Modal: ({ open, children }: { open: boolean; children: React.ReactNode }) => (open ? children : null),
   ModalHeader: ({ subtitle }: { subtitle?: string }) => createElement("p", { "data-testid": "subtitle" }, subtitle),
+  MODAL_TITLE_CLASS: "",
+  ModalFooter: ({ children }: { children: React.ReactNode }) => children,
 }));
 
 import { VersionResults } from "~/forms/components/VersionResults";
@@ -28,7 +30,8 @@ const response = (over: Record<string, unknown> = {}) => ({
   id: "s1",
   createdAt: "2026-05-20T10:00:00.000Z",
   edited: false,
-  lockReason: null,
+  deleteBlocked: null,
+  deleteEffects: [],
   name: "Ada",
   email: "ada@example.edu",
   slot: null,
@@ -85,10 +88,19 @@ describe("VersionResults delete and edited marker", () => {
     expect(container.querySelector<HTMLInputElement>('input[name="submissionId"]')!.value).toBe("s1");
   });
 
-  it("shows why instead of a button when the response feeds something else", async () => {
-    await open({ lockReason: "Linked to an application or survey." });
-    expect(container.textContent).toContain("This response can't be deleted. Linked to an application or survey.");
+  it("shows why instead of a button when the delete is refused", async () => {
+    await open({ deleteBlocked: "Its partner application became a project." });
+    expect(container.textContent).toContain("This response can't be deleted. Its partner application became a project.");
     expect(container.textContent).not.toContain("Delete response");
+  });
+
+  it("names what else the delete removes in the confirm", async () => {
+    await open({ deleteEffects: ["Removes their project bids for this cycle."] });
+    const button = [...container.querySelectorAll("button")].find((b) => b.textContent === "Delete response")!;
+    await act(async () => button.click());
+    expect(document.body.textContent).toContain(
+      "Removes their project bids for this cycle. This can't be undone.",
+    );
   });
 
   it("marks an edited response in the table and the detail", async () => {

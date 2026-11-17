@@ -12,7 +12,7 @@ import {
   getOrCreateNamedCalendar,
   listCalendarsForLink,
   subscribeCalendarForLink,
-} from "~/lib/google-calendar";
+} from "~/calendar/lib/google-calendar.server";
 import { classRRule, DARTMOUTH_TZ, firstOccurrenceRange, resolveClassMeetings } from "~/calendar/lib/class-schedule";
 import { getPeriod, type PeriodMeeting } from "~/calendar/lib/dartmouth-periods";
 import {

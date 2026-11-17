@@ -1,4 +1,5 @@
 import { prisma } from "~/lib/db.server";
+import { isPatternCover } from "~/components/cover/CoverPattern";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { fullName } from "~/lib/display";
 import { parseDetails, parseMedia, type ShowcaseDetail } from "./showcase-content";
@@ -54,6 +55,7 @@ export type PublicProjectViewData = {
   // Presigned/resolved for the preview panel only; the public API resolves its
   // own copy through the media proxy.
   heroPreviewUrl: string | null;
+  heroPattern: string | null;
   // Current roster, shown on the public card as the credit line. Live, not
   // curated — the public site names who built it.
   teamMembers: string[];
@@ -127,6 +129,7 @@ export async function loadPublicProjectView(
         }
       : null,
     heroPreviewUrl: await resolvePhotoUrl(s?.heroImageUrl ?? project.imageUrl),
+    heroPattern: !s?.heroImageUrl && isPatternCover(project.imageUrl) ? project.imageUrl : null,
     teamMembers,
   };
 }

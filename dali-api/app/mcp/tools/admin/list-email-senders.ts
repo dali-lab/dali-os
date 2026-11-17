@@ -2,7 +2,7 @@
 // one per purpose, with fallback info. Mirrors the admin.email-senders.tsx loader.
 // Requires the `mcp:admin` scope; caller must be a Core lead.
 
-import { listSenderIntegrations } from "~/lib/gmail-integration";
+import { listSenderIntegrations } from "~/lib/gmail-integration.server";
 import { EMAIL_PURPOSES, EMAIL_PURPOSE_KEYS } from "~/lib/email-identities";
 import { isCore } from "~/lib/roles";
 import { AdminForbiddenError as McpForbiddenError } from "./errors";

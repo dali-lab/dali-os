@@ -19,7 +19,7 @@ vi.mock("~/lib/roles", () => ({ isCore: vi.fn() }));
 vi.mock("~/lib/fileAccess.server", () => ({ canEditFile: vi.fn() }));
 vi.mock("~/lib/pageAccess.server", () => ({ getPageAccess: vi.fn(), PAGE_ACCESS_SELECT: { id: true } }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
-vi.mock("~/lib/page-ancestry.server", () => ({ loadAncestorChain: vi.fn() }));
+vi.mock("~/drive/lib/page-ancestry.server", () => ({ loadAncestorChain: vi.fn() }));
 
 import { moveForm } from "~/forms/lib/form-page.server";
 import { prisma } from "~/lib/db.server";
@@ -28,7 +28,7 @@ import { isCore } from "~/lib/roles";
 import { canEditFile } from "~/lib/fileAccess.server";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { logAuditEvent } from "~/lib/audit";
-import { loadAncestorChain } from "~/lib/page-ancestry.server";
+import { loadAncestorChain } from "~/drive/lib/page-ancestry.server";
 import { action } from "~/routes/api.drive.move";
 
 const m = prisma as any;

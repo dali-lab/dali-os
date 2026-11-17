@@ -1,6 +1,6 @@
 import { Link } from "react-router";
 import { CalendarDays, Pencil, X } from "lucide-react";
-import { AnchoredPopover } from "~/calendar/components/AnchoredPopover";
+import { AnchoredCard } from "~/components/ui/floating/AnchoredCard";
 import { EventDetailBody, popoverActionBtn } from "~/calendar/components/WeekGrid";
 import { cn } from "~/lib/cn";
 import { timeLabel, type BookingAccess, type ScheduleItem } from "~/rooms/lib/timeline";
@@ -32,7 +32,7 @@ export function BookingDetailPopover({
   const underway = Date.parse(item.start) <= Date.now();
   const hasActions = access.canEdit || access.canCancel || access.calendarHref;
   return (
-    <AnchoredPopover
+    <AnchoredCard
       anchor={anchor}
       onClose={onClose}
       ariaLabel={item.title}
@@ -75,6 +75,6 @@ export function BookingDetailPopover({
           </>
         }
       />
-    </AnchoredPopover>
+    </AnchoredCard>
   );
 }

@@ -3,7 +3,7 @@ import { PartnerBackLink } from "~/partners/components/PartnerBackLink";
 import type { Route } from "./+types/partner.projects.$id.pages.$pageId";
 import { prisma } from "~/lib/db.server";
 import { getCollabToken } from "~/lib/collab-token.server";
-import { getPresenceUser } from "~/lib/presence-user";
+import { getPresenceUser } from "~/lib/presence-user.server";
 import { requirePartner } from "~/partners/lib/partner-auth.server";
 import { partnerHasProjectAccess } from "~/partners/lib/partner-access";
 import { PartnerDocumentView } from "~/partners/components/PartnerDocumentView";

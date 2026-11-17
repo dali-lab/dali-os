@@ -1,9 +1,8 @@
 # DALI OS iOS
 
-Native SwiftUI app for DALI OS. It is a single universal target for iPhone and iPad (iOS 18+). It talks to the same `dali-api` backend as the web and desktop apps.
+Native SwiftUI app for DALI OS. It is a room door display for iPad (iOS 18+). The target is still universal, but only the iPad display is built. It talks to the same `dali-api` backend as the web and desktop apps.
 
 - **iPad: room door display.** The iPad hangs between two rooms and shows both side by side: each as available, starting soon, or in use, with what's on now and today's list. People can walk up and **Book now** for 15 minutes to an hour, choose **Custom** (or **Book later** while the room is in use) to drag out any time on any day up to 90 days ahead, or **End early** / **Extend 15 min** a booking, by scanning their DALI wallet pass (ending or extending takes the booker's pass, or Core's). While a DALI event (a SelfCheckIn meeting) is running in a room, that room's panel becomes a check-in station, and while iPad scanning is on from a meeting's page the whole screen is the scanner with a live check-in count.
-- **iPhone: member app.** This is a placeholder for now.
 
 ## Develop
 
@@ -24,10 +23,10 @@ xcodebuild test -project ios/DaliOS.xcodeproj -scheme DaliOS \
 
 ```
 DaliOS/
-  App/          entry point + RootView (iPad → room display, iPhone → member tabs)
+  App/          entry point + RootView (room display)
   Core/         AppEnvironment (server URLs), AppSettings, APIClient, Keychain
   RoomDisplay/  the iPad door display: pairing, status panel, day timeline, pass scanner
-  Features/   one folder per screen area (Home, Settings, …)
+  Features/   one folder per screen area (Settings, …)
   Assets.xcassets
 DaliOSTests/  Swift Testing unit tests
 ```

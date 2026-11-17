@@ -14,9 +14,7 @@ export type Comment = {
   authorPhotoUrl?: string | null;
   body: string;
   bodyJson?: BodySegment[] | null;
-  /** Legacy Yjs anchor {from, to}, BlockNote inline marker {kind:"blocknote"},
-   *  or null for doc/file-level threads. */
-  anchor: { from: string; to: string } | { kind: "blocknote" } | null;
+  anchor: { kind: "blocknote" } | null;
   createdAt: string;
   // File comments: the ProjectFileVersion current when the comment was
   // written. Null on doc/pagedoc comments and pre-pinning file comments.
@@ -56,16 +54,6 @@ function VersionChip({
 
 // ── Inline-thread anchor helpers ────────────────────────────────────────────
 
-/** True when the anchor is a legacy Yjs {from,to} pair. */
-function isYjsAnchor(anchor: Comment["anchor"]): anchor is { from: string; to: string } {
-  return (
-    anchor !== null &&
-    typeof anchor === "object" &&
-    "from" in anchor &&
-    "to" in anchor
-  );
-}
-
 /** True when the anchor is a BlockNote inline mark {kind:"blocknote"}. */
 function isBlockNoteAnchor(anchor: Comment["anchor"]): anchor is { kind: "blocknote" } {
   return (
@@ -76,33 +64,17 @@ function isBlockNoteAnchor(anchor: Comment["anchor"]): anchor is { kind: "blockn
 }
 
 /** True when clicking this thread card can jump to its editor position. */
-function isJumpable(
-  root: Comment,
-  onFocusAnchor?: (a: { from: string; to: string }) => void,
-  onFocusInlineThread?: (id: string) => void,
-): boolean {
-  if (isYjsAnchor(root.anchor) && onFocusAnchor) return true;
-  if (isBlockNoteAnchor(root.anchor) && onFocusInlineThread) return true;
-  return false;
+function isJumpable(root: Comment, onFocusInlineThread?: (id: string) => void): boolean {
+  return isBlockNoteAnchor(root.anchor) && Boolean(onFocusInlineThread);
 }
 
-/** Dispatches the correct jump action based on anchor type. */
-function handleJump(
-  root: Comment,
-  onFocusAnchor?: (a: { from: string; to: string }) => void,
-  onFocusInlineThread?: (id: string) => void,
-) {
-  if (isYjsAnchor(root.anchor) && onFocusAnchor) {
-    onFocusAnchor(root.anchor);
-  } else if (isBlockNoteAnchor(root.anchor) && onFocusInlineThread) {
-    onFocusInlineThread(root.id);
-  }
+function handleJump(root: Comment, onFocusInlineThread?: (id: string) => void) {
+  if (isBlockNoteAnchor(root.anchor) && onFocusInlineThread) onFocusInlineThread(root.id);
 }
 
 // Comment threads for a document or file. Doc-level (anchor === null) and
 // inline (anchor !== null) comments share this rail; the host passes
-// `onFocusAnchor` (legacy Yjs anchors) or `onFocusInlineThread` (BlockNote
-// inline marks) for inline ones so clicking a thread scrolls the editor to it.
+// `onFocusInlineThread` for inline ones so clicking a thread scrolls the editor to it.
 // The rail owns its own data fetch + mutations so it can be dropped onto any
 // doc/file surface.
 export function CommentsRail({
@@ -111,9 +83,6 @@ export function CommentsRail({
   currentUserId,
   canComment,
   // Inline-comment hooks. Provided only by the document editor.
-  pendingAnchor,
-  onClearPendingAnchor,
-  onFocusAnchor,
   onFocusInlineThread,
   registerRefresh,
   mentionPath,
@@ -125,7 +94,6 @@ export function CommentsRail({
   targetId: string;
   currentUserId: string;
   canComment: boolean;
-  pendingAnchor?: { from: string; to: string } | null;
   // For page-doc FAQ comments: the current page path, sent so @-mention
   // notifications can deep-link back to the guide (with ?doc=1).
   mentionPath?: string;
@@ -138,10 +106,6 @@ export function CommentsRail({
   // File hosts: the version currently being previewed — new comments are
   // stamped with it rather than whatever version happens to be current.
   versionId?: string | null;
-  onClearPendingAnchor?: () => void;
-  /** Legacy Yjs-position anchor jump. Called for old inline comments that
-   *  store a {from, to} Yjs relative position in the anchor column. */
-  onFocusAnchor?: (anchor: { from: string; to: string }) => void;
   /** BlockNote inline thread jump. Called when the user clicks a thread whose
    *  anchor is {kind:"blocknote"}; scrolls to the [data-bn-thread-id] mark. */
   onFocusInlineThread?: (threadId: string) => void;
@@ -184,7 +148,7 @@ export function CommentsRail({
       () => comments,
       {
         remove: (id) => remove(id),
-        reply: (parentId, body) => post(body, parentId, null),
+        reply: (parentId, body) => post(body, parentId),
       },
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -213,7 +177,6 @@ export function CommentsRail({
   async function post(
     bodyOrSegments: string | BodySegment[],
     parentId: string | null,
-    anchor: { from: string; to: string } | null,
   ) {
     setBusy(true);
     setError(null);
@@ -233,7 +196,6 @@ export function CommentsRail({
           body: plainBody,
           ...(bodyJson !== undefined ? { bodyJson } : {}),
           parentId,
-          anchor,
           path: mentionPath,
           versionId,
         }),
@@ -296,45 +258,15 @@ export function CommentsRail({
 
       {error && <div className="text-xs text-destructive">{error}</div>}
 
-      {/* Composer — anchored to the editor selection when the host has one
-          waiting, otherwise a plain doc/file-level comment. */}
       {canComment && (
         <div className="flex flex-col gap-1">
-          {pendingAnchor && (
-            <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-              <span>Commenting on the selection</span>
-              <button
-                type="button"
-                onClick={() => {
-                  setDraft("");
-                  onClearPendingAnchor?.();
-                }}
-                className="hover:text-foreground hover:underline"
-              >
-                Cancel
-              </button>
-            </div>
-          )}
           <CommentComposer
             currentUserId={currentUserId}
             value={draft}
             onChange={setDraft}
             busy={busy}
-            autoFocus={Boolean(pendingAnchor)}
-            onCancel={
-              pendingAnchor
-                ? () => {
-                    setDraft("");
-                    onClearPendingAnchor?.();
-                  }
-                : undefined
-            }
             onSubmit={async (segments) => {
-              const ok = await post(segments, null, pendingAnchor ?? null);
-              if (ok) {
-                setDraft("");
-                if (pendingAnchor) onClearPendingAnchor?.();
-              }
+              if (await post(segments, null)) setDraft("");
             }}
           />
         </div>
@@ -343,7 +275,7 @@ export function CommentsRail({
       {threads.length > 0 && (
         <ul className="flex flex-col">
           {threads.map((t) => {
-            const jumpable = isJumpable(t.root, onFocusAnchor, onFocusInlineThread);
+            const jumpable = isJumpable(t.root, onFocusInlineThread);
             return (
               <li
                 key={t.root.id}
@@ -353,7 +285,7 @@ export function CommentsRail({
                 <button
                   type="button"
                   disabled={!jumpable}
-                  onClick={() => handleJump(t.root, onFocusAnchor, onFocusInlineThread)}
+                  onClick={() => handleJump(t.root, onFocusInlineThread)}
                   className={`block w-full text-left ${jumpable ? "cursor-pointer" : "cursor-default"}`}
                 >
                   <CommentHead comment={t.root} versionLabels={versionLabels} inline={Boolean(t.root.anchor)} />
@@ -386,7 +318,7 @@ export function CommentsRail({
                         setReplyTo(null);
                       }}
                       onSubmit={async (segments) => {
-                        const ok = await post(segments, t.root.id, null);
+                        const ok = await post(segments, t.root.id);
                         if (ok) {
                           setReplyDraft("");
                           setReplyTo(null);

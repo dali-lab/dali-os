@@ -10,7 +10,7 @@ import {
 import type { DocBlock } from "./schema/build";
 import { isCitationHref } from "~/components/meeting-recorder/enhance-plan";
 import { blocksToPlainText } from "./schema/configs";
-import { hashTemplateText, isUntouchedTemplate, normalizeTemplateText } from "~/lib/meeting-note-template";
+import { hashTemplateText, isUntouchedTemplate, normalizeTemplateText } from "~/calendar/lib/meeting-note-template";
 
 function heading(id: string, text: string, isToggleable = false): DocBlock {
   return {

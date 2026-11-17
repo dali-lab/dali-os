@@ -47,7 +47,7 @@ vi.mock("~/lib/db.server", () => ({
 
 vi.mock("~/lib/roles", () => ({
   isCore: vi.fn(),
-  isLabMember: vi.fn(),
+  isLabMemberOrAlum: vi.fn(),
   isProjectMember: vi.fn(),
 }));
 

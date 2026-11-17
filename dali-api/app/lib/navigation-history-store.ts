@@ -1,7 +1,7 @@
 // A single app-lifetime store for the back/forward history stack.
 //
 // The stack must outlive the component that renders the arrows: those hosts
-// (Layout's standalone bar, AreaPillNav/UnderlineTabButtons' inline arrows)
+// (Layout's standalone bar, inline arrows)
 // mount and unmount as the user moves between pages with and without a subnav
 // row, so holding the stack in their local state wiped the whole history on
 // every such transition. Keeping it here — subscribed via useSyncExternalStore

@@ -15,6 +15,7 @@ import {
   FileText,
   FolderCog,
   FolderKanban,
+  Gamepad2,
   Gavel,
   Globe,
   GraduationCap,
@@ -124,10 +125,10 @@ export const NAV_AREAS: NavArea[] = [
     hubPath: "/projects",
     subtabs: [
       { label: "Hub", href: "/projects", icon: LayoutGrid },
-      { label: "Staffing", href: "/projects/staffing", icon: Kanban, gate: (r) => r.canViewStaffing },
-      { label: "Intent to Work", href: "/projects/intent-to-work", icon: ClipboardPen, gate: (r) => r.canViewStaffing },
-      { label: "Project Bids", href: "/projects/project-bids", icon: Gavel, gate: (r) => r.canViewStaffing },
-      { label: "Level Up", href: "/projects/level-up", icon: ArrowUpCircle, gate: (r) => r.canViewStaffing },
+      { label: "Staffing", href: "/core/staffing", icon: Kanban, gate: (r) => r.canViewStaffing },
+      { label: "Intent to Work", href: "/core/intent-to-work", icon: ClipboardPen, gate: (r) => r.canViewStaffing },
+      { label: "Project Bids", href: "/core/project-bids", icon: Gavel, gate: (r) => r.canViewStaffing },
+      { label: "Level Up", href: "/core/level-up", icon: ArrowUpCircle, gate: (r) => r.canViewStaffing },
     ],
   },
   {
@@ -208,7 +209,7 @@ export const NAV_AREAS: NavArea[] = [
 // Core gets everything. Drive is not an area here at all — it is pinned under
 // Calendar (see pinnedNavItems). Every Core process page keeps a
 // working pre-regroup URL; the /core/* path is canonical only for flag-on
-// viewers, which the source loaders enforce via regroupRedirect.
+// viewers.
 // ---------------------------------------------------------------------------
 
 // Core's clustered tools as sub-tabs, derived (not duplicated) from
@@ -400,6 +401,10 @@ export const HOME_NAV_ITEM: SubTab = { label: "Home", href: "/", icon: Home };
 
 const ALUMNI_COMMUNITY_NAV_ITEM: SubTab = { label: "Community", href: "/community", icon: MapPinned, owns: "/members" };
 
+// The pixel lab game. Its route blocks play until an avatar exists (the lab
+// loader bounces avatar-less visitors to the creator at /alumni/welcome).
+const ALUMNI_GAME_NAV_ITEM: SubTab = { label: "Pixel lab", href: "/alumni/lab", icon: Gamepad2, owns: "/alumni" };
+
 // Alumni get one area, so the sidebar shows no section switcher for them.
 const ALUMNI_AREAS: NavArea[] = [
   {
@@ -410,6 +415,7 @@ const ALUMNI_AREAS: NavArea[] = [
     subtabs: [
       // Projects, Stories and the Gallery are reached from this page's links.
       { label: "Currently at DALI", href: "/currently", icon: Sparkles },
+      ALUMNI_GAME_NAV_ITEM,
       ALUMNI_COMMUNITY_NAV_ITEM,
       { label: "Opportunities", href: "/community/opportunities", icon: Lightbulb },
       REFER_NAV_ITEM,
@@ -453,6 +459,7 @@ export function areasForViewer(
           .filter((href) => href !== ALUMNI_COMMUNITY_NAV_ITEM.href),
   );
   if (!flags["refer-a-partner"]) hidden.add(REFER_NAV_ITEM.href);
+  if (!flags["alumni-game"]) hidden.add(ALUMNI_GAME_NAV_ITEM.href);
   return ALUMNI_AREAS.map((a) => ({
     ...a,
     subtabs: a.subtabs.filter((t) => !hidden.has(t.href)),

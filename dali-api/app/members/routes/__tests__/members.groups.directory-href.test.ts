@@ -6,7 +6,7 @@ vi.mock("~/lib/roles", () => ({
   canViewForms: vi.fn(),
   currentTermMemberWhere: vi.fn(),
 }));
-vi.mock("~/lib/groups", () => ({ listAllGroups: vi.fn() }));
+vi.mock("~/lib/groups.server", () => ({ listAllGroups: vi.fn() }));
 vi.mock("~/lib/login-next", () => ({ redirectToLogin: vi.fn() }));
 
 import { directoryHrefForSystemKey } from "~/members/routes/members.groups";

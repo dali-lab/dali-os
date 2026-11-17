@@ -3,8 +3,8 @@ import { prisma } from "~/lib/db.server";
 import { isAdmin } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
 import { createForm } from "~/forms/lib/form-page.server";
-import { resolveFilingFolder, singletonSlot } from "~/lib/drive-receivers.server";
-import { ensureRoot } from "~/lib/drive-roots.server";
+import { resolveFilingFolder, singletonSlot } from "~/drive/lib/drive-receivers.server";
+import { ensureRoot } from "~/drive/lib/drive-roots.server";
 import { DEFAULT_STAGES } from "~/hiring/lib/applicant-groups";
 import { FIRST_INTERVIEW_ROUND_ID, defaultTimeline } from "~/hiring/lib/cycle-timeline";
 import {

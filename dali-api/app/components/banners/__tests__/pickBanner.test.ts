@@ -3,7 +3,7 @@ import { pickBanner } from "~/components/banners/BannerHost";
 import type { BannerDTO } from "~/core/lib/banners.server";
 
 const b = (id: string, trigger: "AppOpen" | "Page", triggerPath: string | null = null) =>
-  ({ id, trigger, triggerPath }) as BannerDTO;
+  ({ id, trigger, triggerPath, untilFormId: null }) as BannerDTO;
 
 describe("pickBanner", () => {
   const live = [b("open", "AppOpen"), b("cal", "Page", "/calendar")];

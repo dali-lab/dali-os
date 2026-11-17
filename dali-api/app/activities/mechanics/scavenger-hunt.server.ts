@@ -1,4 +1,4 @@
-// Scavenger-hunt mechanic — server half (specs/activities.md §8). Validates the
+// Scavenger-hunt mechanic — server half (specs/archive/activities.md §8). Validates the
 // hunt config, records a dedup'd ActivityEvent when a member submits a correct
 // code or reveals a hint, and derives progress + the leaderboard from the event
 // stream. Codes are submitted from the activity modal, which is reachable from

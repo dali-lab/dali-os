@@ -35,7 +35,7 @@ export type RailState =
   | "stalePreview";
 
 /** Maps the hook's phase + Enhance flags onto the named state in
- *  specs/meeting-recording-rail.md Step 2's revised state table. Null while
+ *  specs/archive/meeting-recording-rail.md Step 2's revised state table. Null while
  *  idle — there's no rail body for the start sheet. "pendingReview" is
  *  derived from the document (rec.pendingMarks), not a flag: Step 2,
  *  "Pending is derived from the document". */
@@ -66,7 +66,7 @@ function unassignedSpeakerCount(rec: Pick<UseMeetingRecording, "speakerKeys" | "
 }
 
 /**
- * The Recording rail (specs/meeting-recording-rail.md): one surface for
+ * The Recording rail (specs/archive/meeting-recording-rail.md): one surface for
  * every state after Start. Wide canvas renders this sticky beside the
  * document; narrow canvas renders it inside ui/Drawer for every state except
  * the live ones. Purely presentational — `rec` carries all the state and
@@ -82,7 +82,7 @@ export function RecordingRail({ rec }: { rec: UseMeetingRecording }) {
 
   // The rail isn't a dialog (no focus trap), but Escape while focus is
   // inside it still closes it — e.g. after a citation chip moved focus to
-  // the highlighted line (specs/meeting-recording-rail.md "Accessibility").
+  // the highlighted line (specs/archive/meeting-recording-rail.md "Accessibility").
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (e.key !== "Escape") return;

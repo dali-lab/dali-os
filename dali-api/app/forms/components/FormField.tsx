@@ -4,7 +4,7 @@ import {
   type UrlCheckState,
 } from "~/components/form-builder/QuestionField";
 import { InfoBody } from "~/components/form-builder/info-body";
-import { hasNothingToPick } from "~/lib/form-answers";
+import { hasNothingToPick } from "~/forms/lib/form-answers";
 
 // The per-question wrapper that every fill surface used to hand-write:
 // label + standardized required star + optional description + the field.
@@ -26,7 +26,7 @@ export interface FormFieldProps {
   labelSuffix?: React.ReactNode;
   // e.g. portal.apply's url-warning / word-count line
   belowField?: React.ReactNode;
-  // Override the field renderer (e.g. MemberFormFillView's "no uploads here" notice).
+  // Override the field renderer, for a field that needs props this wrapper doesn't pass.
   renderField?: (q: Question) => React.ReactNode;
 }
 

@@ -2,9 +2,9 @@
 // Permission mirrors api.comments.ts GET.
 
 import { prisma } from "~/lib/db.server";
-import { isCore, isLabMember, isProjectMember } from "~/lib/roles";
+import { isCore, isLabMemberOrAlum, isProjectMember } from "~/lib/roles";
 import { getPageAccess } from "~/lib/pageAccess.server";
-import { hydrateAuthors } from "~/lib/collabAuth";
+import { hydrateAuthors } from "~/lib/collabAuth.server";
 import { keysetPage, keysetWindow, pageProps, type PageArgs } from "../../pagination";
 
 const PAGE_LIMITS = { defaultLimit: 50, maxLimit: 200 };
@@ -67,7 +67,7 @@ async function canRead(
   targetType: CommentTarget,
   targetId: string,
 ): Promise<boolean> {
-  if (targetType === "pagedoc") return isLabMember(callerId);
+  if (targetType === "pagedoc") return isLabMemberOrAlum(callerId);
   if (targetType === "doc") {
     const access = await getPageAccess(callerId, targetId);
     return access.canComment;

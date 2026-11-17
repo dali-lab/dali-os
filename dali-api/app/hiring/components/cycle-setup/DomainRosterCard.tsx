@@ -3,7 +3,7 @@ import { Form } from "react-router";
 import { Users, X } from "lucide-react";
 import { buttonClasses } from "~/components/ui/Button";
 import { Combobox, Select, Tooltip } from "~/components/ui/floating";
-import { SegmentedTabButtons } from "~/components/AreaPillNav";
+import { SegmentedTabButtons } from "~/components/ui/SegmentedTabs";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { SetupCard, rowTrigger } from "./SetupCard";

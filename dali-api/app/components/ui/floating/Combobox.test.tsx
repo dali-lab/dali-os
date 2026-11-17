@@ -158,4 +158,20 @@ describe("Combobox", () => {
     expect(secondId).toBeTruthy();
     expect(firstId).not.toBe(secondId);
   });
+
+  it("shows displayValue on the closed input and renders custom row labels", () => {
+    mount(
+      createElement(Combobox, {
+        value: "30",
+        options: opts,
+        onChange: () => {},
+        displayValue: "Half an hour",
+        renderLabel: (o: SelectOption<string>, q: string) => `${o.label}|${q}`,
+      }),
+    );
+    expect(input().value).toBe("Half an hour");
+    open();
+    type(input(), "3");
+    expect(options()[0].textContent).toContain("30 min|3");
+  });
 });

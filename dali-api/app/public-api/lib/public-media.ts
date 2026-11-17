@@ -14,7 +14,7 @@
 const MEDIA_PATH = "/api/media";
 
 export function publicMediaUrl(value: string | null | undefined): string | null {
-  if (!value) return null;
+  if (!value || value.startsWith("pattern:")) return null;
   if (/^https?:\/\//i.test(value)) return value;
   return `${MEDIA_PATH}?key=${encodeURIComponent(value)}`;
 }

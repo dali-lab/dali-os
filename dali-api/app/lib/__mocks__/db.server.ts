@@ -11,12 +11,22 @@ export const Prisma = {
 export const prisma = {
   user: {
     findUnique: vi.fn(),
+    findUniqueOrThrow: vi.fn(),
     findFirst: vi.fn(),
     findMany: vi.fn(),
     update: vi.fn(),
     updateMany: vi.fn(),
     upsert: vi.fn(),
     delete: vi.fn(),
+  },
+  pixelAvatar: {
+    findUnique: vi.fn(),
+    upsert: vi.fn(),
+    updateMany: vi.fn(),
+  },
+  alumniChatMessage: {
+    createMany: vi.fn(),
+    findMany: vi.fn(),
   },
   userEmail: {
     findUnique: vi.fn().mockResolvedValue(null),
@@ -90,6 +100,20 @@ export const prisma = {
   partnerApplicationFormBinding: {
     findFirst: vi.fn(),
     findMany: vi.fn().mockResolvedValue([]),
+  },
+  onboardingProfileFormBinding: {
+    findFirst: vi.fn().mockResolvedValue(null),
+    create: vi.fn(),
+    deleteMany: vi.fn(),
+  },
+  staffingPreference: {
+    deleteMany: vi.fn(),
+  },
+  intentToWork: {
+    deleteMany: vi.fn(),
+  },
+  educationApplicationAnswer: {
+    deleteMany: vi.fn(),
   },
   delibsSession: {
     findUnique: vi.fn(),
@@ -185,6 +209,7 @@ export const prisma = {
   dALIMember: {
     findUnique: vi.fn(),
     findMany: vi.fn().mockResolvedValue([]),
+    updateMany: vi.fn(),
   },
   partnerContact: {
     findUnique: vi.fn(),
@@ -297,6 +322,20 @@ export const prisma = {
     update: vi.fn(),
     updateMany: vi.fn(),
     deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+  },
+  banner: {
+    findMany: vi.fn().mockResolvedValue([]),
+    findFirst: vi.fn(),
+    findUnique: vi.fn(),
+    count: vi.fn().mockResolvedValue(0),
+    create: vi.fn(),
+    updateMany: vi.fn(),
+    deleteMany: vi.fn(),
+  },
+  bannerImpression: {
+    findMany: vi.fn().mockResolvedValue([]),
+    groupBy: vi.fn().mockResolvedValue([]),
+    upsert: vi.fn(),
   },
   notificationPreference: {
     findMany: vi.fn().mockResolvedValue([]),
@@ -716,6 +755,7 @@ export const prisma = {
     create: vi.fn(),
     update: vi.fn(),
     updateMany: vi.fn(),
+    delete: vi.fn(),
     count: vi.fn().mockResolvedValue(0),
     groupBy: vi.fn().mockResolvedValue([]),
   },
@@ -876,6 +916,7 @@ export const prisma = {
   workExperience: {
     createMany: vi.fn(),
     create: vi.fn(),
+    count: vi.fn(),
     updateMany: vi.fn(),
     deleteMany: vi.fn(),
   },

@@ -28,7 +28,7 @@ import {
   type OpenTabRequest,
 } from "~/lib/desktop-tabs";
 import { writeTabsSnapshotCookie } from "~/lib/desktop-tabs-pref";
-import { pageScrollY } from "~/lib/page-scroll";
+import { pageScrollY } from "~/drive/lib/page-scroll";
 
 export const TABS_STORAGE_KEY = "dali:desktop-tabs:v1";
 export const LEGACY_WORKSPACE_KEY = "dali:tabworkspace:v4";

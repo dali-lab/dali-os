@@ -3,7 +3,7 @@ import { prisma } from "~/lib/db.server";
 import { requireMemberSession, requireProjectEditAccess } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { resolvePhotoUrl } from "~/lib/photo";
-import { notifyTaskComment } from "../lib/task-notifications.server";
+import { addTaskComment, TASK_COMMENT_BODY_MAX } from "../lib/task-comments.server";
 
 // GET  /api/tasks/:id/comments — list a task's comments, oldest first.
 //      Readable by any DALI member (project boards are member-visible).
@@ -15,8 +15,6 @@ import { notifyTaskComment } from "../lib/task-notifications.server";
 //      move and re-status a task from the board but not comment on it: the
 //      modal answered "Forbidden" every time they tried.
 //      Assignees are notified via the task.comment event (author excluded).
-
-const BODY_MAX = 10_000;
 
 async function commentShape(row: {
   id: string;
@@ -100,28 +98,11 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (!text) {
     return withCors(request, Response.json({ error: "Body is required" }, { status: 400 }));
   }
-  if (text.length > BODY_MAX) {
+  if (text.length > TASK_COMMENT_BODY_MAX) {
     return withCors(request, Response.json({ error: "Comment is too long" }, { status: 400 }));
   }
 
-  const [comment] = await prisma.$transaction([
-    prisma.taskComment.create({
-      data: { taskId: params.id, authorId: userId, body: text },
-      select: {
-        id: true,
-        body: true,
-        createdAt: true,
-        author: { select: { id: true, firstName: true, lastName: true, photoUrl: true } },
-      },
-    }),
-    // A comment doesn't touch any other Task field, so it needs its own bump
-    // — see Task.activityAt.
-    prisma.task.update({ where: { id: params.id }, data: { activityAt: new Date() } }),
-  ]);
-
-  void notifyTaskComment({ taskId: params.id, authorId: userId, body: text }).catch(
-    (err) => console.error(`task ${params.id}: comment notify failed`, err),
-  );
+  const comment = await addTaskComment({ taskId: params.id, authorId: userId, body: text });
 
   return withCors(request, Response.json(await commentShape(comment)));
 }

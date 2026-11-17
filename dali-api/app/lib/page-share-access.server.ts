@@ -14,12 +14,13 @@
 // Plus one cross-workspace addition from the FullAccess tier: anyone granted
 // FullAccess on the page may re-share it (that's what FullAccess means).
 
+import { BadRequestError, ForbiddenError, NotFoundError } from "~/lib/http-error";
 import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { sharePermissionFor } from "~/lib/page-sharing.server";
-import { resolveGroupMembers } from "~/lib/groups";
-import { isRoot, ROOT_PUBLIC_ERROR, ROOT_SCOPE_ERROR } from "~/lib/drive-roots";
+import { resolveGroupMembers } from "~/lib/groups.server";
+import { isRoot, ROOT_PUBLIC_ERROR, ROOT_SCOPE_ERROR } from "~/drive/lib/drive-roots";
 import type {
   WorkspaceType,
   LinkAccess,
@@ -28,21 +29,21 @@ import type {
   ScopeKind,
 } from "~/generated/prisma/client";
 
-export class PageShareNotFoundError extends Error {
+export class PageShareNotFoundError extends NotFoundError {
   constructor() {
     super("Document not found");
     this.name = "PageShareNotFoundError";
   }
 }
 
-export class PageShareForbiddenError extends Error {
+export class PageShareForbiddenError extends ForbiddenError {
   constructor(message = "You can't manage this document's sharing") {
     super(message);
     this.name = "PageShareForbiddenError";
   }
 }
 
-export class GeneralAccessError extends Error {
+export class GeneralAccessError extends BadRequestError {
   constructor(message: string) {
     super(message);
     this.name = "GeneralAccessError";
@@ -347,7 +348,7 @@ export async function setFolderScope(
   // Narrowing scopes close the link; "Lab" is itself lab-wide, so it has
   // nothing to close and leaves each page's own setting alone.
   const narrowing = scopeKind === "Group" || scopeKind === "Private";
-  const { collectSubtree } = await import("~/lib/pages");
+  const { collectSubtree } = await import("~/lib/pages.server");
   const descendantIds = narrowing ? (await collectSubtree(pageId)).ids : [];
 
   await prisma.$transaction([

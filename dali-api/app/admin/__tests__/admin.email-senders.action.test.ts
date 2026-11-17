@@ -4,7 +4,7 @@ vi.mock("~/lib/db.server", () => ({ prisma: { gmailIntegration: { update: vi.fn(
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn(), isAdmin: vi.fn() }));
 vi.mock("~/lib/login-next", () => ({ redirectToLogin: vi.fn() }));
-vi.mock("~/lib/gmail-integration", () => ({ listSenderIntegrations: vi.fn() }));
+vi.mock("~/lib/gmail-integration.server", () => ({ listSenderIntegrations: vi.fn() }));
 vi.mock("~/email/lib/categories.server", () => ({
   CATEGORY_INTENTS: ["save-category", "delete-category"],
   handleInboxCategoryAction: vi.fn(async () => Response.json({ ok: true })),

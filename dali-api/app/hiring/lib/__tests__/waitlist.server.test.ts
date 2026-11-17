@@ -12,10 +12,15 @@ vi.mock("~/members/lib/provisioning.server", () => ({
 }));
 vi.mock("~/members/lib/welcome.server", () => ({
   sendWelcome: vi.fn(async () => ({ notified: true })),
-  onboardingEmailHtml: vi.fn(async () => "<onboarding/>"),
+  acceptanceEmailVars: vi.fn(() => ({
+    loginUrl: "https://os.test/login",
+    slackUrl: "https://slack.test",
+    daliEmail: "ada@dali.example.edu",
+    tempPassword: "x",
+  })),
+  acceptanceLogoHtml: vi.fn(() => "<logo/>"),
 }));
 vi.mock("~/hiring/lib/hiring-emails.server", () => ({ getHiringEmail: vi.fn() }));
-vi.mock("~/email/lib/templates.server", () => ({ getEmailTemplate: vi.fn(async () => null) }));
 
 import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
@@ -145,7 +150,7 @@ describe("acceptFromWaitlist, guard paths and side effects", () => {
 
   beforeEach(() => {
     db.domainApplication.findUnique.mockResolvedValue(waitlistedDa());
-    vi.mocked(getHiringEmail).mockResolvedValue({ subject: "Welcome", body: "Hi" } as any);
+    vi.mocked(getHiringEmail).mockResolvedValue({ subject: "Welcome", body: "Hi {{daliEmail}} {{tempPassword}}" } as any);
   });
 
   it("reports not-found", async () => {

@@ -10,7 +10,7 @@ import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 import { createForm } from "~/forms/lib/form-page.server";
 import { canEditDomainSetup } from "~/hiring/lib/domain-windows.server";
-import { resolveFilingFolder, singletonSlot } from "~/lib/drive-receivers.server";
+import { resolveFilingFolder, singletonSlot } from "~/drive/lib/drive-receivers.server";
 import type { Question } from "~/types";
 import { resolveReferenceOptions } from "~/forms/lib/reference-sources";
 import { safeParseJsonString } from "~/forms/lib/forms-data";

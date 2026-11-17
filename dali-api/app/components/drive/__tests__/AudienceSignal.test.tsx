@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { AudienceSignal, LabAudienceGlyph } from "~/components/drive/AudienceSignal";
-import type { Audience } from "~/lib/page-audience";
+import type { Audience } from "~/drive/lib/page-audience";
 
 const base: Audience = { kind: "private", label: "Only you", permission: "Edit" };
 const signal = (audience: Audience, onOpenShare?: () => void) =>

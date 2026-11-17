@@ -5,16 +5,16 @@ import {
   looksLikeWellFormedSessionId,
 } from "~/lib/cookies";
 import { logAuditEvent } from "~/lib/audit";
-import { lookupSession, rollSession, hashSessionId } from "~/lib/session";
+import { lookupSession, rollSession, hashSessionId } from "~/lib/session.server";
 import { withCors } from "~/lib/cors";
-import { isCore, isDomainLead, isLabMember, isProjectMember } from "~/lib/roles";
+import { getUserRoles, isCore, isLabMemberOrAlum, isProjectMember } from "~/lib/roles";
 import { prisma } from "~/lib/db.server";
 import { displayEmail } from "~/lib/display";
 import { cachedForRequest } from "~/lib/request-cache";
 import { getAppEnv } from "~/lib/app-env";
 import { sampleDuration } from "~/lib/perf-stats";
 
-// Session-backed auth middleware. See SESSION_AUTH_PLAN.md for design.
+// Session-backed auth middleware. See specs/archive/SESSION_AUTH_PLAN.md for design.
 // The `user.sub` shape is preserved from the legacy JWT payload so existing
 // callers (`auth.user.sub` is used across calendar/, collab/, etc.) keep
 // working without per-file edits.
@@ -22,7 +22,7 @@ import { sampleDuration } from "~/lib/perf-stats";
 // Derived from the User row, never stored: a DALI Workspace address types
 // "member", a NetID without one "dartmouth", neither "partner". It is a hint
 // about how the person signed in, not a role — lab membership is the
-// DALIMember row (isLabMember), and a NetID-native member types "dartmouth".
+// DALIMember row (isLabMemberOrAlum), and a NetID-native member types "dartmouth".
 export type AuthType = "member" | "dartmouth" | "partner";
 
 export type AuthUser = {
@@ -306,7 +306,7 @@ export async function requireCore(
 ): Promise<{ ok: true; auth: AuthSuccess } | { ok: false; response: Response }> {
   const auth = await requireAuth(request);
   if (!auth.ok) return { ok: false, response: auth.response };
-  const core = await isCore(auth.user.sub);
+  const core = await isCore(auth.user.sub, request);
   if (!core) return { ok: false, response: forbidden(request) };
   return { ok: true, auth };
 }
@@ -316,11 +316,8 @@ export async function requireCoreOrDomainLead(
 ): Promise<{ ok: true; auth: AuthSuccess } | { ok: false; response: Response }> {
   const auth = await requireAuth(request);
   if (!auth.ok) return { ok: false, response: auth.response };
-  const [core, domainLead] = await Promise.all([
-    isCore(auth.user.sub),
-    isDomainLead(auth.user.sub),
-  ]);
-  if (!core && !domainLead) return { ok: false, response: forbidden(request) };
+  const roles = await getUserRoles(auth.user.sub, request);
+  if (!roles.isCore && !roles.isDomainLead) return { ok: false, response: forbidden(request) };
   return { ok: true, auth };
 }
 
@@ -369,7 +366,7 @@ export async function requireProjectEditAccess(
 // nothing extra. Actions and API routes call this themselves because the
 // layout loader does not run for them.
 export async function isNonMember(auth: AuthSuccess, request: Request): Promise<boolean> {
-  return !(await isLabMember(auth.user.sub, request));
+  return !(await isLabMemberOrAlum(auth.user.sub, request));
 }
 
 export async function redirectNonMemberToPortal(

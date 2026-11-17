@@ -11,6 +11,7 @@ import { getApiBaseUrl, APPLICATIONS_FROM_EMAIL } from '~/lib/app-env'
 import { buildGoogleAuthUrl, GMAIL_READONLY_SCOPE, GMAIL_SEND_SCOPE, GOOGLE_CALENDAR_SCOPE } from '~/lib/google-oauth'
 import { isEmailPurpose, type EmailPurposeKey } from '~/lib/email-identities'
 import { randomBytes } from 'node:crypto'
+import { getEnv } from "~/lib/env.server";
 
 const GMAIL_STATE_COOKIE = '__dali_gmail_oauth_state'
 
@@ -42,7 +43,7 @@ export async function loader({ request }: { request: Request }) {
   const purpose: EmailPurposeKey = isEmailPurpose(purposeParam) ? purposeParam : 'Hiring'
 
   const apiBase = getApiBaseUrl()
-  const clientId = process.env.GMAIL_CLIENT_ID ?? process.env.GOOGLE_CLIENT_ID!
+  const clientId = getEnv().GMAIL_CLIENT_ID ?? getEnv().GOOGLE_CLIENT_ID!
 
   // The purpose rides the state (nonce.purpose) so the callback knows which
   // integration row to write; the cookie pins the whole value for CSRF.

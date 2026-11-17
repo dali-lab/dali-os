@@ -9,8 +9,8 @@ import { canEditProject } from "./access";
 import { parseMarkdown } from "../doc-markdown.server";
 import { replaceCollabDocContent } from "~/collab/write";
 import { pageDocName } from "~/collab/roomName";
-import { pageDepth, MAX_PAGE_DEPTH } from "~/lib/pages";
-import { duplicatePage } from "~/lib/page-copy.server";
+import { pageDepth, MAX_PAGE_DEPTH } from "~/lib/pages.server";
+import { duplicatePage } from "~/drive/lib/page-copy.server";
 
 const MAX_MARKDOWN_LENGTH = 300_000;
 

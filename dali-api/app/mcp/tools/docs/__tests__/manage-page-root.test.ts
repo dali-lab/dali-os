@@ -30,19 +30,20 @@ vi.mock("~/lib/db.server", () => ({
   },
 }));
 
-vi.mock("~/lib/drive-receivers.server", () => ({ clearTypeIfLeavingRoot: vi.fn() }));
+vi.mock("~/drive/lib/drive-receivers.server", () => ({ clearTypeIfLeavingRoot: vi.fn() }));
 
 vi.mock("~/lib/roles", () => ({
   isCore: vi.fn(),
-  isLabMember: vi.fn(),
+  isLabMemberOrAlum: vi.fn(),
   isProjectMember: vi.fn(),
 }));
 
 vi.mock("~/lib/pageAccess.server", () => ({
   getPageAccess: vi.fn(),
+  PAGE_ACCESS_SELECT: {},
 }));
 
-vi.mock("~/lib/page-copy.server", () => ({
+vi.mock("~/drive/lib/page-copy.server", () => ({
   duplicatePage: vi.fn(),
 }));
 
@@ -58,7 +59,7 @@ vi.mock("~/lib/audit", () => ({
   logAuditEvent: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock("~/lib/pages", () => ({
+vi.mock("~/lib/pages.server", () => ({
   pageDepth: vi.fn(),
   MAX_PAGE_DEPTH: 2,
   isAncestorOf: vi.fn(),
@@ -71,7 +72,7 @@ vi.mock("~/mcp/tools/access", () => ({
 import { prisma } from "~/lib/db.server";
 import { MANAGE_PAGE_TOOL_DEF, runManagePage } from "~/mcp/tools/docs/manage-page";
 import { canManageSharing } from "~/lib/page-share-access.server";
-import { clearTypeIfLeavingRoot } from "~/lib/drive-receivers.server";
+import { clearTypeIfLeavingRoot } from "~/drive/lib/drive-receivers.server";
 
 const mockPrisma = prisma as unknown as {
   page: { findUnique: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn> };
@@ -132,8 +133,8 @@ describe("manage_page move: receiver lifecycle", () => {
     (prisma as any).page.findMany.mockImplementation(({ where }: any) =>
       Promise.resolve(where.parentPageId === "f1" ? [{ id: "c1" }] : []),
     );
-    const { isLabMember, isCore } = await import("~/lib/roles");
-    vi.mocked(isLabMember).mockResolvedValue(true);
+    const { isLabMemberOrAlum, isCore } = await import("~/lib/roles");
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
     vi.mocked(isCore).mockResolvedValue(true);
 
     await runManagePage("u1", { action: "move", pageId: "f1", parentPageId: null, workspaceType: "Project", workspaceId: "p1" });

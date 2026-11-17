@@ -5,7 +5,7 @@ import { sendReassignmentEmails } from "~/hiring/lib/interview-emails";
 import { syncInterviewMeetAttendees } from "~/hiring/lib/interview-meet";
 import { getZonedParts, getZonedYMD, zonedWallTimeUtc } from "~/lib/timezone";
 import { interviewerCalendars, type InterviewerCalendar } from "~/hiring/lib/interview-availability.server";
-import { createRoomBooking, cancelRoomBooking, getRoomSchedule, blockedBy } from "~/lib/rooms.server";
+import { createRoomBooking, cancelRoomBooking, getRoomSchedule, blockedBy } from "~/rooms/lib/rooms.server";
 import type { SlotBlocker } from "~/hiring/lib/slot-blockers";
 import { isSingleDomainPool, type InterviewerAvailability } from "~/hiring/lib/interviewer-pool";
 

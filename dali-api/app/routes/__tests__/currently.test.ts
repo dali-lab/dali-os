@@ -22,7 +22,7 @@ vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
 vi.mock("~/lib/photo", () => ({
   resolvePhotoUrl: vi.fn(async (key: string | null) => (key ? `signed:${key}` : null)),
 }));
-vi.mock("~/lib/blog-post.server", () => ({ BLOG_LISTING_ORDER: [{ publishedAt: "desc" }] }));
+vi.mock("~/blog/lib/blog-post.server", () => ({ BLOG_LISTING_ORDER: [{ publishedAt: "desc" }] }));
 vi.mock("~/community/lib/gallery.server", () => ({ loadGalleryHighlights: vi.fn() }));
 vi.mock("~/projects/lib/showcase-view.server", () => ({ listShowcaseCards: vi.fn() }));
 

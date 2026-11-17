@@ -2,11 +2,11 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 const mockGetOAuthClient = vi.hoisted(() => vi.fn());
 
-vi.mock("~/lib/oauth", async () => ({
+vi.mock("~/lib/oauth.server", async () => ({
   // authorizationResponseUrl is a pure URL builder — use the real one so these
   // tests see the same `iss` the route actually emits.
   authorizationResponseUrl: (
-    await vi.importActual<typeof import("~/lib/oauth")>("~/lib/oauth")
+    await vi.importActual<typeof import("~/lib/oauth.server")>("~/lib/oauth.server")
   ).authorizationResponseUrl,
   createOAuthSession: vi.fn().mockResolvedValue({ id: "session-1" }),
   getOAuthClient: mockGetOAuthClient,
@@ -30,7 +30,7 @@ vi.mock("~/lib/db.server", () => ({
 }));
 
 import { _resetForTests } from "~/lib/rate-limit";
-import { createOAuthSession, generateAuthorizationCode } from "~/lib/oauth";
+import { createOAuthSession, generateAuthorizationCode } from "~/lib/oauth.server";
 import { prisma } from "~/lib/db.server";
 import { loader } from "~/routes/oauth.authorize";
 
@@ -109,6 +109,29 @@ describe("GET /oauth/authorize rate limiting", () => {
 
     const ok = await loader({ request: makeRequest("5.6.7.8") } as any);
     expect(ok.status).toBe(302);
+  });
+});
+
+describe("GET /oauth/authorize provider and account type", () => {
+  it.each(["cas", "unknown"])("proceeds with provider=%s and records neither", async (provider) => {
+    const params = new URLSearchParams(new URL(makeRequest("9.9.8.1").url).search);
+    params.set("provider", provider);
+    params.set("account_type", "dartmouth");
+    mockGetOAuthClient.mockResolvedValue({
+      ...(await mockGetOAuthClient()),
+      allowedProviders: ["google"],
+      requiredAccountType: "member",
+    });
+    const res = await loader({
+      request: new Request(`http://localhost/oauth/authorize?${params}`, {
+        headers: { "X-Forwarded-For": "9.9.8.1" },
+      }),
+    } as any);
+    expect(res.status).toBe(302);
+    expect(new URL(res.headers.get("location")!, "http://localhost").searchParams.get("error")).toBeNull();
+    const created = vi.mocked(createOAuthSession).mock.calls[0][0];
+    expect(created).not.toHaveProperty("provider");
+    expect(created).not.toHaveProperty("accountType");
   });
 });
 

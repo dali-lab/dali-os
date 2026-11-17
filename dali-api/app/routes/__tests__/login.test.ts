@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 // `~/routes/login` transitively imports `~/lib/auth`, which now reaches into
-// `~/lib/oauth` for the silent-refresh path; `oauth` imports the real Prisma
+// `~/lib/oauth.server` for the silent-refresh path; `oauth` imports the real Prisma
 // client. Mocking `~/lib/db.server` keeps these tests Prisma-free.
 vi.mock("~/lib/db.server");
 

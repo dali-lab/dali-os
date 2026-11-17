@@ -5,7 +5,7 @@ import {
   authorizationResponseUrl,
   getOAuthClient,
   generateAuthorizationCode,
-} from "~/lib/oauth";
+} from "~/lib/oauth.server";
 import { getOAuthIssuer } from "~/lib/app-env";
 import { isImpersonating, requireAuth } from "~/lib/auth";
 import { displayEmail } from "~/lib/display";

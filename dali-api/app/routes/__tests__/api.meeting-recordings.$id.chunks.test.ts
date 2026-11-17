@@ -3,11 +3,11 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
-vi.mock("~/lib/meeting-recording.server", () => ({ ownRecording: vi.fn(), recordChunk: vi.fn() }));
+vi.mock("~/calendar/lib/meeting-recording.server", () => ({ ownRecording: vi.fn(), recordChunk: vi.fn() }));
 vi.mock("~/lib/transcription/chunks.server", () => ({ putChunk: vi.fn() }));
 
 import { requireAuth } from "~/lib/auth";
-import { ownRecording, recordChunk } from "~/lib/meeting-recording.server";
+import { ownRecording, recordChunk } from "~/calendar/lib/meeting-recording.server";
 import { putChunk } from "~/lib/transcription/chunks.server";
 import { action } from "~/routes/api.meeting-recordings.$id.chunks";
 

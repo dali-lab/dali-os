@@ -5,7 +5,7 @@ import { requireOfferingManager } from "~/education/lib/access.server";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
 import { createMaterialPage } from "~/education/lib/lms.server";
-import { pageDepth, MAX_PAGE_DEPTH } from "~/lib/pages";
+import { pageDepth, MAX_PAGE_DEPTH } from "~/lib/pages.server";
 
 // POST /api/education/:offeringId/documents
 //

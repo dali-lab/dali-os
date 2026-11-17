@@ -18,8 +18,8 @@ import {
   isSelfClearingFormTodo,
   listNotificationHistory,
   type NotifLiveness,
-} from "~/lib/tasks";
-import { NOT_CANCELLED_MEETING, liveMeetingPingClauses } from "~/lib/notifications";
+} from "~/lib/tasks.server";
+import { NOT_CANCELLED_MEETING, liveMeetingPingClauses } from "~/lib/notifications.server";
 
 const mockPrisma = prisma as unknown as {
   notification: {

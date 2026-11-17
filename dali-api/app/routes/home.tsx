@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, redirect, useLoaderData } from "react-router";
+import { Link, useLoaderData } from "react-router";
 import { Bell, SquareCheck } from "lucide-react";
-import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";
-import { redirectToLogin } from "~/lib/login-next";
-import { listMyProjectTasks, listOpenTasks } from "~/lib/tasks";
+import { requireLabViewer } from "~/lib/lab-viewer.server";
+import { listMyProjectTasks, listOpenTasks } from "~/lib/tasks.server";
 import { loadShellUser } from "~/lib/shell-user.server";
 import { isBirthdayToday } from "~/members/lib/warmth";
 import { timed } from "~/lib/server-timing";
@@ -16,12 +15,9 @@ import BakerHero from "~/components/home/baker/BakerHero";
 import { buttonClasses } from "~/components/ui/Button";
 import { readOnlyRoles } from "~/lib/read-only-roles.server";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
-import { BirthdayBounce, type BirthdayPerson } from "~/components/home/BirthdayBounce";
+import { BirthdayLine, type BirthdayPerson } from "~/components/home/BirthdayLine";
 import SearchIcon from "~/components/home/landing/SearchIcon";
-import {
-  isLandingBackgroundId,
-  scheduledLandingWeek,
-} from "~/components/home/landing/backgrounds/schedule";
+import { isLandingBackgroundId, landingWeek } from "~/components/home/landing/backgrounds/schedule";
 import { currentTermStrict } from "~/lib/roles";
 import { termWeekNumber } from "~/lib/terms.shared";
 import { resultIcon } from "~/components/CommandPalette";
@@ -29,27 +25,28 @@ import { MIN_QUERY_LENGTH, type SearchResult } from "~/lib/search";
 import { Avatar } from "~/components/ui/Avatar";
 import {
   getZonedHourFraction,
-  getZonedYMD,
   resolveUserTimeZone,
 } from "~/lib/timezone";
 import type { Route } from "./+types/home";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const __loaderStart = performance.now();
-  const auth = await requireAuth(request);
-  if (!auth.ok) return redirectToLogin(request);
-  if (await isNonMember(auth, request)) return redirect("/portal");
-  const partnerRedirect = await redirectPartnerToPortal(auth);
-  if (partnerRedirect) return partnerRedirect;
+  const { auth } = await requireLabViewer(request);
 
   const me = await loadShellUser(auth.user.sub, request);
   const tz = resolveUserTimeZone(me);
 
   // Home shows the first few of the viewer's tasks; the full list, with its
   // actions and unread notifications, lives on My Tasks and in the bell panel.
+  // This week's title, background and badge; `?background=<id>` previews another week.
+  // en-CA formats as YYYY-MM-DD, the schedule's date format.
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(new Date());
+  const preview = new URL(request.url).searchParams.get("background");
+  const landing = landingWeek(today, preview);
+
   const [tasks, week, birthdays, alumniHome] = await Promise.all([
     timed(request, 'home.tasks', () => loadHomeTasks(auth.user.sub, request)),
-    loadCurrentWeek(tz, request),
+    loadTermWeek(isLandingBackgroundId(preview) ? landing.from : today, request),
     timed(request, 'home.birthdays', () => loadBirthdaysToday()),
     showsAlumniHome(auth.user.sub, request),
   ]);
@@ -69,17 +66,10 @@ export async function loader({ request }: Route.LoaderArgs) {
         ? "Good afternoon"
         : "Good evening";
 
-  // This week's title and background; `?background=<id>` previews another background.
-  const landing = scheduledLandingWeek(
-    // en-CA formats as YYYY-MM-DD, the schedule's date format.
-    new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(new Date()),
-  );
-  const preview = new URL(request.url).searchParams.get("background");
-
   return {
     greeting,
     milestoneTitle: landing.title,
-    background: isLandingBackgroundId(preview) ? preview : landing.id,
+    background: landing.id,
     week,
     user: auth.user,
     tasks,
@@ -140,11 +130,10 @@ async function loadHomeTasks(userId: string, request: Request): Promise<HomeTask
 
 const MY_TASKS_PATH = "/notifications";
 
-/* The term week "now" falls in, for the hero's badge: week 1 starts on the
-   current term's start date (days counted in the viewer's zone) and each week
-   is labelled with its first five days, e.g. "Week 1 Sep 15 – 19". Null
-   between terms, where the badge is dropped. */
-async function loadCurrentWeek(tz: string, request: Request) {
+/* The term week `day` (YYYY-MM-DD) falls in, for the hero's badge: week 1 starts on the
+   current term's start date and each week is labelled with its first five days,
+   e.g. "Week 1 Sep 15 – 19". Null between terms, where the badge is dropped. */
+async function loadTermWeek(day: string, request: Request) {
   const term = await currentTermStrict(request);
   if (!term) return null;
   const start = Date.UTC(
@@ -152,8 +141,9 @@ async function loadCurrentWeek(tz: string, request: Request) {
     term.startDate.getUTCMonth(),
     term.startDate.getUTCDate(),
   );
-  const today = getZonedYMD(new Date(), tz);
-  const number = termWeekNumber(Date.UTC(today.year, today.month - 1, today.day), start);
+  const [y, m, d] = day.split("-").map(Number);
+  const number = termWeekNumber(Date.UTC(y, m - 1, d), start);
+  if (number < 1) return null;
   const first = new Date(start + (number - 1) * 7 * DAY_MS);
   const last = new Date(first.getTime() + 4 * DAY_MS);
   const month = (d: Date) => d.toLocaleString("en-US", { month: "short", timeZone: "UTC" });
@@ -203,6 +193,7 @@ export default function Home() {
         milestoneTitle={milestoneTitle}
         greeting={greeting}
         userName={firstName}
+        belowGreeting={<BirthdayLine people={birthdays} />}
         search={<HomeSearch />}
         background={background}
         recentsHeading="My Tasks"
@@ -214,7 +205,6 @@ export default function Home() {
           media: <TaskCardMedia task={task} />,
         }))}
       />
-      <BirthdayBounce people={birthdays} />
     </div>
   );
 }

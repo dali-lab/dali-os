@@ -3,12 +3,12 @@ import type { Prisma } from "~/generated/prisma/client";
 import { prisma } from "~/lib/db.server";
 import { fullName } from "~/lib/display";
 import { resolvePhotoUrl } from "~/lib/photo";
-import { getDownloadUrl, isS3Configured } from "~/lib/s3";
+import { getDownloadUrl, isS3Configured } from "~/lib/s3.server";
 import { checkRateLimit } from "~/lib/rate-limit";
 import { summarizeReactions } from "~/lib/reactions";
-import { reactionRefusal, withEmojiImages } from "~/lib/reactions.server";
+import { toggleReaction, withEmojiImages } from "~/lib/reactions.server";
 import { notify } from "~/lib/notify.server";
-import { extractHandlesFromText, notifyMentions, resolveHandles } from "~/lib/mentions";
+import { extractHandlesFromText, notifyMentions, resolveHandles } from "~/lib/mentions.server";
 import { requireCommunityViewer } from "~/community/lib/community.server";
 import {
   GALLERY_COMMENT_MAX,
@@ -358,31 +358,37 @@ export async function applyGalleryIntent(
       const post = await visiblePost(viewer, postId);
       if (!post) return fail(404);
       const mine = { postId, userId: viewer.id, emoji };
-      const { count } = await prisma.galleryReaction.deleteMany({ where: mine });
-      if (count === 0) {
-        const used = await prisma.galleryReaction.findMany({
-          where: { postId },
-          select: { emoji: true },
-          distinct: ["emoji"],
+      const result = await toggleReaction(
+        {
+          remove: async () => (await prisma.galleryReaction.deleteMany({ where: mine })).count,
+          usedEmoji: async () =>
+            (
+              await prisma.galleryReaction.findMany({
+                where: { postId },
+                select: { emoji: true },
+                distinct: ["emoji"],
+              })
+            ).map((r) => r.emoji),
+          add: () =>
+            prisma.galleryReaction.upsert({
+              where: { postId_userId_emoji: mine },
+              create: mine,
+              update: {},
+            }),
+        },
+        emoji,
+      );
+      if (typeof result === "number") return fail(result);
+      if (result === "added" && post.authorId !== viewer.id) {
+        await notify({
+          eventType: "gallery.reaction",
+          createdByUserId: viewer.id,
+          message: {
+            vars: { personName: viewer.name, itemDetail: `${emoji} ${captionPreview(post.caption)}` },
+            link,
+          },
+          recipients: [{ userId: post.authorId }],
         });
-        const refused = await reactionRefusal(emoji, used.map((r) => r.emoji));
-        if (refused) return fail(refused);
-        await prisma.galleryReaction.upsert({
-          where: { postId_userId_emoji: mine },
-          create: mine,
-          update: {},
-        });
-        if (post.authorId !== viewer.id) {
-          await notify({
-            eventType: "gallery.reaction",
-            createdByUserId: viewer.id,
-            message: {
-              vars: { personName: viewer.name, itemDetail: `${emoji} ${captionPreview(post.caption)}` },
-              link,
-            },
-            recipients: [{ userId: post.authorId }],
-          });
-        }
       }
       break;
     }

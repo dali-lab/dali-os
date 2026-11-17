@@ -13,13 +13,13 @@ vi.mock("~/lib/github", () => ({
 }));
 vi.mock("~/slack/lib/slack-client", () => ({ inviteToWorkspace: vi.fn() }));
 vi.mock("~/lib/google-workspace", () => ({ provisionWorkspaceAccount: vi.fn() }));
-vi.mock("~/members/lib/slack-sync.server", () => ({ syncSlackUserId: vi.fn() }));
+vi.mock("~/slack/lib/slack-sync.server", () => ({ syncSlackUserId: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
 import { ensureTeam, addTeamMember, isNo2fa } from "~/lib/github";
 import { inviteToWorkspace } from "~/slack/lib/slack-client";
 import { provisionWorkspaceAccount } from "~/lib/google-workspace";
-import { syncSlackUserId } from "~/members/lib/slack-sync.server";
+import { syncSlackUserId } from "~/slack/lib/slack-sync.server";
 import { provisionNewMember } from "../provisioning.server";
 
 const db = prisma as unknown as Record<string, Record<string, ReturnType<typeof vi.fn>>>;
