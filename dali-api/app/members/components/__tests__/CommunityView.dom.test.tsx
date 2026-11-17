@@ -6,7 +6,7 @@ import { createRoutesStub, data } from "react-router";
 import { DialogProvider } from "~/components/ui/dialog";
 import { ToastProvider } from "~/components/ui/toast";
 import type { CommunityPerson } from "~/members/lib/community";
-import type { CommunityEvent } from "~/members/lib/community.server";
+import type { CommunityEvent, CommunityFilterOptions } from "~/members/lib/community.server";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -104,7 +104,11 @@ const baseData = () => ({
   },
   people: PEOPLE,
   unplaced: 0,
-  filterOptions: { classYears: [{ value: 2020, count: 2 }], roles: [], projects: [] },
+  filterOptions: {
+    classYears: [{ value: 2020, count: 2 }],
+    roles: [],
+    projects: [],
+  } as CommunityFilterOptions,
   events: [event("ev1"), event("on1", { online: true, location: "Online", lat: null, lng: null, title: "Online chat" })],
   tz: "America/New_York",
   openTo: { coffeeChats: false, resumeReviews: false },
@@ -315,7 +319,7 @@ describe("a selected place", () => {
     await click(radio("Events"));
     expect(text()).toContain("Hanover, NH and 1 more place");
     expect(text()).toContain("Event ev1");
-    await click(chip("Hanover, NH and 1 more place"));
+    await click(chip("Hanover, NH and 1 more place")!);
     expect(text()).toContain("Online chat");
   });
 
@@ -333,7 +337,7 @@ describe("a selected place", () => {
   it("clearing the chip brings everyone back and fits the map to all places", async () => {
     await mount();
     await click(button("pin Hanover"));
-    await click(chip("Hanover, NH"));
+    await click(chip("Hanover, NH")!);
     expect(chip("Hanover, NH")).toBeNull();
     expect(names()).toHaveLength(5);
     expect(document.querySelector('[data-testid="fit"]')!.textContent).toBe("43.70,-72.29,42.36,-71.06,51.50,-0.12");
