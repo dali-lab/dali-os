@@ -13,7 +13,7 @@ import {
   type Piece,
   type Run,
 } from './course'
-import { catmull, clamp, lerp, mix, seededRandom, smooth, sparkle, TAU, type Point } from './paint'
+import { catmull, clamp, lerp, mix, seededRandom, smooth, sparkle, strobe, TAU, type Point } from './paint'
 import { drawRunner } from './runner'
 
 /*
@@ -87,6 +87,7 @@ export function createTunnelScene(canvas: HTMLCanvasElement, options: Options) {
   let phase: ScenePhase = 'attract'
   let run: Run | null = null
   let lastScore = -1
+  let step = 0
 
   const narrow = () => W < 900 || W / H < 1.1
   const base = (): Point => (narrow() ? { x: W * 0.5, y: H * 0.62 } : { x: W * 0.3, y: H * 0.47 })
@@ -121,6 +122,7 @@ export function createTunnelScene(canvas: HTMLCanvasElement, options: Options) {
     flash = 1
     bursts.push({ r: 0 })
     lastScore = -1
+    step = 0
     audio.start()
     setPhase('play')
   }
@@ -438,6 +440,10 @@ export function createTunnelScene(canvas: HTMLCanvasElement, options: Options) {
     const vx = vp.x
     const vy = vp.y
     speed = 1 + r.speed / 3
+    if (dt > 0) step += (r.speed * dt - step) * 0.15
+    const seamBlur = strobe(step, ROW)
+    const holeBlur = strobe(step, ROW / 2)
+    const near = (z: number) => 1 - smooth(2.5, 6, z)
     flash = Math.max(0, flash - dt * 1.4)
     const P = (a: number, z: number, rr: number): [number, number] => {
       const sa = a - r.th + Math.PI / 2
@@ -474,11 +480,14 @@ export function createTunnelScene(canvas: HTMLCanvasElement, options: Options) {
     const i1 = Math.floor((cam + ZFAR) / ROW)
     const gapA = LW * 0.03
     for (let i = i1; i >= i0; i--) {
-      const z0 = Math.max(ZNEAR, i * ROW - cam + ROW * 0.035)
-      const z1 = (i + 1) * ROW - cam - ROW * 0.035
+      const zr = (i + 0.5) * ROW - cam
+      const seam = ROW * 0.035 * (1 - seamBlur * near(zr))
+      const z0 = Math.max(ZNEAR, i * ROW - cam + seam)
+      const z1 = (i + 1) * ROW - cam - seam
       if (z1 <= ZNEAR + 0.01) continue
       const row = rowAt(r, i)
       const zm = (z0 + z1) / 2
+      const settle = 1 - seamBlur * near(zm)
       const tone = 0.3 + 0.38 * Math.pow(clamp((zm - 1) / 13, 0, 1), 0.8)
       const alpha = smooth(ZFAR, ZFAR - 2.5, zm)
       if (alpha <= 0.01) continue
@@ -491,34 +500,52 @@ export function createTunnelScene(canvas: HTMLCanvasElement, options: Options) {
         // A bright lip wherever the floor drops away, so holes read as holes.
         const ahead = rowAt(r, i + 1)
         const behind = i > 0 ? rowAt(r, i - 1) : null
+        const edge = (aa: number, za: number, ab: number, zb: number) => {
+          let p = P(aa, za, 1)
+          g.moveTo(p[0], p[1])
+          p = P(ab, zb, 1)
+          g.lineTo(p[0], p[1])
+        }
+        const across: [number, number, number][] = []
         g.beginPath()
         for (let l = 0; l < LANES; l++) {
           if (!row[l]) continue
           const a0 = l * LW - LW / 2 + gapA
           const a1 = l * LW + LW / 2 - gapA
-          const edge = (aa: number, za: number, ab: number, zb: number) => {
-            let p = P(aa, za, 1)
-            g.moveTo(p[0], p[1])
-            p = P(ab, zb, 1)
-            g.lineTo(p[0], p[1])
-          }
-          if (ahead && !ahead[l]) edge(a0, z1, a1, z1)
-          if (behind && !behind[l]) edge(a0, z0, a1, z0)
+          if (ahead && !ahead[l]) across.push([a0, a1, z1])
+          if (behind && !behind[l]) across.push([a0, a1, z0])
           if (!row[lane(l - 1)]) edge(a0, z0, a0, z1)
           if (!row[lane(l + 1)]) edge(a1, z0, a1, z1)
         }
+        const lip = clamp((F * 0.018) / zm, 1, 4)
         g.strokeStyle = 'rgba(225,255,240,0.9)'
-        g.lineWidth = clamp((F * 0.018) / zm, 1, 4)
+        g.lineWidth = lip
         g.lineCap = 'round'
         g.stroke()
+        if (across.length) {
+          // Edges across the tunnel jump a long way each frame, so smear them over the distance covered.
+          const blur = 1 - settle
+          if (blur > 0.01) {
+            g.beginPath()
+            for (const [a0, a1, z] of across) quad(a0, a1, z, z + step)
+            g.fillStyle = `rgba(225,255,240,${0.3 * blur})`
+            g.fill()
+          }
+          g.beginPath()
+          for (const [a0, a1, z] of across) edge(a0, z, a1, z)
+          g.strokeStyle = `rgba(225,255,240,${0.9 * lerp(0.45, 1, settle)})`
+          g.lineWidth = lip * lerp(0.6, 1, settle)
+          g.stroke()
+        }
       }
-      if (tone < 0.85) {
+      if (tone < 0.85 && settle > 0.01) {
         g.beginPath()
         for (let l = 0; l < LANES; l++) if (!row || row[l]) quad(l * LW - LW * 0.3, l * LW + LW * 0.3, lerp(z0, z1, 0.12), lerp(z0, z1, 0.88))
-        g.fillStyle = `rgba(110,225,180,${0.1 * (1 - tone)})`
+        g.fillStyle = `rgba(110,225,180,${0.1 * (1 - tone) * settle})`
         g.fill()
       }
-      if ((F / z1) * LW * 0.05 > 1.1) {
+      const rivets = 1 - holeBlur * near(zm)
+      if (rivets > 0.01 && (F / z1) * LW * 0.05 > 1.1) {
         g.beginPath()
         for (let l = 0; l < LANES; l++) {
           if (row && !row[l]) continue
@@ -530,7 +557,7 @@ export function createTunnelScene(canvas: HTMLCanvasElement, options: Options) {
             }
           }
         }
-        g.fillStyle = `rgba(100,230,180,${0.28 * (1 - tone)})`
+        g.fillStyle = `rgba(100,230,180,${0.28 * (1 - tone) * rivets})`
         g.fill()
       }
     }
