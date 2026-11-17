@@ -115,21 +115,21 @@ describe("loadHubAccess", () => {
     db.domainLeadAssignment.findFirst.mockResolvedValue(null);
     db.domainLeadAssignment.findMany.mockResolvedValue([]);
     vi.mocked(currentTerm).mockResolvedValue({ id: "t1" } as any);
-    expect(await loadHubAccess("u1", { hubId: "h1" })).toMatchObject({ canEdit: false, canModerate: false, core: false, viewerId: "u1" });
+    expect(await loadHubAccess("u1", { hubId: "h1" })).toMatchObject({ canEdit: false, core: false, viewerId: "u1" });
   });
 
-  it("lets a lead of the domain edit and moderate, even a draft", async () => {
+  it("lets a lead of the domain edit, even a draft", async () => {
     viewer();
     db.resourceHubPage.findFirst.mockResolvedValue(hub({ publishedAt: null }) as any);
     db.domainLeadAssignment.findFirst.mockResolvedValue({ id: "a1" } as any);
     db.domainLeadAssignment.findMany.mockResolvedValue([{ domainId: "d1" }] as any);
     vi.mocked(currentTerm).mockResolvedValue({ id: "t1" } as any);
-    expect(await loadHubAccess("u1", { hubId: "h1" })).toMatchObject({ canEdit: true, canModerate: true });
+    expect(await loadHubAccess("u1", { hubId: "h1" })).toMatchObject({ canEdit: true });
   });
 
-  it("lets Core edit and moderate any hub", async () => {
+  it("lets Core edit any hub", async () => {
     viewer(true);
     db.resourceHubPage.findFirst.mockResolvedValue(hub({ publishedAt: null }) as any);
-    expect(await loadHubAccess("u1", { hubId: "h1" })).toMatchObject({ canEdit: true, canModerate: true, core: true });
+    expect(await loadHubAccess("u1", { hubId: "h1" })).toMatchObject({ canEdit: true, core: true });
   });
 });

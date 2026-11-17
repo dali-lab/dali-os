@@ -144,7 +144,12 @@ export async function fetchLinkPreview(raw: string): Promise<LinkPreview | null>
         return null;
       }
       if (res.status >= 300 && res.status < 400 && res.location) {
-        const next = isFetchableUrl(new URL(res.location, url).toString());
+        let next: URL | null;
+        try {
+          next = isFetchableUrl(new URL(res.location, url).toString());
+        } catch {
+          return null;
+        }
         if (!next) return null;
         url = next;
         continue;

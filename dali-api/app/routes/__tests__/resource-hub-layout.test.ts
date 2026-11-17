@@ -72,16 +72,10 @@ describe("loader", () => {
     expect(await get()).toMatchObject({ hub: { published: false }, canEdit: true });
   });
 
-  it("redirects an old domain-code link to the hub", async () => {
-    db.resourceHubPage.findUnique.mockResolvedValue(null);
-    db.resourceHubPage.findFirst.mockResolvedValue({ id: "p7" } as never);
-    await expect(get()).rejects.toMatchObject({ status: 302 });
-  });
-
   it("404s a hub that doesn't exist", async () => {
     db.resourceHubPage.findUnique.mockResolvedValue(null);
-    db.resourceHubPage.findFirst.mockResolvedValue(null);
     await expect(get()).rejects.toMatchObject({ status: 404 });
+    expect(db.resourceHubPage.findFirst).not.toHaveBeenCalled();
   });
 });
 

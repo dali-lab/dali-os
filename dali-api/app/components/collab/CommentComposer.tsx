@@ -11,7 +11,7 @@ import {
   MentionTextInput,
   type MentionInputHandle,
 } from "~/components/MentionTextInput";
-import { type BodySegment, mentionHandleMap, parseBodySegments } from "~/lib/comment-body";
+import { type BodySegment, parseBodySegments } from "~/lib/comment-body";
 
 type Identity = { name: string; photoUrl: string | null };
 
@@ -74,7 +74,6 @@ export function CommentComposer({
   onChange,
   onSubmit,
   onCancel,
-  mentions,
   busy = false,
   autoFocus = false,
   placeholder = "Add a comment…",
@@ -93,8 +92,6 @@ export function CommentComposer({
   onSubmit: (segments: BodySegment[]) => void;
   /** Escape closes the composer when the host has something to close. */
   onCancel?: () => void;
-  /** The chips already on the comment being edited, so saving keeps them. */
-  mentions?: BodySegment[] | null;
   busy?: boolean;
   autoFocus?: boolean;
   placeholder?: string;
@@ -107,7 +104,8 @@ export function CommentComposer({
 
   function handleSubmit() {
     if (!canPost) return;
-    const segments = parseBodySegments(value, mentionHandleMap(mentions, inputRef.current?.getMentionMap()));
+    const mentionMap = inputRef.current?.getMentionMap() ?? new Map<string, string>();
+    const segments = parseBodySegments(value, mentionMap);
     onSubmit(segments);
   }
 

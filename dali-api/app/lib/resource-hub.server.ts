@@ -74,7 +74,6 @@ export interface HubAccess {
   viewerId: string;
   core: boolean;
   canEdit: boolean;
-  canModerate: boolean;
 }
 
 /** One hub for a caller outside the web session (MCP): null unless the flag is on, they are a member, and the hub is published or theirs to edit. */
@@ -102,9 +101,7 @@ export async function loadHubAccess(
   if (!hub) return null;
   const canEdit = await canEditResourceHub(userId, hub);
   if (!hub.publishedAt && !canEdit) return null;
-  const led = viewer.core ? [] : await ledDomainIds(userId);
-  const canModerate = viewer.core || (hub.domainId !== null && led.includes(hub.domainId));
-  return { hub, viewerId: userId, core: viewer.core, canEdit, canModerate };
+  return { hub, viewerId: userId, core: viewer.core, canEdit };
 }
 
 // Behind the `resource-hub` flag, open to every lab member. 404 (not a
@@ -128,7 +125,7 @@ export async function requireResourceHubViewer(request: Request) {
   };
 }
 
-/** The hub every tab shares. Old domain-code links redirect; a draft is a 404 to anyone who can't edit it. */
+/** The hub every tab shares; a draft is a 404 to anyone who can't edit it. */
 export async function loadHubShell(request: Request, pageId: string) {
   const viewer = await requireResourceHubViewer(request);
   const page = await prisma.resourceHubPage.findUnique({
@@ -143,11 +140,7 @@ export async function loadHubShell(request: Request, pageId: string) {
       domain: { select: { displayName: true } },
     },
   });
-  if (!page) {
-    const old = await prisma.resourceHubPage.findFirst({ where: { domain: { code: pageId } }, select: { id: true } });
-    if (old) throw redirect(`/resource-hub/${old.id}`);
-    throw new Response("Not found", { status: 404 });
-  }
+  if (!page) throw new Response("Not found", { status: 404 });
   const canEdit = await canEditResourceHub(viewer.user.sub, page);
   if (!page.publishedAt && !canEdit) throw new Response("Not found", { status: 404 });
   return { viewer, page, canEdit };

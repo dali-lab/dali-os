@@ -75,4 +75,14 @@ describe("fetchLinkPreview deadline", () => {
     expect(await result).toBeNull();
     expect(destroyed.length).toBeGreaterThan(0);
   });
+
+  it("returns null for a malformed Location header instead of throwing", async () => {
+    hoisted.get.mockImplementation((_url: URL, _opts: unknown, cb: (res: unknown) => void) => {
+      const req = Object.assign(new EventEmitter(), { destroy: () => {} });
+      const res = Object.assign(new EventEmitter(), { statusCode: 302, headers: { location: "http://[" }, resume: () => {} });
+      queueMicrotask(() => cb(res));
+      return req;
+    });
+    expect(await fetchLinkPreview("https://example.com/a")).toBeNull();
+  });
 });

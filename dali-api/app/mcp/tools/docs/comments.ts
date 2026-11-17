@@ -27,7 +27,7 @@ const COMMENT_SELECT = {
 export const LIST_COMMENTS_TOOL = {
   name: "list_comments",
   description:
-    "List comment threads on a document (Page), project file, page-doc FAQ. Pages by root comment, oldest first, and each root is followed by all of its replies. limit counts root comments. Pass page.nextCursor as cursor to read the next page until page.hasMore is false. Permissions: docs require view access; files require Core or project membership; page-docs require lab membership.",
+    "List comment threads on a document (Page), project file, or page-doc FAQ. Pages by root comment, oldest first, and each root is followed by all of its replies. limit counts root comments. Pass page.nextCursor as cursor to read the next page until page.hasMore is false. Permissions: docs require view access; files require Core or project membership; page-docs require lab membership.",
   inputSchema: {
     type: "object" as const,
     properties: {
