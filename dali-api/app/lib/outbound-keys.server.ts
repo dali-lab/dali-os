@@ -36,3 +36,12 @@ export function sprintClosedSlackKey(projectId: string, bandKey: number): string
 export function staffingFinalizeWelcomeKey(cycleId: string, projectId: string): string {
   return `staffing.finalize_welcome:${cycleId}:${projectId}`;
 }
+
+// notify() appends the recipient id, so one key per offer is one intro per person.
+export function opportunityChatIntroKey(responseId: string): string {
+  return `opportunities.chat_intro:${responseId}`;
+}
+
+export function opportunityReferralShippedKey(referralId: string): string {
+  return `opportunities.referral_shipped:${referralId}`;
+}

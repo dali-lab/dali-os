@@ -370,6 +370,12 @@ model User {
   feedbackReactions FeedbackReaction[]
   feedbackComments  FeedbackComment[]
 
+  // ─── Community opportunities ──────────────────────────────────────────────
+  opportunityPosts     OpportunityPost[]
+  opportunityReactions OpportunityReaction[]
+  opportunityComments  OpportunityComment[]
+  opportunityResponses OpportunityResponse[]
+
   // ─── Community gallery ────────────────────────────────────────────────────
   galleryPosts     GalleryPost[]     @relation("GalleryPostAuthor")
   galleryHidden    GalleryPost[]     @relation("GalleryPostHider")
@@ -1686,6 +1692,95 @@ model FeedbackComment {
   author User         @relation(fields: [authorId], references: [id], onDelete: Cascade)
 
   @@index([postId, createdAt])
+}
+
+// ─── Community opportunities ─────────────────────────────────────────────────
+// The /community/opportunities feed. A null author is a DALI post.
+model OpportunityPost {
+  id                String              @id @default(cuid())
+  kind              OpportunityPostKind
+  authorId          String?
+  body              String
+  topic             String?
+  jobUrl            String?
+  companyName       String?
+  companyDomain     String?
+  logoKey           String?
+  blockColor        String?
+  role              String?
+  location          String?
+  jobType           String?
+  willRefer         Boolean             @default(false)
+  imageKey          String?
+  // Loose ref to PartnerReferral.id; unique so a shipped referral posts once.
+  partnerReferralId String?             @unique
+  stillOpenAskedAt  DateTime?
+  confirmedOpenAt   DateTime?
+  linkCheckedAt     DateTime?
+  closedAt          DateTime?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  author    User?                 @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  reactions OpportunityReaction[]
+  comments  OpportunityComment[]
+  responses OpportunityResponse[]
+
+  @@index([createdAt])
+  @@index([authorId])
+}
+
+enum OpportunityPostKind {
+  Job
+  ChatAsk
+  DaliUpdate
+}
+
+model OpportunityReaction {
+  id        String   @id @default(cuid())
+  postId    String
+  userId    String
+  emoji     String   @db.VarChar(64)
+  createdAt DateTime @default(now())
+
+  post OpportunityPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId, emoji])
+  @@index([postId])
+}
+
+model OpportunityComment {
+  id        String   @id @default(cuid())
+  postId    String
+  authorId  String
+  body      String
+  createdAt DateTime @default(now())
+
+  post   OpportunityPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  author User            @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([postId])
+}
+
+model OpportunityResponse {
+  id        String                  @id @default(cuid())
+  postId    String
+  userId    String
+  kind      OpportunityResponseKind
+  note      String?
+  createdAt DateTime                @default(now())
+
+  post OpportunityPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId, kind])
+  @@index([postId])
+}
+
+enum OpportunityResponseKind {
+  Interested
+  ChatOffer
 }
 
 // One photo in the Community gallery. A bulk upload makes one post per photo.
@@ -7385,6 +7480,10 @@ model PartnerReferral {
   // Full Pitch only: the referrer's own pitch for the partner.
   pitchBody          String?
 
+  // The application this referral led to, set by Partner Relations. Loose ref
+  // to PartnerApplication.id, like PartnerApplication.resultingProjectId.
+  partnerApplicationId String?
+
   // Partner Relations working notes + "we've reached out" marker.
   coreNotes          String?
   reachedOutAt       DateTime?
@@ -7394,6 +7493,7 @@ model PartnerReferral {
   @@index([createdAt])
   @@index([referredByUserId])
   @@index([tier])
+  @@index([partnerApplicationId])
 }
 
 enum PartnerReferralTier {

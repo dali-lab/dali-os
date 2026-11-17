@@ -1,8 +1,5 @@
-// Detail page for one PartnerReferral. Core-only. Shows every field the
-// referrer submitted plus a working surface for Partner Relations: Core notes
-// and a "we've reached out" toggle. Linking a referral to a resulting
-// PartnerApplication is left manual in this pilot — Partner Relations
-// cross-matches by partner email on the applications board.
+// Core-only detail for one PartnerReferral: the referrer's fields, Core notes,
+// the reached-out toggle and the link to the resulting application.
 
 import { Form, Link, redirect, useFetcher, useLoaderData } from "react-router";
 import {
@@ -23,6 +20,12 @@ import {
   setReferralReachedOut,
   updateReferralCoreNotes,
 } from "~/partners/lib/referrals.server";
+import {
+  linkReferralToApplication,
+  listApplicationOptions,
+} from "~/partners/lib/referral-status.server";
+import { REFERRAL_STATUS_LABEL } from "~/partners/lib/referral-status";
+import { Combobox } from "~/components/ui/floating";
 import {
   REFERRAL_TIER_BLURB,
   REFERRAL_TIER_LABEL,
@@ -57,7 +60,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const referral = await getReferralForCore(params.id);
   if (!referral) return redirect("/core/partners/referrals");
-  return { referral };
+  const applications = await listApplicationOptions(
+    referral.partnerApplicationId,
+  );
+  return { referral, applications };
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -87,6 +93,19 @@ export async function action({ request, params }: Route.ActionArgs) {
     return { ok: true };
   }
 
+  if (intent === "link-application") {
+    const raw = String(form.get("partnerApplicationId") ?? "").trim();
+    const result = await linkReferralToApplication(
+      params.id,
+      raw || null,
+      auth.user.sub,
+    );
+    if (!result.ok) {
+      return Response.json({ error: result.error }, { status: 400 });
+    }
+    return { ok: true };
+  }
+
   return Response.json({ error: "Unknown intent" }, { status: 400 });
 }
 
@@ -97,7 +116,7 @@ const TIER_ICON = {
 } as const;
 
 export default function ReferralDetail() {
-  const { referral } = useLoaderData<typeof loader>();
+  const { referral, applications } = useLoaderData<typeof loader>();
   const fetcher = useFetcher();
   const Icon = TIER_ICON[referral.tier];
   const [notes, setNotes] = useState(referral.coreNotes ?? "");
@@ -176,6 +195,41 @@ export default function ReferralDetail() {
             .
           </div>
         )}
+      </section>
+
+      <section className="flex flex-col gap-2 rounded-os-card bg-os-card px-5 py-4">
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-medium text-foreground">
+            Partner application
+          </span>
+          <span className="rounded-full bg-os-container px-2 py-0.5 text-xs text-os-grey">
+            {REFERRAL_STATUS_LABEL[referral.status]}
+          </span>
+        </div>
+        <Combobox
+          value={referral.partnerApplicationId ?? ""}
+          ariaLabel="Partner application"
+          placeholder="Link an application"
+          emptyLabel="No applications match"
+          options={[
+            { value: "", label: "Not linked" },
+            ...applications.map((a) => ({
+              value: a.id,
+              label: a.title,
+              description: a.orgName ?? undefined,
+            })),
+          ]}
+          onChange={(id) =>
+            fetcher.submit(
+              { intent: "link-application", partnerApplicationId: id },
+              { method: "post" },
+            )
+          }
+        />
+        <p className="text-xs text-muted-foreground">
+          When this application becomes a project, the referrer is told and
+          DALI posts about it in Opportunities.
+        </p>
       </section>
 
       <section className="rounded-os-card bg-os-card">
