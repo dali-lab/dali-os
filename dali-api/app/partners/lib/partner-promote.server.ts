@@ -4,6 +4,7 @@ import { BadRequestError, NotFoundError } from "~/lib/http-error";
 import { setApplicationStage } from "./partner-activity.server";
 import { movePlanningNoteToProject } from "./planning-notes.server";
 import { reopenProjectFromApplication } from "./partner-returns.server";
+import { onApplicationBecameProject } from "./referral-status.server";
 
 export type PromoteResult = {
   projectId: string;
@@ -64,6 +65,7 @@ export async function promotePartnerApplication(input: {
         request,
       }),
     );
+    await onApplicationBecameProject(app.id, reopened.id);
     return { projectId: reopened.id, alreadyExisted: false, reopened: true };
   }
 
@@ -131,5 +133,6 @@ export async function promotePartnerApplication(input: {
     return created;
   });
 
+  await onApplicationBecameProject(app.id, project.id);
   return { projectId: project.id, name: project.name, alreadyExisted: false };
 }
