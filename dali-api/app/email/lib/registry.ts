@@ -431,7 +431,7 @@ export const EMAIL_TEMPLATES = {
       subject: "DALI OS is open to alumni",
       body: [
         "Hi {{firstName}},",
-        "DALI OS is now open to alumni. Use your personal link to sign in and update your profile.",
+        "DALI OS is now open to alumni. The link below signs you in to your account and works once.",
         '<a href="{{inviteLink}}">Sign in to DALI OS</a>',
         "The link works once and expires in 60 days. If it has expired, open it and ask for a new one.",
       ].join("\n\n"),

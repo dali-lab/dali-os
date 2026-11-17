@@ -8,7 +8,7 @@ import { clearSessionCookie } from "~/lib/cookies";
 import { mintBetterAuthSession } from "~/lib/betterauth-session.server";
 import { appendBetterAuthSessionCookie } from "~/lib/betterauth-cookie.server";
 import { lookupAlumniInvite, redeemAlumniInvite, sendFreshAlumniInvite } from "~/lib/alumni-invite.server";
-import { recordUserEmail } from "~/lib/user-email.server";
+import { adoptInviteAddress } from "~/lib/contact-email.server";
 import { AuthButton } from "~/components/auth/AuthButton";
 import { AuthNotice, AuthShellV2 } from "~/components/auth/v2";
 
@@ -49,7 +49,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   await appendBetterAuthSessionCookie(headers, session.token);
   clearSessionCookie(headers);
 
-  await recordUserEmail({ userId: redeemed.userId, address: redeemed.sentTo, verified: true });
+  await adoptInviteAddress(redeemed.userId, redeemed.sentTo, request);
   await logAuditEvent({
     action: "login.success",
     userId: redeemed.userId,
@@ -83,7 +83,7 @@ export default function AlumniInvite() {
       {requested ? (
         <AuthNotice
           tone="success"
-          message="If this link was ours, a new one is on its way to the address it was sent to."
+          message="If this link came from DALI OS, a new one is on its way to the address it was sent to."
         />
       ) : (
         <Form method="post" className="flex flex-col gap-4">

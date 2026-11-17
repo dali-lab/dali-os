@@ -44,7 +44,7 @@ export default function SettingsSecurity() {
       <SettingsSection
         id="contact-email"
         title="Sign-in and contact email"
-        description="We send sign-in codes and updates to this address."
+        description="Sign-in codes and DALI OS updates go to this address."
       >
         <ContactEmailPicker
           key={current ?? "none"}

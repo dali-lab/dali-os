@@ -5,7 +5,7 @@ vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/lib/betterauth-session.server", () => ({ mintBetterAuthSession: vi.fn() }));
 vi.mock("~/lib/betterauth-cookie.server", () => ({ appendBetterAuthSessionCookie: vi.fn() }));
-vi.mock("~/lib/user-email.server", () => ({ recordUserEmail: vi.fn() }));
+vi.mock("~/lib/contact-email.server", () => ({ adoptInviteAddress: vi.fn() }));
 vi.mock("~/lib/alumni-invite.server", () => ({
   lookupAlumniInvite: vi.fn(),
   redeemAlumniInvite: vi.fn(),
@@ -17,7 +17,7 @@ import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 import { mintBetterAuthSession } from "~/lib/betterauth-session.server";
 import { appendBetterAuthSessionCookie } from "~/lib/betterauth-cookie.server";
-import { recordUserEmail } from "~/lib/user-email.server";
+import { adoptInviteAddress } from "~/lib/contact-email.server";
 import { lookupAlumniInvite, redeemAlumniInvite, sendFreshAlumniInvite } from "~/lib/alumni-invite.server";
 import { action, loader } from "../alumni.invite.$token";
 
@@ -34,7 +34,6 @@ beforeEach(() => {
   vi.mocked(appendBetterAuthSessionCookie).mockImplementation(async (headers) => {
     headers.append("Set-Cookie", "ba=sess; Path=/");
   });
-  vi.mocked(recordUserEmail).mockResolvedValue({ ok: true, created: true });
 });
 
 describe("loader", () => {
@@ -69,7 +68,7 @@ describe("loader", () => {
 });
 
 describe("action", () => {
-  it("redeems, signs in with cookies, records the proven address and lands on onboarding", async () => {
+  it("redeems, signs in with cookies, adopts the invite address and lands on onboarding", async () => {
     vi.mocked(redeemAlumniInvite).mockResolvedValue({ ok: true, userId: "u1", sentTo: "ada@example.com" });
 
     const res = (await post()) as Response;
@@ -77,25 +76,17 @@ describe("action", () => {
     expect(res.headers.get("Location")).toBe("/alumni/onboarding");
     expect(res.headers.getSetCookie().join(";")).toContain("ba=sess");
     expect(mintBetterAuthSession).toHaveBeenCalledWith(expect.objectContaining({ userId: "u1" }));
-    expect(recordUserEmail).toHaveBeenCalledWith({ userId: "u1", address: "ada@example.com", verified: true });
+    expect(adoptInviteAddress).toHaveBeenCalledWith("u1", "ada@example.com", expect.any(Request));
     expect(logAuditEvent).toHaveBeenCalledWith(
       expect.objectContaining({ action: "login.success", userId: "u1", metadata: { via: "alumni-invite", method: "alumni-invite" } }),
     );
-  });
-
-  it("still signs in when the address belongs to another account", async () => {
-    vi.mocked(redeemAlumniInvite).mockResolvedValue({ ok: true, userId: "u1", sentTo: "ada@example.com" });
-    vi.mocked(recordUserEmail).mockResolvedValue({ ok: false, conflictUserId: "u2" });
-    const res = (await post()) as Response;
-    expect(res.headers.get("Location")).toBe("/alumni/onboarding");
-    expect(res.headers.getSetCookie().join(";")).toContain("ba=sess");
   });
 
   it("signs nobody in when the link was already used", async () => {
     vi.mocked(redeemAlumniInvite).mockResolvedValue({ ok: false });
     expect(await post()).toEqual({ expired: true });
     expect(mintBetterAuthSession).not.toHaveBeenCalled();
-    expect(recordUserEmail).not.toHaveBeenCalled();
+    expect(adoptInviteAddress).not.toHaveBeenCalled();
   });
 
   it("asks for a fresh link without redeeming, and answers the same either way", async () => {

@@ -199,8 +199,8 @@ function ContactStep({ data, next }: { data: OnboardingView; next: () => void })
     <>
       <StepHeader
         eyebrow="First, a quick one"
-        title="Where should we reach you?"
-        sub="We'll send sign-in codes and updates here. You can change it later on your profile."
+        title="Your email"
+        sub="Sign-in codes and DALI OS updates go to this address. It can be changed later in settings."
       />
       <div className="pb-8">
         <ContactEmailPicker data={data.contactEmail} onDone={next} />

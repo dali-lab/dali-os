@@ -50,8 +50,8 @@ export function ContactEmailPicker({
     return (
       <div className="flex flex-col gap-4">
         <p className="text-[15px] leading-normal text-os-grey">
-          We sent a 6-digit code to <span className="font-semibold text-foreground">{pending}</span>. Enter it to
-          confirm this address.
+          A 6-digit code went to <span className="font-semibold text-foreground">{pending}</span>. It confirms
+          this address and expires in 10 minutes.
         </p>
         {error ? (
           <p role="alert" className="text-sm text-[var(--os-danger-ink)]">
@@ -92,7 +92,7 @@ export function ContactEmailPicker({
             checked={selected === option.address}
             onChange={() => setSelected(option.address)}
             label={option.address}
-            description={option.current ? "Current" : option.proven ? undefined : "We'll send a code to confirm it"}
+            description={option.current ? "Current" : option.proven ? undefined : "Needs a 6-digit code to confirm"}
           />
         ))}
         <Radio

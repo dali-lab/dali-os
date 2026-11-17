@@ -227,22 +227,46 @@ export async function confirmContactEmail(args: {
     throw new BadRequestError(`Too many tries. ${fresh}`);
   }
 
+  const attempt = await prisma.verification.updateMany({
+    where: { id: row.id, value: row.value },
+    data: { value: `${stored}:${attempts + 1}` },
+  });
+  if (attempt.count !== 1) throw new BadRequestError("That code didn't match. Check it and try again.");
+
   if (!sameHash(stored, hashCode(identifier, code))) {
-    const next = attempts + 1;
-    if (next >= CONTACT_CODE_MAX_ATTEMPTS) {
+    if (attempts + 1 >= CONTACT_CODE_MAX_ATTEMPTS) {
       await prisma.verification.deleteMany({ where: { identifier } });
       throw new BadRequestError(`Too many tries. ${fresh}`);
     }
-    await prisma.verification.updateMany({
-      where: { id: row.id, value: row.value },
-      data: { value: `${stored}:${next}` },
-    });
     throw new BadRequestError("That code didn't match. Check it and try again.");
   }
 
   const claimed = await prisma.verification.deleteMany({ where: { id: row.id } });
   if (claimed.count !== 1) throw new BadRequestError(`That code didn't work. ${fresh}`);
   await switchTo(args.userId, address, args.request);
+}
+
+export async function adoptInviteAddress(userId: string, address: string, request?: Request): Promise<void> {
+  const normalized = normalizeEmailAddress(address);
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { email: true } });
+  if (!user) return;
+  const current = user.email ? normalizeEmailAddress(user.email) : null;
+  const currentProven =
+    current !== null &&
+    current !== normalized &&
+    (await prisma.userEmail.findFirst({
+      where: { userId, address: current, verifiedAt: { not: null } },
+      select: { id: true },
+    })) !== null;
+  if (currentProven || current === normalized) {
+    await recordUserEmail({ userId, address: normalized, verified: true });
+    return;
+  }
+  try {
+    await switchTo(userId, normalized, request);
+  } catch (err) {
+    if (!(err instanceof BadRequestError)) throw err;
+  }
 }
 
 export type ContactEmailReply =

@@ -90,8 +90,8 @@ describe("contact email step", () => {
   it("opens first, with the current address preselected and no way to skip it", () => {
     mount(data);
     const text = container.textContent ?? "";
-    expect(text).toContain("Where should we reach you?");
-    expect(text).toContain("We'll send sign-in codes and updates here. You can change it later on your profile.");
+    expect(text).toContain("Your email");
+    expect(text).toContain("Sign-in codes and DALI OS updates go to this address. It can be changed later in settings.");
     expect(radio("ada@dali.dartmouth.edu").checked).toBe(true);
     expect(radio("ada@example.com").checked).toBe(false);
     expect(text).toContain("Use a different email");
@@ -112,7 +112,7 @@ describe("contact email step", () => {
     });
     await click("Continue");
     expect(posts[0]).toEqual({ intent: "choose-contact-email", address: "ada@example.com" });
-    expect(container.textContent).toContain("We sent a 6-digit code to ada@example.com");
+    expect(container.textContent).toContain("A 6-digit code went to ada@example.com");
     expect(container.querySelectorAll('input[inputmode="numeric"], input[autocomplete="one-time-code"]').length).toBeGreaterThan(0);
   });
 
@@ -120,7 +120,7 @@ describe("contact email step", () => {
     mount(data, { error: "That email is on another DALI OS account. Ask DALI staff to merge them." });
     await click("Continue");
     expect(container.textContent).toContain("That email is on another DALI OS account.");
-    expect(container.textContent).toContain("Where should we reach you?");
+    expect(container.textContent).toContain("Your email");
   });
 
   it("takes a typed address under Use a different email", async () => {

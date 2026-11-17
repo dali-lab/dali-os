@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("~/lib/db.server", () => ({
   prisma: {
     user: { findUnique: vi.fn(), findFirst: vi.fn(), update: vi.fn() },
-    userEmail: { findUnique: vi.fn() },
+    userEmail: { findUnique: vi.fn(), findFirst: vi.fn() },
     verification: { findFirst: vi.fn(), create: vi.fn(), deleteMany: vi.fn(), updateMany: vi.fn() },
     auditLog: { count: vi.fn() },
   },
@@ -25,6 +25,7 @@ import { recordUserEmail } from "~/lib/user-email.server";
 import {
   ADDRESS_ON_OTHER_ACCOUNT,
   CONTACT_CODE_MAX_ATTEMPTS,
+  adoptInviteAddress,
   chooseContactEmail,
   confirmContactEmail,
   listContactEmailOptions,
@@ -51,6 +52,7 @@ beforeEach(() => {
   db.user.findUnique.mockResolvedValue(user() as never);
   db.user.findFirst.mockResolvedValue(null as never);
   db.userEmail.findUnique.mockResolvedValue(null as never);
+  db.userEmail.findFirst.mockResolvedValue(null as never);
   db.auditLog.count.mockResolvedValue(0 as never);
   db.verification.findFirst.mockImplementation((async ({ where }: { where: { identifier: string | { startsWith: string } } }) => {
     const id = where.identifier;
@@ -281,5 +283,43 @@ describe("runContactEmailIntent", () => {
       ok: true,
       status: "switched",
     });
+  });
+});
+
+describe("confirmContactEmail under parallel guesses", () => {
+  it("does not check a guess whose attempt could not be counted", async () => {
+    await chooseContactEmail({ userId: "u1", address: "ada@example.com" });
+    const code = codeFromMail();
+    db.verification.updateMany.mockResolvedValueOnce({ count: 0 } as never);
+    await expect(confirmContactEmail({ userId: "u1", address: "ada@example.com", code })).rejects.toThrow("didn't match");
+    expect(db.user.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("adoptInviteAddress", () => {
+  it("makes the invite address the login email when the current one was never proven", async () => {
+    await adoptInviteAddress("u1", "Ada@Example.com");
+    expect(db.user.update).toHaveBeenCalledWith({ where: { id: "u1" }, data: { email: "ada@example.com", emailVerified: true } });
+    expect(record).toHaveBeenCalledWith({ userId: "u1", address: "ada@dali.dartmouth.edu" });
+  });
+
+  it("keeps a proven login email and only records the invite address as proven", async () => {
+    db.userEmail.findFirst.mockResolvedValue({ id: "e1" } as never);
+    await adoptInviteAddress("u1", "ada@example.com");
+    expect(db.user.update).not.toHaveBeenCalled();
+    expect(record).toHaveBeenCalledWith({ userId: "u1", address: "ada@example.com", verified: true });
+  });
+
+  it("only records the address when it already is the login email", async () => {
+    db.user.findUnique.mockResolvedValue(user({ email: "ada@example.com" }) as never);
+    await adoptInviteAddress("u1", "ada@example.com");
+    expect(db.user.update).not.toHaveBeenCalled();
+    expect(record).toHaveBeenCalledWith({ userId: "u1", address: "ada@example.com", verified: true });
+  });
+
+  it("leaves the account as it is when the address belongs to another account", async () => {
+    db.user.findFirst.mockResolvedValue({ id: "u2" } as never);
+    await expect(adoptInviteAddress("u1", "ada@example.com")).resolves.toBeUndefined();
+    expect(db.user.update).not.toHaveBeenCalled();
   });
 });
