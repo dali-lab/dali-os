@@ -81,6 +81,44 @@ describe("POST /api/public/partner-meeting-requests", () => {
     expect(drainNow).toHaveBeenCalledWith(["om-1"]);
   });
 
+  it("treats a request without wantsMeeting as a meeting request", async () => {
+    await handleWebsiteMeetingRequest(req(body));
+    const mail = mockEnqueue.mock.calls[0][0];
+    expect(mail.subject).toMatch(/^Meeting request:/);
+    expect(mail.eventType).toBe("partner.website_meeting_request");
+  });
+
+  it("emails partners@ about requests that don't want to meet, marked as support requests", async () => {
+    const res = await handleWebsiteMeetingRequest(
+      req({ ...body, plan: "Hosting", wantsMeeting: false, billing: "Annually", addons: ["Database Hosting", "Priority Support"] }),
+    );
+    expect(res.status).toBe(200);
+    const mail = mockEnqueue.mock.calls[0][0];
+    expect(mail.target).toBe("partners@dali.dartmouth.edu");
+    expect(mail.subject).toBe("Support request: Jordan Lee (Geisel)");
+    expect(mail.eventType).toBe("partner.website_support_request");
+    expect(mail.bodyHtml).toContain("They don't need a call.");
+    expect(mail.bodyHtml).toContain("Annually");
+    expect(mail.bodyHtml).toContain("Database Hosting, Priority Support");
+    expect(mail.bodyHtml).not.toContain("Reply to set up a time");
+  });
+
+  it("marks meeting requests and lists billing only when sent", async () => {
+    await handleWebsiteMeetingRequest(req({ ...body, wantsMeeting: true }));
+    const mail = mockEnqueue.mock.calls[0][0];
+    expect(mail.subject).toBe("Meeting request: Jordan Lee (Geisel)");
+    expect(mail.bodyHtml).toContain("Reply to set up a time");
+    expect(mail.bodyHtml).not.toContain(">Billing<");
+    expect(mail.bodyHtml).not.toContain(">Add-ons<");
+  });
+
+  it("escapes add-ons", async () => {
+    await handleWebsiteMeetingRequest(req({ ...body, wantsMeeting: false, addons: ["<img src=x>"] }));
+    const mail = mockEnqueue.mock.calls[0][0];
+    expect(mail.bodyHtml).not.toContain("<img src=x>");
+    expect(mail.bodyHtml).toContain("&lt;img src=x&gt;");
+  });
+
   it("escapes what the partner typed", async () => {
     await handleWebsiteMeetingRequest(
       req({ ...body, name: "<b>Eve</b>", org: "A & B", notes: "<script>x</script>" }),
@@ -124,6 +162,8 @@ describe("POST /api/public/partner-meeting-requests", () => {
       { ...body, project: "x".repeat(201) },
       { ...body, notes: "x".repeat(4001) },
       { name: "Only a name" },
+      { ...body, wantsMeeting: "yes" },
+      { ...body, addons: "Database Hosting" },
     ]) {
       expect((await handleWebsiteMeetingRequest(req(bad))).status).toBe(400);
     }
