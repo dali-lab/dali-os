@@ -57,7 +57,7 @@ beforeEach(() => {
 });
 
 describe("runOpportunitiesFreshness", () => {
-  it("selects open, unasked jobs with an author older than askAfterDays", async () => {
+  it("selects open, unasked jobs with an author, posted or last confirmed open before askAfterDays", async () => {
     await runOpportunitiesFreshness(ctx);
     expect(db.opportunityPost.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -66,7 +66,7 @@ describe("runOpportunitiesFreshness", () => {
           closedAt: null,
           stillOpenAskedAt: null,
           authorId: { not: null },
-          updatedAt: { lt: ago(30) },
+          OR: [{ confirmedOpenAt: null, createdAt: { lt: ago(30) } }, { confirmedOpenAt: { lt: ago(30) } }],
         },
       }),
     );
@@ -76,7 +76,7 @@ describe("runOpportunitiesFreshness", () => {
     askCandidates = [post()];
     const res = await runOpportunitiesFreshness(ctx);
     expect(db.opportunityPost.updateMany).toHaveBeenCalledWith({
-      where: { id: "p1", kind: "Job", closedAt: null, stillOpenAskedAt: null, updatedAt: { lt: ago(30) } },
+      where: { id: "p1", kind: "Job", closedAt: null, stillOpenAskedAt: null, OR: [{ confirmedOpenAt: null, createdAt: { lt: ago(30) } }, { confirmedOpenAt: { lt: ago(30) } }] },
       data: { stillOpenAskedAt: NOW },
     });
     expect(mockNotify).toHaveBeenCalledTimes(1);
@@ -134,17 +134,23 @@ describe("runOpportunitiesFreshness", () => {
       ([a]) => (a as { where: { id?: string } }).where.id && (a as { data: object }).data && "closedAt" in (a as { data: object }).data,
     );
     expect(closes).toHaveLength(1);
-    expect(closes[0][0]).toEqual({ where: { id: "dead", closedAt: null }, data: { closedAt: NOW } });
+    expect(closes[0][0]).toEqual({ where: { id: "dead", closedAt: null }, data: { closedAt: NOW, linkCheckedAt: NOW } });
+    for (const id of ["unknown", "alive"]) {
+      expect(db.opportunityPost.updateMany).toHaveBeenCalledWith({
+        where: { id, closedAt: null },
+        data: { linkCheckedAt: NOW },
+      });
+    }
     expect(res.note).toContain("dead links 1");
   });
 
-  it("checks at most 20 links per tick, oldest first", async () => {
+  it("checks at most 20 links per tick, least recently checked first", async () => {
     await runOpportunitiesFreshness(ctx);
     const call = db.opportunityPost.findMany.mock.calls.find(([a]) => (a as { where: { jobUrl?: unknown } }).where.jobUrl);
     expect(call![0]).toEqual(
       expect.objectContaining({
         where: { kind: "Job", closedAt: null, jobUrl: { not: null } },
-        orderBy: { updatedAt: "asc" },
+        orderBy: { linkCheckedAt: { sort: "asc", nulls: "first" } },
         take: 20,
       }),
     );

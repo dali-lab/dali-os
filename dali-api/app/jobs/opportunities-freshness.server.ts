@@ -9,6 +9,11 @@ export const LINK_CHECK_BATCH = 20;
 
 const daysAgo = (now: Date, days: number) => new Date(now.getTime() - days * DAY_MS);
 
+// Open since before the cutoff: posted then, or last confirmed open then.
+const openSince = (cutoff: Date) => ({
+  OR: [{ confirmedOpenAt: null, createdAt: { lt: cutoff } }, { confirmedOpenAt: { lt: cutoff } }],
+});
+
 export async function runOpportunitiesFreshness({ now, settings }: JobContext): Promise<JobResult> {
   const { askAfterDays, closeAfterDays, chatAskDays } = settings;
 
@@ -19,10 +24,10 @@ export async function runOpportunitiesFreshness({ now, settings }: JobContext): 
       closedAt: null,
       stillOpenAskedAt: null,
       authorId: { not: null },
-      updatedAt: { lt: askCutoff },
+      ...openSince(askCutoff),
     },
     select: { id: true, authorId: true, role: true, companyName: true },
-    orderBy: { updatedAt: "asc" },
+    orderBy: { createdAt: "asc" },
     take: ASK_SCAN_TAKE,
   });
 
@@ -35,7 +40,7 @@ export async function runOpportunitiesFreshness({ now, settings }: JobContext): 
         kind: "Job",
         closedAt: null,
         stillOpenAskedAt: null,
-        updatedAt: { lt: askCutoff },
+        ...openSince(askCutoff),
       },
       data: { stillOpenAskedAt: now },
     });
@@ -67,18 +72,18 @@ export async function runOpportunitiesFreshness({ now, settings }: JobContext): 
   const linked = await prisma.opportunityPost.findMany({
     where: { kind: "Job", closedAt: null, jobUrl: { not: null } },
     select: { id: true, jobUrl: true },
-    orderBy: { updatedAt: "asc" },
+    orderBy: { linkCheckedAt: { sort: "asc", nulls: "first" } },
     take: LINK_CHECK_BATCH,
   });
   let dead = 0;
   for (const post of linked) {
     if (!post.jobUrl) continue;
-    if ((await checkJobLinkAlive(post.jobUrl)) !== "dead") continue;
+    const isDead = (await checkJobLinkAlive(post.jobUrl)) === "dead";
     const { count } = await prisma.opportunityPost.updateMany({
       where: { id: post.id, closedAt: null },
-      data: { closedAt: now },
+      data: isDead ? { closedAt: now, linkCheckedAt: now } : { linkCheckedAt: now },
     });
-    dead += count;
+    if (isDead) dead += count;
   }
 
   const chats = await prisma.opportunityPost.updateMany({

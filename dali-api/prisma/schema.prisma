@@ -1713,6 +1713,8 @@ model OpportunityPost {
   // Loose ref to PartnerReferral.id; unique so a shipped referral posts once.
   partnerReferralId String?             @unique
   stillOpenAskedAt  DateTime?
+  confirmedOpenAt   DateTime?
+  linkCheckedAt     DateTime?
   closedAt          DateTime?
   createdAt         DateTime            @default(now())
   updatedAt         DateTime            @updatedAt

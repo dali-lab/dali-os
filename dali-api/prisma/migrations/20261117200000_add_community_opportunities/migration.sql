@@ -26,6 +26,8 @@ CREATE TABLE "OpportunityPost" (
     "imageKey" TEXT,
     "partnerReferralId" TEXT,
     "stillOpenAskedAt" TIMESTAMP(3),
+    "confirmedOpenAt" TIMESTAMP(3),
+    "linkCheckedAt" TIMESTAMP(3),
     "closedAt" TIMESTAMP(3),
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
