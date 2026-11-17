@@ -1,5 +1,4 @@
 import { Link } from "react-router";
-import type { MouseEvent } from "react";
 import { ArrowLeft } from "lucide-react";
 import { CoverTile, cardColorHex, coverGround, parseCover } from "~/components/cover/CoverPattern";
 import { GeneratedArt } from "~/components/cover/GeneratedArt";
@@ -11,13 +10,11 @@ export function HubHeader({
   domainName,
   coverUrl,
   published,
-  onBack,
 }: {
   title: string;
   domainName: string | null;
   coverUrl: string | null;
   published: boolean;
-  onBack: (e: MouseEvent<HTMLAnchorElement>) => void;
 }) {
   const parsed = parseCover(coverUrl);
   return (
@@ -30,7 +27,6 @@ export function HubHeader({
         <div className="flex flex-col gap-1.5">
           <Link
             to="/resource-hub"
-            onClick={onBack}
             className="inline-flex w-fit items-center gap-1.5 rounded-full border border-os-band-line bg-os-band-chip px-2.5 py-1 text-xs font-medium text-os-on-band"
           >
             <ArrowLeft className="h-3.5 w-3.5" aria-hidden />

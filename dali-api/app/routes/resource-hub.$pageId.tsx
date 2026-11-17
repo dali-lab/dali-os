@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { redirect, useFetcher, useLoaderData, useNavigate, useOutletContext } from "react-router";
+import { redirect, useFetcher, useLoaderData } from "react-router";
 import { Cloud, Eye, EyeOff, Trash2, Upload } from "lucide-react";
 import type { Route } from "./+types/resource-hub.$pageId";
 import {
@@ -13,11 +13,8 @@ import { getCollabToken } from "~/lib/collab-token.server";
 import { isAiEnabled } from "~/lib/ai.server";
 import { loadHubShell } from "~/lib/resource-hub.server";
 import { PageRowControls, type PageRowControl } from "~/components/os-page";
-import type { HubOutletContext } from "./resource-hub-layout";
 import { useDialog } from "~/components/ui/dialog";
-import { Modal, ModalHeader } from "~/components/Modal";
 import { useToast } from "~/components/ui/toast";
-import { Button } from "~/components/ui/Button";
 
 export const meta: Route.MetaFunction = ({ data }) => [
   { title: `${data?.page.title ?? "Resource Hub"} · DALI OS` },
@@ -74,54 +71,25 @@ const SYNC_LABEL: Record<DocSyncState, string> = {
 export default function ResourceHubPage() {
   const { page, canEdit, aiEnabled, collabToken, currentUserId, userName } =
     useLoaderData<typeof loader>();
-  const { leaveGuard } = useOutletContext<HubOutletContext>();
   const fetcher = useFetcher<{ error?: string; ok?: boolean }>();
-  const navigate = useNavigate();
-  const [leave, setLeave] = useState<"closed" | "asking" | "publishing">("closed");
   const dialog = useDialog();
   const toast = useToast();
   const [sync, setSync] = useState<DocSyncState>("saved");
-  const [dirty, setDirty] = useState(false);
-  useEffect(() => {
-    if (sync === "saving") setDirty(true);
-  }, [sync]);
   const [editor, setEditor] = useState<DocEditorInstance | null>(null);
   const [preview, setPreview] = useState(false);
   // Blocks as they stood when Preview was pressed, read before the live editor unmounts.
   const [snapshot, setSnapshot] = useState<unknown[] | null>(null);
 
   const submit = (data: Record<string, string>) => fetcher.submit(data, { method: "post" });
-  const announce = useRef<string | null>(null);
-  const leaveRef = useRef(leave);
-  leaveRef.current = leave;
   const handled = useRef<unknown>(null);
   useEffect(() => {
     if (fetcher.state !== "idle" || !fetcher.data || handled.current === fetcher.data) return;
     handled.current = fetcher.data;
-    const message = announce.current;
-    announce.current = null;
-    if (fetcher.data.ok) {
-      setDirty(false);
-      if (message) toast.success(message);
-      if (leaveRef.current === "publishing") navigate("/resource-hub");
-    } else {
-      toast.error("Couldn't publish. Try again.");
-      if (leaveRef.current === "publishing") setLeave("asking");
-    }
-  }, [fetcher.state, fetcher.data, navigate, toast]);
+    if (fetcher.data.ok) toast.success("Hub published. Changes now show to members as you edit.");
+    else toast.error("Couldn't publish. Try again.");
+  }, [fetcher.state, fetcher.data, toast]);
   const live = canEdit && !!collabToken;
   const editing = live && !preview;
-
-  useEffect(() => {
-    leaveGuard.current = () => {
-      if (!live || (page.published && !dirty)) return false;
-      setLeave("asking");
-      return true;
-    };
-    return () => {
-      leaveGuard.current = null;
-    };
-  }, [leaveGuard, live, page.published, dirty]);
 
   async function remove() {
     const ok = await dialog.confirm({
@@ -148,17 +116,18 @@ export default function ResourceHubPage() {
           },
         },
         { key: "delete", label: "Delete", icon: Trash2, onClick: () => void remove() },
-        {
-          key: "publish",
-          label: page.published ? "Update" : "Publish",
-          icon: Upload,
-          primary: true,
-          disabled: fetcher.state !== "idle",
-          onClick: () => {
-            announce.current = page.published ? "Hub updated." : null;
-            submit({ intent: "publish", published: "1" });
-          },
-        },
+        ...(page.published
+          ? []
+          : [
+              {
+                key: "publish",
+                label: "Publish",
+                icon: Upload,
+                primary: true,
+                disabled: fetcher.state !== "idle",
+                onClick: () => submit({ intent: "publish", published: "1" }),
+              },
+            ]),
       ]
     : [];
 
@@ -208,36 +177,6 @@ export default function ResourceHubPage() {
           initialContent={((preview && snapshot) || page.contentJson || []) as never}
         />
       )}
-      <Modal
-        open={leave !== "closed"}
-        onClose={() => leave === "asking" && setLeave("closed")}
-        labelledBy="leave-hub-title"
-        disableEscape={leave === "publishing"}
-        containerClassName="w-full max-w-sm rounded-os-card bg-os-card p-6 shadow-xl"
-      >
-        <ModalHeader
-          titleId="leave-hub-title"
-          title={page.published ? "Update this hub?" : "Publish this hub?"}
-          subtitle={page.published ? "Your changes are saved as you type. Updating publishes the current version for members." : "Members can see it once it's published. Otherwise it stays a draft that only you and editors can open."}
-          onClose={() => setLeave("closed")}
-          hideClose={leave === "publishing"}
-        />
-        <div className="flex items-center justify-end gap-2">
-          <Button variant="ghost" size="sm" disabled={leave === "publishing"} onClick={() => navigate("/resource-hub")}>
-            {page.published ? "No, leave as is" : "No, save as draft"}
-          </Button>
-          <Button
-            size="sm"
-            disabled={leave === "publishing"}
-            onClick={() => {
-              setLeave("publishing");
-              submit({ intent: "publish", published: "1" });
-            }}
-          >
-            {page.published ? "Update" : "Publish"}
-          </Button>
-        </div>
-      </Modal>
     </div>
   );
 }

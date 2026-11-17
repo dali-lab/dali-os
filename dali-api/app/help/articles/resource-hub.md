@@ -17,7 +17,7 @@ Open [Resource Hub](/resource-hub) in the sidebar. Each card is one domain's hub
 Each hub is a page you read like any document. You can edit it if you are Core, a lead of the hub's domain this term, or the member who created the hub. Everyone else sees it read-only.
 
 - A new hub starts as a draft. Select **Publish** to let all members see it.
-- After that the button reads **Update**. Your changes save as you type, and **Update** publishes the current version.
+- Once a hub is published, your changes save as you type and show to members as you edit.
 - Select **Preview** to see the page as members see it, and **Back to editing** to return.
 - Select **Delete** to remove the whole hub.
 

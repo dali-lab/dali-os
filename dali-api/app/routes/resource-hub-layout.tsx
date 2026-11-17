@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Outlet, useFetcher, useLoaderData } from "react-router";
 import type { Route } from "./+types/resource-hub-layout";
 import { uploadEditorImage } from "~/components/doc";
@@ -8,8 +8,6 @@ import { HubHeader } from "~/components/resource-hub/HubHeader";
 import { HubCoverStudio } from "~/components/resource-hub/HubCoverStudio";
 import { prisma } from "~/lib/db.server";
 import { loadHubShell } from "~/lib/resource-hub.server";
-
-export type HubOutletContext = { leaveGuard: { current: (() => boolean) | null } };
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const { page, canEdit } = await loadHubShell(request, params.pageId!);
@@ -47,8 +45,6 @@ export default function ResourceHubLayout() {
   const fetcher = useFetcher<{ error?: string; ok?: boolean }>();
   const [editing, setEditing] = useState(false);
   const [staleResult, setStaleResult] = useState<unknown>(null);
-  const leaveGuard = useRef<(() => boolean) | null>(null);
-  const context = useMemo<HubOutletContext>(() => ({ leaveGuard }), []);
   useEffect(() => {
     if (fetcher.state === "idle" && fetcher.data?.ok) setEditing(false);
   }, [fetcher.state, fetcher.data]);
@@ -61,9 +57,6 @@ export default function ResourceHubLayout() {
           domainName={hub.domainName}
           coverUrl={hub.coverUrl}
           published={hub.published}
-          onBack={(e) => {
-            if (leaveGuard.current?.()) e.preventDefault();
-          }}
         />
         <PageTabRow
           label="Hub"
@@ -79,7 +72,7 @@ export default function ResourceHubLayout() {
           settingsLabel="Edit title and cover"
           settingsActive={editing}
         />
-        <Outlet context={context} />
+        <Outlet />
         {editing && (
           <HubCoverStudio
             busy={fetcher.state !== "idle"}

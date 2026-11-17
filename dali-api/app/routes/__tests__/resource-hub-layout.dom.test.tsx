@@ -24,7 +24,7 @@ const resources = { page: { id: "p1", title: "Design", published: true, contentJ
 type Result = Record<string, unknown>;
 function mount(
   path: string,
-  over: { canEdit?: boolean; hub?: Partial<typeof hub>; collabToken?: string | null; layoutAction?: () => Result; pageAction?: () => Result } = {},
+  over: { pageData?: Partial<typeof resources.page>; canEdit?: boolean; hub?: Partial<typeof hub>; collabToken?: string | null; layoutAction?: () => Result; pageAction?: () => Result } = {},
 ) {
   const router = createMemoryRouter(
     [
@@ -34,7 +34,7 @@ function mount(
         loader: () => ({ hub: { ...hub, ...over.hub }, canEdit: over.canEdit ?? true }),
         action: over.layoutAction,
         children: [
-          { index: true, Component: Resources, action: over.pageAction, loader: () => ({ ...resources, canEdit: over.canEdit ?? true, collabToken: over.collabToken === undefined ? "t" : over.collabToken }) },
+          { index: true, Component: Resources, action: over.pageAction, loader: () => ({ ...resources, page: { ...resources.page, ...over.pageData }, canEdit: over.canEdit ?? true, collabToken: over.collabToken === undefined ? "t" : over.collabToken }) },
         ],
       },
     ],
@@ -70,13 +70,21 @@ describe("Resource Hub layout", () => {
     expect(container.querySelector("nav")).toBeNull();
     expect(container.querySelector('[role="tablist"]')).toBeNull();
     expect(container.querySelector('[data-slot="island"]')).toBeNull();
-    expect(rowButtons(container)).toEqual(["Preview", "Delete", "Update", "Edit title and cover"]);
+    expect(rowButtons(container)).toEqual(["Preview", "Delete", "Edit title and cover"]);
   });
 
-  it("renders Resources' preview, delete and publish actions in the row for an editor", async () => {
+  it("renders Resources' preview and delete actions, and no Update button, for a published hub", async () => {
     const { container } = mount("/resource-hub/p1");
     await settle();
-    expect(rowButtons(container)).toEqual(expect.arrayContaining(["Preview", "Delete", "Update"]));
+    expect(rowButtons(container)).toEqual(expect.arrayContaining(["Preview", "Delete"]));
+    expect(rowButtons(container)).not.toContain("Update");
+    expect(rowButtons(container)).not.toContain("Publish");
+  });
+
+  it("offers Publish on a draft hub", async () => {
+    const { container } = mount("/resource-hub/p1", { hub: { published: false }, pageData: { published: false } });
+    await settle();
+    expect(rowButtons(container)).toContain("Publish");
   });
 
   it("gives a viewer who can't edit no Resources actions", async () => {
@@ -123,19 +131,19 @@ describe("Resource Hub layout", () => {
     expect(document.body.textContent).not.toContain("Title is taken.");
   });
 
-  it("says the hub was updated only after the update succeeds", async () => {
-    const { container } = mount("/resource-hub/p1", { pageAction: () => ({ ok: true }) });
+  it("says changes show to members after a draft is published", async () => {
+    const { container } = mount("/resource-hub/p1", { pageData: { published: false }, pageAction: () => ({ ok: true }) });
     await settle();
-    click(container.querySelector('[aria-label="Update"]') ?? [...row(container).querySelectorAll("button")].find((b) => b.textContent?.trim() === "Update")!);
+    click([...row(container).querySelectorAll("button")].find((b) => b.textContent?.trim() === "Publish")!);
     expect(toast.success).not.toHaveBeenCalled();
     await settle();
-    expect(toast.success).toHaveBeenCalledWith("Hub updated.");
+    expect(toast.success).toHaveBeenCalledWith("Hub published. Changes now show to members as you edit.");
   });
 
-  it("shows an error when the update fails", async () => {
-    const { container } = mount("/resource-hub/p1", { pageAction: () => ({ error: "x" }) });
+  it("shows an error when publishing fails", async () => {
+    const { container } = mount("/resource-hub/p1", { pageData: { published: false }, pageAction: () => ({ error: "x" }) });
     await settle();
-    click([...row(container).querySelectorAll("button")].find((b) => b.getAttribute("aria-label") === "Update" || b.textContent?.trim() === "Update")!);
+    click([...row(container).querySelectorAll("button")].find((b) => b.textContent?.trim() === "Publish")!);
     await settle();
     expect(toast.error).toHaveBeenCalledWith("Couldn't publish. Try again.");
     expect(toast.success).not.toHaveBeenCalled();
