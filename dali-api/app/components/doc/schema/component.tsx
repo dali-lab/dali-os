@@ -24,6 +24,7 @@ import { COLLECTION_ICONS, CollectionTileBody } from "../components/CollectionVi
 import { ChevronDown } from "lucide-react";
 import { IMAGE_UPLOAD_ACCEPT, uploadEditorImage } from "../upload";
 import { componentConfig } from "./configs";
+import { onFreshComponent, takeFreshComponent } from "./fresh-components";
 
 function Field({
   def,
@@ -2441,13 +2442,15 @@ function ComponentForm({
   );
 }
 
-function ComponentBlock({
+export function ComponentBlock({
+  blockId,
   kind,
   data,
   editable,
   onSave,
   onRemove,
 }: {
+  blockId: string;
   kind: string;
   data: string;
   editable: boolean;
@@ -2455,14 +2458,27 @@ function ComponentBlock({
   onRemove?: () => void;
 }) {
   const def = kindDef(kind);
-  const saved = parseComponentData(kind, data);
-  const isNew = saved.fields._new === "1";
-  const [editing, setEditing] = useState(isNew && editable);
+  const parsedData = parseComponentData(kind, data);
+  const { _new: _legacy, ...savedFields } = parsedData.fields;
+  const saved: ComponentData = { ...parsedData, fields: savedFields };
+  const [isNew, setIsNew] = useState(false);
+  const [editing, setEditing] = useState(false);
   const [live, setLive] = useState<ComponentData["items"] | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const dragIdx = useRef<number | null>(null);
   const parsed = live ? { ...saved, items: live } : saved;
   const reorderable = editable && !editing && kind === "cards";
+
+  useEffect(() => {
+    if (!editable) return;
+    const open = () => {
+      if (!takeFreshComponent(blockId)) return;
+      setIsNew(true);
+      setEditing(true);
+    };
+    open();
+    return onFreshComponent(open);
+  }, [blockId, editable]);
 
   // Pinned cards can be dragged in place: the order updates live under the
   // pointer and is saved when the drag ends.
@@ -2534,6 +2550,7 @@ function ComponentBlock({
           onSave={(next) => {
             const { _new: _flag, ...fields } = next.fields;
             onSave({ ...next, fields });
+            setIsNew(false);
             setEditing(false);
           }}
         />
@@ -2560,6 +2577,7 @@ function ComponentBlock({
 const createComponentBlock = createReactBlockSpec(componentConfig, {
   render: (props) => (
     <ComponentBlock
+      blockId={props.block.id}
       kind={props.block.props.kind}
       data={props.block.props.data}
       editable={props.editor.isEditable}

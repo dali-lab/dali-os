@@ -35,6 +35,7 @@ import type { DefaultReactSuggestionItem } from "@blocknote/react";
 import { insertItemIntoGroup } from "../blocks-util";
 import { COMPONENT_KINDS, blankComponentData } from "../components/kinds";
 import type { Features } from "../features";
+import { markFreshComponent } from "./fresh-components";
 import type { DocEditorInstance } from "./build";
 
 // DefaultReactSuggestionItem's type omits `key`, but the runtime objects carry
@@ -141,12 +142,6 @@ const COMPONENT_ICONS: Record<string, LucideIcon> = {
   code: Code2,
 };
 
-// A new component opens its editor empty (flagged `_new`) instead of dropping sample content into the page.
-function newComponentData(def: (typeof COMPONENT_KINDS)[number]) {
-  const blank = blankComponentData(def);
-  return { ...blank, fields: { ...blank.fields, _new: "1" } };
-}
-
 // One item per library entry, in a group of their own at the end of the menu.
 function componentItems(editor: DocEditorInstance): KeyedItem[] {
   return COMPONENT_KINDS.map((def) => {
@@ -159,10 +154,11 @@ function componentItems(editor: DocEditorInstance): KeyedItem[] {
       group: "Components",
       icon: <Icon size={18} aria-hidden />,
       onItemClick: () => {
-        insertOrUpdateBlockForSlashMenu(editor, {
+        const block = insertOrUpdateBlockForSlashMenu(editor, {
           type: "component",
-          props: { kind: def.kind, data: JSON.stringify(newComponentData(def)) },
+          props: { kind: def.kind, data: JSON.stringify(blankComponentData(def)) },
         });
+        markFreshComponent(block.id);
       },
     };
   });
