@@ -1,5 +1,5 @@
 import { Link } from "react-router";
-import { Building2, Globe, Handshake } from "lucide-react";
+import { Building2, Globe, Handshake, PanelsTopLeft } from "lucide-react";
 import { PageBarMenuItems, usePageBarSlot } from "~/components/shell/page-bar-slot";
 import { Menu } from "~/components/ui/floating";
 
@@ -21,20 +21,30 @@ const VIEWS = {
     icon: Globe,
     href: (id: string) => `/projects/${id}/public-view`,
   },
+  showcase: {
+    label: "Website card",
+    icon: PanelsTopLeft,
+    href: (id: string) => `/projects/${id}/showcase`,
+  },
 } as const;
 
 export type ProjectViewKey = keyof typeof VIEWS;
 
 // Renders links to every view except the one currently open, so the header
-// control reads as a toggle in place rather than a "back" link.
+// control reads as a toggle in place rather than a "back" link. The website
+// card only exists once the showcase is published, so its link is opt-in.
 export function ProjectViewSwitch({
   projectId,
   current,
+  showcasePublished = false,
 }: {
   projectId: string;
   current: ProjectViewKey;
+  showcasePublished?: boolean;
 }) {
-  const others = (Object.keys(VIEWS) as ProjectViewKey[]).filter((k) => k !== current);
+  const others = (Object.keys(VIEWS) as ProjectViewKey[]).filter(
+    (k) => k !== current && (k !== "showcase" || showcasePublished),
+  );
   const inPageBar = usePageBarSlot();
   if (inPageBar) {
     return (

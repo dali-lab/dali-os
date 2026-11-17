@@ -5,6 +5,7 @@ import {
   redirect,
   useActionData,
   useLoaderData,
+  useNavigate,
   useRevalidator,
   useSearchParams,
 } from "react-router";
@@ -19,6 +20,8 @@ import {
 } from "lucide-react";
 import { SegmentedTabButtons } from "~/components/ui/SegmentedTabs";
 import { IconButton } from "~/components/ui/IconButton";
+import { deletePartnerApplication } from "../lib/partner-application-delete.server";
+import { DeleteApplicationButton } from "../components/application/DeleteApplicationButton";
 import { Pill } from "~/components/ui/Pill";
 import { buttonClasses } from "~/components/ui/Button";
 import type { Route } from "./+types/core.partners.applications.$id";
@@ -361,6 +364,12 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const form = await request.formData();
   const intent = (form.get("intent") as string | null) ?? "details";
+
+  if (intent === "delete") {
+    const result = await deletePartnerApplication(params.id, auth.user.sub, request);
+    if (!result.ok) return { error: result.message };
+    return redirect("/core/partners");
+  }
 
   if (intent === "title") {
     const title = (form.get("title") as string | null)?.trim() ?? "";
@@ -1052,6 +1061,7 @@ function Header({
   canEdit: boolean;
 }) {
   const revalidator = useRevalidator();
+  const navigate = useNavigate();
   const [editing, setEditing] = useState(false);
 
   return (
@@ -1098,6 +1108,13 @@ function Header({
             <h1 className="font-heading text-4xl text-foreground">{application.title}</h1>
             {canEdit && (
               <IconButton label="Edit title" icon={Pencil} onClick={() => setEditing(true)} />
+            )}
+            {canEdit && !application.resultingProjectId && (
+              <DeleteApplicationButton
+                applicationId={application.id}
+                title={application.title}
+                onDeleted={() => navigate("/core/partners")}
+              />
             )}
           </>
         )}

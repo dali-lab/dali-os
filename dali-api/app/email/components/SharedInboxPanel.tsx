@@ -30,6 +30,7 @@ export function SharedInboxPanel<T extends SharedInboxThread>({
   subtitle,
   rowIcon,
   rowDetail,
+  action,
 }: {
   title: string;
   threads: T[];
@@ -42,10 +43,12 @@ export function SharedInboxPanel<T extends SharedInboxThread>({
   rowIcon?: (thread: T) => ReactNode;
   /** Replaces the default "N messages" after the date range. */
   rowDetail?: (thread: T) => string;
+  /** Rendered after the thread rows; keeps the panel visible with no threads. */
+  action?: ReactNode;
 }) {
   const tz = useUserTimeZone();
   const [openIndexId, setOpenIndexId] = useState<string | null>(null);
-  if (threads.length === 0) return null;
+  if (threads.length === 0 && !action) return null;
 
   const totals = threads.reduce(
     (acc, t) => ({ inbound: acc.inbound + t.inbound, outbound: acc.outbound + t.outbound }),
@@ -95,6 +98,7 @@ export function SharedInboxPanel<T extends SharedInboxThread>({
           </li>
         );
       })}
+      {action && <li>{action}</li>}
       {openIndexId && (
         <SharedInboxThreadModal url={threadUrl(openIndexId)} onClose={() => setOpenIndexId(null)} />
       )}

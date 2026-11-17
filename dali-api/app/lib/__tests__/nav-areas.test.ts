@@ -480,11 +480,9 @@ describe("refer-a-partner flag", () => {
 
   it("keeps the alumni community pages filtered independently of the refer flag", () => {
     expect(labHrefs(ALUM, COMMUNITY)).toEqual([
-      "/projects",
+      "/currently",
       "/community",
       "/community/opportunities",
-      "/community/gallery",
-      "/resources",
     ]);
   });
 
@@ -502,33 +500,38 @@ describe("alumni nav", () => {
     }
   });
 
-  it("gives alumni Projects and the community pages, with Community replacing People", () => {
+  it("gives alumni Currently at DALI, Community and Opportunities", () => {
     const lab = visibleAreas(ALUM, { ...COMMUNITY, ...REFER })[0];
     expect(visibleSubtabs(lab, ALUM).map((t) => t.href)).toEqual([
-      "/projects",
+      "/currently",
       "/community",
       "/community/opportunities",
-      "/community/gallery",
-      "/resources",
       "/refer",
     ]);
+  });
+
+  it("keeps Projects, Stories and the Gallery off the alumni sidebar; they open from the Currently page", () => {
+    const lab = visibleAreas(ALUM, { ...COMMUNITY, ...REFER })[0];
+    const hrefs = visibleSubtabs(lab, ALUM).map((t) => t.href);
+    for (const href of ["/projects", "/community/gallery", "/resources"]) {
+      expect(hrefs).not.toContain(href);
+    }
   });
 
   it("keeps only Community from the community pages in the alumni Lab while the community flag is off", () => {
     const lab = visibleAreas(ALUM, REFER)[0];
     expect(visibleSubtabs(lab, ALUM).map((t) => t.href)).toEqual([
-      "/projects",
+      "/currently",
       "/community",
       "/refer",
     ]);
     expect(activeSubtabHref(areaForPath("/community/gallery", REGROUP, ALUM)!, "/community/gallery")).toBe("/community");
   });
 
-  it("files the community pages under Lab for alumni only", () => {
-    for (const path of ["/community/opportunities", "/community/gallery", "/resources"]) {
-      expect(areaForPath(path, COMMUNITY, ALUM)?.key).toBe("projects");
-      expect(areaForPath(path, COMMUNITY, NOBODY)?.key).toBe("community");
-    }
+  it("files Currently at DALI and Opportunities under Lab for alumni", () => {
+    expect(areaForPath("/currently", COMMUNITY, ALUM)?.key).toBe("projects");
+    expect(areaForPath("/community/opportunities", COMMUNITY, ALUM)?.key).toBe("projects");
+    expect(areaForPath("/community/opportunities", COMMUNITY, NOBODY)?.key).toBe("community");
     expect(areaForPath("/resources", REGROUP, NOBODY)).toBeUndefined();
     for (const flags of [REGROUP, COMMUNITY]) expect(areaForPath("/community", flags, ALUM)?.key).toBe("projects");
   });
@@ -686,6 +689,34 @@ describe("core-taskboard flag", () => {
   it("resolves the Milestones path and icon without flag context, for favorites", () => {
     expect(isAreaSubtabPath("/core/milestones")).toBe(true);
     expect(iconForHref("/core/milestones")).not.toBeNull();
+  });
+});
+
+describe("alumni-game flag", () => {
+  const ALUM: RoleFlags = { ...NOBODY, isAlumni: true };
+  const GAME = { "alumni-game": true };
+
+  it("shows the pixel lab under Lab for alumni while the flag is on", () => {
+    const lab = visibleAreas(ALUM, GAME)[0];
+    expect(visibleSubtabs(lab, ALUM).map((t) => t.href)).toContain("/alumni/lab");
+  });
+
+  it("hides the pixel lab while the flag is off, and from members always", () => {
+    const alumLab = visibleAreas(ALUM, REGROUP)[0];
+    expect(visibleSubtabs(alumLab, ALUM).map((t) => t.href)).not.toContain("/alumni/lab");
+    const memberHrefs = visibleAreas(NOBODY, GAME).flatMap((a) =>
+      visibleSubtabs(a, NOBODY).map((t) => t.href),
+    );
+    expect(memberHrefs).not.toContain("/alumni/lab");
+  });
+
+  it("files the game pages under Lab for alumni, including the avatar creator", () => {
+    expect(areaForPath("/alumni/lab", GAME, ALUM)?.key).toBe("projects");
+    expect(areaForPath("/alumni/welcome", GAME, ALUM)?.key).toBe("projects");
+    expect(activeSubtabHref(areaForPath("/alumni/welcome", GAME, ALUM)!, "/alumni/welcome")).toBe(
+      "/alumni/lab",
+    );
+    expect(areaForPath("/alumni/lab", GAME, NOBODY)).toBeUndefined();
   });
 });
 

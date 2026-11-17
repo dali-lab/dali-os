@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState } from "react";
 import type { ShouldRevalidateFunctionArgs } from "react-router";
 import { skipClientOnlySearchChange } from "~/lib/should-revalidate";
 import { useSearchParamChoice } from "~/hooks/useSearchParamState";
-import { Link, redirect, useLoaderData, useNavigate } from "react-router";
+import { Link, redirect, useLoaderData, useNavigate, useRevalidator } from "react-router";
 import type { Route } from "./+types/core.partners.planning";
 import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
@@ -15,9 +15,10 @@ import { PLANNING_NOTE_MAX, setPlanningNote } from "../lib/planning-notes.server
 import { startProjectReturn } from "../lib/partner-returns.server";
 import { PageRowControls, type PageRowControl } from "~/components/os-page";
 import { PlanningTable } from "../components/PlanningTable";
-import { PlanningProjectModal } from "../components/planning/PlanningProjectModal";
-import { PlanningApplicationModal } from "../components/planning/PlanningApplicationModal";
+import { PlanningProjectModal, PlanningProjectPanel } from "../components/planning/PlanningProjectModal";
+import { PlanningApplicationPanel } from "../components/planning/PlanningApplicationPanel";
 import { StartReturnModal } from "../components/planning/StartReturnModal";
+import { PartnerApplicationModal } from "../components/PartnerApplicationModal";
 import { CalendarRange, FolderKanban, Inbox, Layers, RefreshCcw, Sparkles, Users } from "lucide-react";
 import { ProjectPlanningTable } from "../components/ProjectPlanningTable";
 import { loadPlanningData } from "../lib/planning-gap.server";
@@ -215,6 +216,7 @@ export default function PartnersPlanning() {
   const openApplicationId = openRow?.kind === "application" ? openRow.id : null;
   const openApplication = openApplicationId ? data.applicationInfo[openApplicationId] ?? null : null;
   const [startingReturn, setStartingReturn] = useState(false);
+  const revalidator = useRevalidator();
   const pickedTermIndex = data.terms.findIndex((t) => t.id === data.termId);
   const returnTerms = pickedTermIndex < 0 ? [] : data.terms.slice(0, pickedTermIndex + 1).reverse();
   const onReturnCreated = useCallback((applicationId: string) => {
@@ -228,6 +230,7 @@ export default function PartnersPlanning() {
     if (!match || !info) return null;
     return { project: match, info };
   }, [openProjectId, data.items, data.listOnlyItems, data.maintaining, data.projectInfo]);
+  const fullWindowApplicationId = openApplicationId ?? openProject?.info.applicationId ?? null;
   const model = useMemo(
     () =>
       buildPlanningGap({
@@ -315,7 +318,7 @@ export default function PartnersPlanning() {
         <PlanningTable model={model} onRowClick={openRowClick} />
       )}
 
-      {openProject && (
+      {openProject && !openProject.info.applicationId && (
         <PlanningProjectModal
           project={openProject.project}
           info={openProject.info}
@@ -335,14 +338,38 @@ export default function PartnersPlanning() {
           onClose={() => setStartingReturn(false)}
         />
       )}
-      {openApplicationId && openApplication && (
-        <PlanningApplicationModal
-          applicationId={openApplicationId}
-          info={openApplication}
-          coreMembers={data.coreMembers}
-          domains={data.spotDomains}
+      {fullWindowApplicationId && (
+        <PartnerApplicationModal
+          key={fullWindowApplicationId}
+          card={{ id: fullWindowApplicationId }}
           canEdit
+          domainOptions={data.spotDomains}
+          termOptions={data.terms}
+          projectId={openProject?.project.id ?? null}
+          planningTab={
+            openProject ? (
+              <PlanningProjectPanel
+                project={openProject.project}
+                info={openProject.info}
+                coreMembers={data.coreMembers}
+                domains={data.spotDomains}
+                currentTermId={data.termId}
+                canEdit
+              />
+            ) : openApplication ? (
+              <PlanningApplicationPanel
+                applicationId={fullWindowApplicationId}
+                info={openApplication}
+                coreMembers={data.coreMembers}
+                domains={data.spotDomains}
+                canEdit
+              />
+            ) : undefined
+          }
           onClose={() => setOpenRow(null)}
+          onChanged={() => {
+            if (revalidator.state === "idle") void revalidator.revalidate();
+          }}
         />
       )}
     </div>

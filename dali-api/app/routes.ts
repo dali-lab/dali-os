@@ -145,6 +145,7 @@ export default [
     // Projects. The bare /projects route is the area hub (the project list).
     route("projects", "projects/routes/projects.hub.tsx"),
     route("projects/:id", "projects/routes/projects.$id.tsx"),
+    route("projects/:id/showcase", "projects/routes/projects.$id.showcase.tsx"),
     route(
       "projects/:id/partner-view",
       "projects/routes/projects.$id.partner-view.tsx",
@@ -217,6 +218,7 @@ export default [
     // Community: map of where alumni are based (members + alumni).
     route("community", "members/routes/community.tsx"),
     route("community/events/:id/calendar.ics", "members/routes/community.events.$id.calendar.ts"),
+    route("currently", "routes/currently.tsx"),
     // Community: the alumni map lives here in the sidebar, alongside these.
     route("community/opportunities", "community/routes/community.opportunities.tsx"),
     route("community/gallery", "community/routes/community.gallery.tsx"),
@@ -393,6 +395,12 @@ export default [
   // anywhere yet — reachable by direct URL.
   route("download", "routes/download.tsx"),
 
+  // Alumni onboarding game (no layout — full-screen pixel lab). Flag-gated
+  // in each loader; see specs via app/components/alumni-game/.
+  route("alumni/welcome", "routes/alumni.welcome.tsx"),
+  route("alumni/lab", "routes/alumni.lab.tsx"),
+  route("alumni/onboarding", "routes/alumni.onboarding.tsx"),
+
   // Login / signup / onboarding (no layout)
   route("login", "routes/login.tsx"),
   route("signup", "routes/signup.tsx"),
@@ -465,6 +473,10 @@ export default [
   route("api/landing/tunnel-scores", "routes/api.landing.tunnel-scores.ts"),
   // High scores for the runner game on the error screens.
   route("api/dino-scores", "routes/api.dino-scores.ts"),
+  // Alumni onboarding game: pixel avatar save + Tim's profile quest chat.
+  route("api/alumni-game/avatar", "routes/api.alumni-game.avatar.ts"),
+  route("api/alumni-game/quest", "routes/api.alumni-game.quest.ts"),
+  route("api/alumni-game/presence", "routes/api.alumni-game.presence.ts"),
 
   // Activities (specs/archive/activities.md): the time-boxed "mode" layer — the
   // onboarding scavenger hunt is mechanic #1. This endpoint feeds the shell's
@@ -528,6 +540,11 @@ export default [
   route("api/public/media", "public-api/routes/api.public.media.ts"),
   route("api/public/blogs", "public-api/routes/api.public.blogs.ts"),
   route("api/public/blogs/:id", "public-api/routes/api.public.blogs.$id.ts"),
+  // The one write: the website's support plan finder asks to email partners@.
+  route(
+    "api/public/partner-meeting-requests",
+    "public-api/routes/api.public.partner-meeting-requests.ts",
+  ),
 
   route("api/attendance/feed", "routes/api.attendance.feed.ts"),
 

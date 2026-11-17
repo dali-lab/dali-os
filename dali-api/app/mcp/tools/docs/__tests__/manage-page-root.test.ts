@@ -40,6 +40,7 @@ vi.mock("~/lib/roles", () => ({
 
 vi.mock("~/lib/pageAccess.server", () => ({
   getPageAccess: vi.fn(),
+  PAGE_ACCESS_SELECT: {},
 }));
 
 vi.mock("~/drive/lib/page-copy.server", () => ({

@@ -37,6 +37,8 @@ import {
   layoutRoles,
 } from '~/lib/layout-reads.server'
 import { resolveFeatureFlags } from '~/lib/feature-flags.server'
+import { AlumniGameInvite } from '~/components/alumni-game/AlumniGameInvite'
+import { alumniInviteFor } from '~/lib/alumni-onboarding.server'
 import { FeatureFlagsProvider } from '~/components/FeatureFlags'
 import { resolveActiveActivitiesForUser } from '~/lib/activities.server'
 import { ActivitiesProvider } from '~/components/activities/ActivitiesProvider'
@@ -212,7 +214,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     ),
   ])
 
-  const [hasUnseenReleaseNotes, isNewMember] = await Promise.all([
+  const [hasUnseenReleaseNotes, isNewMember, alumniInvite] = await Promise.all([
     flags['release-notes'] && isLabMemberOrAlum
       ? timed(request, 'releaseNotes', () => layoutHasUnseenReleaseNotes(auth.user.sub, core, request))
       : false,
@@ -220,6 +222,10 @@ export async function loader({ request }: Route.LoaderArgs) {
     flags['onboarding-journeys'] && isLabMember && !core
       ? timed(request, 'newMember', () => layoutIsNewMember(auth.user.sub))
       : false,
+    // First-login alumni invite: the onboarding flow, or the game when only that is on.
+    (flags['alumni-onboarding'] || flags['alumni-game']) && isAlumni
+      ? timed(request, 'alumniInvite', () => alumniInviteFor(auth.user.sub, isAlumni, flags))
+      : null,
   ])
 
   if (!hasHiringAccess && isLabMemberOrAlum) hasHiringAccess = anyCycleReviewer
@@ -263,7 +269,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const __loaderTotal = performance.now() - __loaderStart
   if (__loaderTotal >= 400) console.log(`[perf-total] layout loader ${__loaderTotal.toFixed(0)}ms`)
 
-  return { user: auth.user, photoUrl, hasCalendarLink, shouldShowTour, isCore: core, isAdmin: admin, isDomainLead: domainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, hasActiveHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, isAlumni, isNewMember, instructorChrome, favorites: sidebarPages.favorites, recents: sidebarPages.recents, flags, impersonating, impersonationWrites, isEmbedded, tabStripHint, tabsSnapshot, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone, activeActivities, hasUnseenReleaseNotes, desktopHintDismissed: !!me?.desktopHintDismissedAt }
+  return { user: auth.user, photoUrl, hasCalendarLink, shouldShowTour, isCore: core, isAdmin: admin, isDomainLead: domainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, hasActiveHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, isAlumni, isNewMember, instructorChrome, favorites: sidebarPages.favorites, recents: sidebarPages.recents, flags, impersonating, impersonationWrites, isEmbedded, tabStripHint, tabsSnapshot, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone, activeActivities, hasUnseenReleaseNotes, desktopHintDismissed: !!me?.desktopHintDismissedAt, alumniInvite }
 }
 
 // Layout data (roles, avatar, hiring access) changes rarely, but default
@@ -316,7 +322,7 @@ export default function AppLayoutRoute() {
 }
 
 function MemberLayoutRoute() {
-  const { user, photoUrl, hasCalendarLink, shouldShowTour, isCore, isAdmin, isDomainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, hasActiveHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, isAlumni, isNewMember, favorites, recents, flags, impersonating, impersonationWrites, isEmbedded, tabStripHint, tabsSnapshot, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone, activeActivities, hasUnseenReleaseNotes, desktopHintDismissed } = useLoaderData<typeof loader>()
+  const { user, photoUrl, hasCalendarLink, shouldShowTour, isCore, isAdmin, isDomainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, hasActiveHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, isAlumni, isNewMember, favorites, recents, flags, impersonating, impersonationWrites, isEmbedded, tabStripHint, tabsSnapshot, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone, activeActivities, hasUnseenReleaseNotes, desktopHintDismissed, alumniInvite } = useLoaderData<typeof loader>()
 
   const [searchParams] = useSearchParams()
   const location = useLocation()
@@ -469,6 +475,7 @@ function MemberLayoutRoute() {
       <NavPreloader favorites={favorites} recents={recents} />
       <BannerHost scope="all" />
       <LaunchWelcome firstName={user.firstName || user.email.split('@')[0]} hasCalendarLink={hasCalendarLink} shouldShowTour={shouldShowTour} />
+      {alumniInvite ? <AlumniGameInvite variant={alumniInvite} firstName={user.firstName ?? ''} /> : null}
       <TimeZonePrompt userTimeZone={userTimeZone} userTimeZoneIsExplicit={userTimeZoneIsExplicit} dismissedZone={tzDismissedZone} />
       </ActivitiesProvider>
     </FeatureFlagsProvider>

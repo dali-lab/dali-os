@@ -5,9 +5,15 @@ vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
   return { ...real, isCore: vi.fn(), isProjectMember: vi.fn() };
 });
+vi.mock("~/lib/pageAccess.server", () => ({ getPageAccess: vi.fn() }));
+vi.mock("~/drive/lib/page-names.server", () => ({ findNameConflict: vi.fn() }));
+vi.mock("~/drive/lib/notebook-access.server", () => ({ loadManageableNotebook: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
 import { isCore, isProjectMember } from "~/lib/roles";
+import { getPageAccess } from "~/lib/pageAccess.server";
+import { findNameConflict } from "~/drive/lib/page-names.server";
+import { loadManageableNotebook } from "~/drive/lib/notebook-access.server";
 import { runUpdatePage, UpdatePageError } from "~/mcp/tools/update-page";
 
 const mockPrisma = prisma as unknown as {
@@ -31,6 +37,9 @@ const basePage = {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(isCore).mockResolvedValue(true);
+  vi.mocked(getPageAccess).mockResolvedValue({ canEdit: false } as never);
+  vi.mocked(findNameConflict).mockResolvedValue(null);
+  vi.mocked(loadManageableNotebook).mockResolvedValue({} as never);
   mockPrisma.page.update.mockResolvedValue({
     id: "pg1",
     title: "T",
@@ -170,14 +179,123 @@ describe("update_page", () => {
     await expect(runUpdatePage("u1", { pageId: "pg1" })).rejects.toThrow(/Nothing to update/);
   });
 
-  it("404s non-project pages", async () => {
-    mockPrisma.page.findUnique.mockResolvedValue({
-      ...basePage,
+  it("404s a page in a workspace with no editable documents", async () => {
+    mockPrisma.page.findUnique.mockResolvedValue({ ...basePage, workspaceType: "Partner", workspaceId: "x" });
+    await expect(runUpdatePage("u1", { pageId: "pg1", title: "x" })).rejects.toMatchObject({ status: 404 });
+    expect(mockPrisma.page.update).not.toHaveBeenCalled();
+  });
+
+  it("404s a missing page", async () => {
+    mockPrisma.page.findUnique.mockResolvedValue(null);
+    await expect(runUpdatePage("u1", { pageId: "pg1", title: "x" })).rejects.toMatchObject({ status: 404 });
+  });
+});
+
+describe("update_page renaming outside projects", () => {
+  const notebookTab = {
+    ...basePage,
+    workspaceType: "Lab",
+    workspaceId: null,
+    parentPageId: "nb1",
+  };
+
+  it("renames a Lab notebook tab the caller can edit", async () => {
+    mockPrisma.page.findUnique.mockResolvedValue(notebookTab);
+    vi.mocked(getPageAccess).mockResolvedValue({ canEdit: true } as never);
+    await runUpdatePage("u1", { pageId: "pg1", title: "  Kickoff with Prof. Lee  " });
+    expect(getPageAccess).toHaveBeenCalledWith("u1", "pg1", undefined);
+    expect(mockPrisma.page.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { title: "Kickoff with Prof. Lee", lastEditedById: "u1" } }),
+    );
+    expect(findNameConflict).toHaveBeenCalledWith({
       workspaceType: "Lab",
       workspaceId: null,
+      parentPageId: "nb1",
+      kind: "FreeForm",
+      title: "Kickoff with Prof. Lee",
+      excludeId: "pg1",
     });
-    await expect(runUpdatePage("u1", { pageId: "pg1", title: "x" })).rejects.toMatchObject({
-      status: 404,
+  });
+
+  it("404s a Lab page the caller can't edit, without confirming it exists", async () => {
+    mockPrisma.page.findUnique.mockResolvedValue(notebookTab);
+    vi.mocked(getPageAccess).mockResolvedValue({ canEdit: false } as never);
+    await expect(runUpdatePage("u1", { pageId: "pg1", title: "x" })).rejects.toMatchObject({ status: 404 });
+    expect(mockPrisma.page.update).not.toHaveBeenCalled();
+  });
+
+  it("renames the caller's own personal note without a share lookup", async () => {
+    mockPrisma.page.findUnique.mockResolvedValue({ ...basePage, workspaceType: "Member", workspaceId: "u1" });
+    await runUpdatePage("u1", { pageId: "pg1", title: "Reading list" });
+    expect(getPageAccess).not.toHaveBeenCalled();
+    expect(mockPrisma.page.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { title: "Reading list", lastEditedById: "u1" } }),
+    );
+  });
+
+  it("renames someone else's note only with an edit share", async () => {
+    mockPrisma.page.findUnique.mockResolvedValue({ ...basePage, workspaceType: "Member", workspaceId: "u2" });
+    vi.mocked(getPageAccess).mockResolvedValue({ canEdit: false } as never);
+    await expect(runUpdatePage("u1", { pageId: "pg1", title: "x" })).rejects.toMatchObject({ status: 404 });
+    vi.mocked(getPageAccess).mockResolvedValue({ canEdit: true } as never);
+    await runUpdatePage("u1", { pageId: "pg1", title: "Shared plan" });
+    expect(mockPrisma.page.update).toHaveBeenCalledTimes(1);
+  });
+
+  it("renames an Education page the caller can edit", async () => {
+    mockPrisma.page.findUnique.mockResolvedValue({ ...basePage, workspaceType: "EducationOffering", workspaceId: "o1" });
+    vi.mocked(getPageAccess).mockResolvedValue({ canEdit: true } as never);
+    await runUpdatePage("u1", { pageId: "pg1", iconEmoji: "📓" });
+    expect(mockPrisma.page.update).toHaveBeenCalledWith(expect.objectContaining({ data: { iconEmoji: "📓" } }));
+  });
+
+  it.each([
+    [{ archived: true }],
+    [{ parentPageId: "f1" }],
+  ])("refuses to move or archive a non-project page: %j", async (rest) => {
+    mockPrisma.page.findUnique.mockResolvedValue(notebookTab);
+    vi.mocked(getPageAccess).mockResolvedValue({ canEdit: true } as never);
+    await expect(runUpdatePage("u1", { pageId: "pg1", ...rest })).rejects.toMatchObject({ status: 400 });
+    expect(mockPrisma.page.update).not.toHaveBeenCalled();
+  });
+
+  it("rejects a blank title", async () => {
+    mockPrisma.page.findUnique.mockResolvedValue(notebookTab);
+    vi.mocked(getPageAccess).mockResolvedValue({ canEdit: true } as never);
+    await expect(runUpdatePage("u1", { pageId: "pg1", title: "   " })).rejects.toMatchObject({ status: 400 });
+    expect(mockPrisma.page.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("update_page rename checks shared with the web", () => {
+  it("409s a title already taken by a sibling", async () => {
+    mockPrisma.page.findUnique.mockResolvedValue(basePage);
+    vi.mocked(findNameConflict).mockResolvedValue("A document named “Plan” already exists here.");
+    await expect(runUpdatePage("u1", { pageId: "pg1", title: "Plan" })).rejects.toMatchObject({
+      status: 409,
+      message: "A document named “Plan” already exists here.",
     });
+    expect(mockPrisma.page.update).not.toHaveBeenCalled();
+  });
+
+  it("renames a notebook only when the caller can manage it", async () => {
+    mockPrisma.page.findUnique.mockResolvedValue({ ...basePage, kind: "Notebook" });
+    vi.mocked(loadManageableNotebook).mockRejectedValue(
+      Object.assign(new Error("You can't manage this notebook"), { status: 403 }),
+    );
+    await expect(runUpdatePage("u1", { pageId: "pg1", title: "Standups" })).rejects.toMatchObject({ status: 403 });
+    expect(mockPrisma.page.update).not.toHaveBeenCalled();
+
+    vi.mocked(loadManageableNotebook).mockResolvedValue({} as never);
+    await runUpdatePage("u1", { pageId: "pg1", title: "Standups" });
+    expect(loadManageableNotebook).toHaveBeenCalledWith("pg1", "u1", undefined);
+    expect(mockPrisma.page.update).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not run the notebook check for an icon-only change", async () => {
+    mockPrisma.page.findUnique.mockResolvedValue({ ...basePage, kind: "Notebook" });
+    await runUpdatePage("u1", { pageId: "pg1", iconEmoji: "📒" });
+    expect(loadManageableNotebook).not.toHaveBeenCalled();
+    expect(findNameConflict).not.toHaveBeenCalled();
   });
 });

@@ -62,9 +62,12 @@ beforeEach(() => {
     findUnique: vi.fn().mockResolvedValue({
       id: ASSIGNMENT_ID,
       role: "InDomain",
+      status: "Active",
       cycleInterviewerId: PM_SEATED,
+      interviewId: "int1",
       interview: {
         id: "int1",
+        status: "Scheduled",
         applicationCycleId: "c1",
         interviewRoundId: "interviews",
         domainApplicationId: "da1",
@@ -73,6 +76,7 @@ beforeEach(() => {
         domainApplication: { domainId: "pm" },
       },
     }),
+    findFirst: vi.fn().mockResolvedValue(null),
     findMany: vi.fn().mockResolvedValue([
       { cycleInterviewer: { userId: "u-seated" } },
       { cycleInterviewer: { userId: "u-cross" } },
@@ -197,5 +201,91 @@ describe("POST /api/hiring/interviews/:id/reassign", () => {
     expect(res.status).toBe(409);
     expect((await res.json()).error).toBe("This interviewer is already assigned to another interview at this time");
     expect(tx.interviewAssignment.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /api/hiring/interviews/:id/reassign as a non-Core interviewer", () => {
+  beforeEach(() => {
+    vi.mocked(isCore).mockResolvedValue(false);
+  });
+
+  it("lets an interviewer on the interview replace the other seat", async () => {
+    // The caller's own, different Active assignment on this interview.
+    mockPrisma.interviewAssignment.findFirst.mockResolvedValue({ id: "own-seat" });
+
+    const res = await reassign(PM_FREE);
+
+    expect(res.status).toBe(200);
+    expect(mockPrisma.interviewAssignment.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          interviewId: "int1",
+          status: "Active",
+          id: { not: ASSIGNMENT_ID },
+          cycleInterviewer: { userId: "lead" },
+        }),
+      }),
+    );
+    expect(tx.interviewAssignment.create.mock.calls[0][0].data).toMatchObject({
+      cycleInterviewerId: PM_FREE,
+      status: "Active",
+    });
+  });
+
+  it("forbids someone who holds no seat on the interview", async () => {
+    const res = await reassign(PM_FREE);
+
+    expect(res.status).toBe(403);
+    expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("forbids handing off your own seat: no other active assignment matches", async () => {
+    // Reassigning the only seat you hold → the id≠target query finds nothing.
+    const res = await reassign(PM_FREE);
+
+    expect(res.status).toBe(403);
+    expect(mockPrisma.interviewAssignment.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: { not: ASSIGNMENT_ID } }),
+      }),
+    );
+  });
+
+  it("refuses once the interview is no longer scheduled", async () => {
+    mockPrisma.interviewAssignment.findFirst.mockResolvedValue({ id: "own-seat" });
+    const base = await mockPrisma.interviewAssignment.findUnique();
+    mockPrisma.interviewAssignment.findUnique.mockResolvedValue({
+      ...base,
+      interview: { ...base.interview, status: "Completed" },
+    });
+
+    const res = await reassign(PM_FREE);
+
+    expect(res.status).toBe(400);
+    expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("refuses a seat that was already replaced", async () => {
+    mockPrisma.interviewAssignment.findFirst.mockResolvedValue({ id: "own-seat" });
+    const base = await mockPrisma.interviewAssignment.findUnique();
+    mockPrisma.interviewAssignment.findUnique.mockResolvedValue({ ...base, status: "Replaced" });
+
+    const res = await reassign(PM_FREE);
+
+    expect(res.status).toBe(400);
+    expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("Core still reassigns a non-scheduled interview (lead cleanup path unchanged)", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    const base = await mockPrisma.interviewAssignment.findUnique();
+    mockPrisma.interviewAssignment.findUnique.mockResolvedValue({
+      ...base,
+      interview: { ...base.interview, status: "Completed" },
+    });
+
+    const res = await reassign(PM_FREE);
+
+    expect(res.status).toBe(200);
   });
 });
