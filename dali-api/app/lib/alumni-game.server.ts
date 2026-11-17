@@ -23,9 +23,11 @@ export async function loadQuestState(userId: string): Promise<QuestState> {
         currentLocation: true,
         hometown: true,
         birthday: true,
-        major: true,
+        majors: true,
         minors: true,
+        askMeAbout: true,
         funFact: true,
+        outsideOfWork: true,
         dietaryRestrictions: true,
         linkedinUrl: true,
         personalSite: true,
@@ -45,7 +47,7 @@ export async function loadQuestState(userId: string): Promise<QuestState> {
       birthday: user.birthday ? user.birthday.toISOString().slice(0, 10) : null,
     },
     confirmed,
-    hasWork: workCount > 0,
+    workCount,
   });
   const ctx: QuestionContext = {
     fullName: `${user.firstName} ${user.lastName}`.trim(),
@@ -129,21 +131,6 @@ export async function setPreferredEmail(userId: string, email: string) {
   });
 }
 
-export async function addHistoryNote(userId: string, note: string) {
-  const avatar = await prisma.pixelAvatar.findUnique({
-    where: { userId },
-    select: { historyNote: true },
-  });
-  const trimmed = note.trim().slice(0, 1000);
-  if (trimmed === "") return;
-  await prisma.pixelAvatar.updateMany({
-    where: { userId },
-    data: {
-      historyNote: avatar?.historyNote ? `${avatar.historyNote}\n${trimmed}` : trimmed,
-    },
-  });
-}
-
 export async function addQuestWorkExperience(
   userId: string,
   company: string,
@@ -160,30 +147,27 @@ export async function addQuestWorkExperience(
   });
 }
 
-export async function setOpenTo(
-  userId: string,
-  openTo: { coffeeChats: boolean; resumeReviews: boolean; portfolioReviews: boolean },
-) {
-  await prisma.user.update({
-    where: { id: userId },
-    data: {
-      openToCoffeeChats: openTo.coffeeChats,
-      openToResumeReviews: openTo.resumeReviews,
-      openToPortfolioReviews: openTo.portfolioReviews,
-    },
+export async function markAlumniOnboarded(userId: string, at = new Date()) {
+  await prisma.user.updateMany({
+    where: { id: userId, alumniOnboardedAt: null },
+    data: { alumniOnboardedAt: at },
   });
 }
 
-// Stamps questCompletedAt the first time the profile reaches 100%. Returns the
-// fresh state + percent for the phone UI.
+// Stamps questCompletedAt the first time the profile reaches 100%, and marks
+// alumni onboarding done so the first-login invite stops showing.
 export async function questProgress(userId: string) {
   const { profile, ctx } = await loadQuestState(userId);
   const percent = questPercent(profile);
   if (percent >= 100) {
-    await prisma.pixelAvatar.updateMany({
-      where: { userId, questCompletedAt: null },
-      data: { questCompletedAt: new Date() },
-    });
+    const now = new Date();
+    await Promise.all([
+      prisma.pixelAvatar.updateMany({
+        where: { userId, questCompletedAt: null },
+        data: { questCompletedAt: now },
+      }),
+      markAlumniOnboarded(userId, now),
+    ]);
   }
   return { profile, ctx, percent };
 }

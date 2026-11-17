@@ -29,7 +29,7 @@ import {
   type Achievement,
 } from "~/members/lib/achievements.server";
 import { saveAbout, openToPatch } from "~/lib/alumni-onboarding.server";
-import { parseAskMeAbout, type OpenToChoices } from "~/lib/alumni-onboarding";
+import { parseJsonList, type OpenToChoices } from "~/lib/alumni-onboarding";
 import { groupAssignmentsByTerm, type TermGroup } from "./project-history";
 import { listMemberStaffingForms, type MemberStaffingForm } from "~/projects/lib/member-staffing.server";
 import { listMySignedDocuments } from "~/signing/lib/state.server";
@@ -90,7 +90,6 @@ export type ProfileMember = {
   gradProgram: string | null;
   majors: string[];
   minors: string[];
-  funFact: string | null;
   hometown: string | null;
   /** Where they live now ("Based in"); pins them on the Community map. */
   currentLocation: string | null;
@@ -516,7 +515,6 @@ export async function loadProfilePage({
       dartmouthDepartmentClass: true,
       majors: true,
       minors: true,
-      funFact: true,
       hometown: true,
       currentLocation: true,
       currentLocationCity: true,
@@ -917,7 +915,7 @@ export async function runProfileAction({
       await saveAbout(targetId, {
         funFact: String(form.get("funFact") ?? ""),
         outsideOfWork: String(form.get("outsideOfWork") ?? ""),
-        askMeAbout: parseAskMeAbout(String(form.get("askMeAbout") ?? "")),
+        askMeAbout: parseJsonList(String(form.get("askMeAbout") ?? "")),
       });
       const on = (key: string) => form.get(key) === "on";
       await updateProfileFields(

@@ -16,6 +16,7 @@ describe("interpretProfileForm", () => {
     expect(res.update).toEqual({
       pronouns: "they/them",
       major: "Computer Science",
+      majors: ["Computer Science"],
       hometown: "Hanover, NH",
       githubUsername: "octocat",
       linkedinUrl: "https://linkedin.com/in/x",
@@ -30,7 +31,7 @@ describe("interpretProfileForm", () => {
     });
     expect(res.ok).toBe(true);
     if (!res.ok) return;
-    expect(res.update).toEqual({ major: "Math" });
+    expect(res.update).toEqual({ major: "Math", majors: ["Math"] });
   });
 
   it("parses a valid class year", () => {
@@ -66,7 +67,7 @@ describe("interpretProfileForm", () => {
     });
     expect(res.ok).toBe(true);
     if (!res.ok) return;
-    expect(res.update).toEqual({ major: "Math" });
+    expect(res.update).toEqual({ major: "Math", majors: ["Math"] });
   });
 
   it("returns an empty update for no relevant answers", () => {
@@ -131,6 +132,13 @@ describe("interpretProfileForm", () => {
     const res = interpretProfileForm({ "profile.birthday": "", "profile.major": "CS" });
     expect(res.ok).toBe(true);
     if (!res.ok) return;
-    expect(res.update).toEqual({ major: "CS" });
+    expect(res.update).toEqual({ major: "CS", majors: ["CS"] });
+  });
+  it("splits a major answer listing more than one into the majors list", () => {
+    const res = interpretProfileForm({ "profile.major": "Computer Science, Studio Art" });
+    expect(res).toEqual({
+      ok: true,
+      update: { majors: ["Computer Science", "Studio Art"], major: "Computer Science, Studio Art" },
+    });
   });
 });

@@ -460,6 +460,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
           "blog.approved",
           "blog.comment",
           "blog.reaction",
+          "alumni.history_correction",
           "coffee_chat.invite",
           "coffee_chat.accepted",
           "resume_review.invite",
@@ -6052,9 +6053,21 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
         "type": "string",
         "description": "Personal website URL. Empty string clears."
       },
-      "major": {
-        "type": "string",
-        "description": "Field of study / major. Empty string clears."
+      "majors": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "maxItems": 4,
+        "description": "Majors, replacing the current list. Empty array clears."
+      },
+      "minors": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "maxItems": 4,
+        "description": "Minors, replacing the current list. Empty array clears."
       },
       "hometown": {
         "type": "string",

@@ -149,6 +149,7 @@ export function QuestPhone({
     appendMessages([{ from: "you", text: "Skip that one" }]);
     tim("no worries!");
     askNext(profile, nextSkipped);
+    if (!nextQuestField(profile, nextSkipped)) void postQuest({ intent: "finish", skipped: nextSkipped });
   }
 
   return (
@@ -181,9 +182,9 @@ export function QuestPhone({
           {!asking ? (
             <div className="ag-phone-done">
               <a href="/profile" className="ag-phone-view-profile">
-                View my complete profile
+                View my profile
               </a>
-              <p>Double check everything looks right</p>
+              <p>Everything Tim saved is on your profile page.</p>
             </div>
           ) : null}
           {asking ? (

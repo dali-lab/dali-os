@@ -597,6 +597,14 @@ export const EVENT_TYPES = {
     coalesceNoun: "reaction",
     defaults: { inApp: true, desktop: false, slackDm: false, email: "Off" },
   },
+  "alumni.history_correction": {
+    kind: "General",
+    area: "People",
+    label: "Alumni history corrections",
+    description: "When an alum reports that their DALI projects or roles are wrong or missing.",
+    coreOnly: true,
+    defaults: { inApp: true, desktop: false, slackDm: false, email: "Daily" },
+  },
   "coffee_chat.invite": {
     kind: "General",
     area: "People",

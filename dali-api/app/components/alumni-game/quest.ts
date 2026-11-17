@@ -5,9 +5,11 @@
 //   text    — writes one User column through the shared profile updater
 //   name    — confirms (or corrects) the name on file
 //   email   — confirms the best email to reach them, saved as personalEmail
+//   list    — writes a list column (majors, minors, ask me about), split on commas
 //   work    — adds a WorkExperience row from what they describe
+//   pastWork — adds the job before that, with the year they left
 //   history — they review their DALI roles/projects and confirm
-//   openTo  — sets the open-to toggles (coffee chats, resume/portfolio reviews)
+//   openTo  — sets the open-to toggles, the same five the onboarding form shows
 // Non-text kinds count as filled once their key lands in
 // PixelAvatar.confirmedFields.
 
@@ -59,6 +61,15 @@ export const QUEST_FIELDS = [
     placeholder: "Role at company",
   },
   {
+    key: "pastWork",
+    kind: "pastWork",
+    required: false,
+    label: "Before that",
+    question: "and before that?  where were you, and roughly when did you leave?",
+    done: "love that path!",
+    placeholder: "Role at company, 2023",
+  },
+  {
     key: "history",
     kind: "history",
     required: false,
@@ -72,23 +83,42 @@ export const QUEST_FIELDS = [
     key: "funFact",
     kind: "text",
     required: false,
-    label: "Ask me about",
-    question: "give me a fun fact, or something people should ask you about!",
+    label: "Fun fact",
+    question: "give me a fun fact about you!",
     done: "haha I love that!!",
     placeholder: "Fun fact",
   },
   {
-    key: "major",
+    key: "askMeAbout",
+    kind: "list",
+    required: false,
+    label: "Ask me about",
+    question:
+      "what could students ask you about?  stuff like breaking into a field, grad school, moving cities.  a few words each!",
+    done: "super, students are gonna love that!",
+    placeholder: "e.g. product design, grad school",
+  },
+  {
+    key: "outsideOfWork",
     kind: "text",
     required: false,
-    label: "Major",
-    question: "what did you major in?",
+    label: "Outside of work",
+    question: "and outside of work?  what are you into these days?",
+    done: "haha amazing!",
+    placeholder: "Climbing, film photography",
+  },
+  {
+    key: "majors",
+    kind: "list",
+    required: false,
+    label: "Majors",
+    question: "what did you major in?  if you double majored, tell me both!",
     done: "aah interesting!",
     placeholder: "Major",
   },
   {
     key: "minors",
-    kind: "text",
+    kind: "list",
     required: false,
     label: "Minors",
     question: "any minors?",
@@ -146,9 +176,9 @@ export const QUEST_FIELDS = [
     required: false,
     label: "Open to",
     question:
-      "last one!  are you open to coffee chats, resume reviews, or portfolio reviews with current members?  any or all!",
+      "last one!  what are you up for?  coffee chats, resume or portfolio reviews, mentoring a student project, speaking at a DALI event, or pointing a partner our way.  any or all!",
     done: "that's everything!  thanks for all your efforts!!",
-    placeholder: "e.g. coffee chats and portfolio reviews",
+    placeholder: "e.g. coffee chats and mentoring",
   },
 ] as const;
 
@@ -185,6 +215,16 @@ export function renderQuestion(field: QuestField, ctx: QuestionContext = {}): st
 
 export const TEXT_QUEST_KEYS = QUEST_FIELDS.filter((f) => f.kind === "text").map((f) => f.key);
 
+export const LIST_QUEST_KEYS = QUEST_FIELDS.filter((f) => f.kind === "list").map((f) => f.key);
+export type ListQuestKey = (typeof LIST_QUEST_KEYS)[number];
+
+export function splitAnswerList(value: string): string[] {
+  return value
+    .split(/[,;\n]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
 // Maps the data the server gathers onto the quest's filled/value view. A text
 // field is filled when its column is; every other kind is filled once its key
 // was confirmed (work also counts an existing WorkExperience row).
@@ -198,17 +238,19 @@ export function toQuestProfile(input: {
     currentLocation: string | null;
     hometown: string | null;
     birthday: string | null;
-    major: string | null;
-    minors: string | null;
+    majors: string[];
+    minors: string[];
+    askMeAbout: string[];
     funFact: string | null;
+    outsideOfWork: string | null;
     dietaryRestrictions: string | null;
     linkedinUrl: string | null;
     personalSite: string | null;
   };
   confirmed: readonly string[];
-  hasWork: boolean;
+  workCount: number;
 }): QuestProfile {
-  const { user, confirmed, hasWork } = input;
+  const { user, confirmed, workCount } = input;
   const has = (key: QuestFieldKey) => confirmed.includes(key);
   const profile = {} as QuestProfile;
   for (const f of QUEST_FIELDS) {
@@ -225,7 +267,15 @@ export function toQuestProfile(input: {
         profile.classYear = user.classYear === null ? null : String(user.classYear);
         break;
       case "work":
-        profile.work = has("work") || hasWork ? "on file" : null;
+        profile.work = has("work") || workCount > 0 ? "on file" : null;
+        break;
+      case "pastWork":
+        profile.pastWork = has("pastWork") || workCount > 1 ? "on file" : null;
+        break;
+      case "majors":
+      case "minors":
+      case "askMeAbout":
+        profile[f.key] = user[f.key].length > 0 ? user[f.key].join(", ") : null;
         break;
       case "history":
         profile.history = has("history") ? "confirmed" : null;

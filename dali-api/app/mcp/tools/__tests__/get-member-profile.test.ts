@@ -51,7 +51,8 @@ const BASE_USER = {
   classYear: 2027,
   bioDocId: null,
   pronouns: "she/her",
-  major: "CS",
+  majors: ["CS"],
+  minors: ["Math"],
   hometown: "NYC",
   linkedinUrl: "https://linkedin.com/in/grace",
   githubUsername: "gracehopper",
@@ -121,7 +122,8 @@ describe("get_member_profile", () => {
     expect(out.dartmouthEmail).toBe("grace@dartmouth.edu");
     expect(out.pronouns).toBe("she/her");
     expect(out.classYear).toBe(2027);
-    expect(out.major).toBe("CS");
+    expect(out.majors).toEqual(["CS"]);
+    expect(out.minors).toEqual(["Math"]);
     expect(out.hometown).toBe("NYC");
     expect(out.githubUsername).toBe("gracehopper");
     expect(out.linkedinUrl).toBe("https://linkedin.com/in/grace");

@@ -89,10 +89,10 @@ describe("update_profile", () => {
 
   it("never writes a netId even if one is passed", async () => {
     mockPrisma.user.update.mockResolvedValue({});
-    const out = await runUpdateProfile("u1", { major: "Math", netId: "f00ada" } as never);
-    expect(out.updated).toEqual({ major: "Math" });
+    const out = await runUpdateProfile("u1", { hometown: "Hanover", netId: "f00ada" } as never);
+    expect(out.updated).toEqual({ hometown: "Hanover" });
     expect(prisma.user.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { major: "Math" } }),
+      expect.objectContaining({ data: { hometown: "Hanover" } }),
     );
   });
 
@@ -129,12 +129,12 @@ describe("update_profile", () => {
 
   // ── Happy path: new extended fields ──────────────────────────────────────
 
-  it("updates nullable text fields (linkedin, github, major, hometown, etc.)", async () => {
+  it("updates nullable text fields (linkedin, github, hometown, etc.) and the majors list", async () => {
     mockPrisma.user.update.mockResolvedValue({});
     const out = await runUpdateProfile("u1", {
       linkedinUrl: "https://linkedin.com/in/alice",
       githubUsername: "alice-gh",
-      major: "CS",
+      majors: ["CS"],
       hometown: "Hanover, NH",
       dietaryRestrictions: "Vegan",
       phoneNumber: "+16035550100",
@@ -144,12 +144,13 @@ describe("update_profile", () => {
     expect(out.updated).toMatchObject({
       linkedinUrl: "https://linkedin.com/in/alice",
       githubUsername: "alice-gh",
-      major: "CS",
+      majors: ["CS"],
     });
     expect(prisma.user.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
           githubUsername: "alice-gh",
+          majors: ["CS"],
           major: "CS",
           hometown: "Hanover, NH",
         }),

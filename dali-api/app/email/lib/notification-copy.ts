@@ -416,6 +416,15 @@ export const NOTIFICATION_COPY = {
 
   // ── People ───────────────────────────────────────────────────────────────
   // Deliberately carries no personName: the invite is anonymous until accepted.
+  "alumni.history_correction": {
+    eventType: "alumni.history_correction",
+    label: "Alumni history correction",
+    description: "Sent to Core when an alum reports that their DALI projects or roles are wrong or missing.",
+    variables: ["itemTitle", "itemDetail"],
+    subject: "{{itemTitle}}",
+    body: "{{itemDetail}}",
+    linkLabel: "Open their profile",
+  },
   "coffee_chat.invite": {
     eventType: "coffee_chat.invite",
     label: "Coffee chat invite",

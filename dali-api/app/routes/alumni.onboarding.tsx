@@ -10,11 +10,14 @@ import {
   finishOnboarding,
   loadOnboarding,
   saveAbout,
-  saveClassAndMajor,
+  saveBasedIn,
   saveHometown,
+  savePreferredEmail,
+  saveStudy,
   saveWorkSlot,
 } from "~/lib/alumni-onboarding.server";
-import { parseAskMeAbout } from "~/lib/alumni-onboarding";
+import { reportHistoryCorrection } from "~/lib/alumni-history.server";
+import { parseJsonList } from "~/lib/alumni-onboarding";
 import { ProfileConflictError, ProfileValidationError } from "~/members/lib/profile-update.server";
 import { AlumniOnboarding } from "~/components/alumni-onboarding/AlumniOnboarding";
 
@@ -28,11 +31,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!roles.isAlumni) return redirect("/");
   if (!(await isFeatureEnabled("alumni-onboarding", userId, roles, request))) return redirect("/");
 
-  const [data, gameOn] = await Promise.all([
-    loadOnboarding(userId),
-    isFeatureEnabled("alumni-game", userId, roles, request),
-  ]);
-  return { ...data, gameOn };
+  return loadOnboarding(userId);
 }
 
 const text = (form: FormData, key: string) => String(form.get(key) ?? "");
@@ -51,7 +50,24 @@ export async function action({ request }: Route.ActionArgs) {
   try {
     switch (text(form, "intent")) {
       case "save-class":
-        await saveClassAndMajor(userId, { classYear: text(form, "classYear"), major: text(form, "major") });
+        await saveStudy(userId, {
+          classYear: text(form, "classYear"),
+          majors: parseJsonList(text(form, "majors")),
+          minors: parseJsonList(text(form, "minors")),
+        });
+        break;
+      case "save-based-in":
+        await saveBasedIn(userId, {
+          currentLocation: text(form, "currentLocation"),
+          currentLocationGeonameId: text(form, "currentLocationGeonameId"),
+        });
+        break;
+      case "save-email":
+        await savePreferredEmail(userId, text(form, "email"));
+        break;
+      case "report-history":
+        if (text(form, "note").trim() === "") throw new BadRequestError("The note is empty.");
+        await reportHistoryCorrection(userId, text(form, "note"));
         break;
       case "save-hometown":
         await saveHometown(userId, text(form, "hometown"));
@@ -72,7 +88,11 @@ export async function action({ request }: Route.ActionArgs) {
         await saveAbout(userId, {
           funFact: text(form, "funFact"),
           outsideOfWork: text(form, "outsideOfWork"),
-          askMeAbout: parseAskMeAbout(text(form, "askMeAbout")),
+          askMeAbout: parseJsonList(text(form, "askMeAbout")),
+          linkedinUrl: text(form, "linkedinUrl"),
+          personalSite: text(form, "personalSite"),
+          birthday: text(form, "birthday"),
+          dietaryRestrictions: text(form, "dietaryRestrictions"),
         });
         break;
       case "finish":

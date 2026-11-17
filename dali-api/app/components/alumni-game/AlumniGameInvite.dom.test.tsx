@@ -14,7 +14,7 @@ function Where() {
   return createElement("span", { "data-testid": "where" }, useLocation().pathname);
 }
 
-function mount(variant?: "game" | "onboarding") {
+function mount(variant?: "game" | "onboarding" | "choice") {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -42,29 +42,45 @@ const press = (label: string) =>
   });
 const where = () => document.querySelector('[data-testid="where"]')?.textContent;
 
+const pressText = (text: string) =>
+  act(() => {
+    ([...document.querySelectorAll("button")].find((b) => b.textContent?.includes(text)) as HTMLButtonElement).click();
+  });
+
 describe("AlumniGameInvite", () => {
-  it("sends the game variant to the avatar creator, as before", () => {
+  it("sends the game variant into the pixel lab", () => {
     mount();
-    expect(document.body.textContent).toContain("Build your pixel avatar");
-    press("Create my avatar");
+    expect(document.body.textContent).toContain("pixel version of the lab");
+    press("Walk the pixel lab");
     expect(where()).toBe("/alumni/welcome");
   });
 
-  it("sends the onboarding variant to the new flow", () => {
+  it("sends the onboarding variant to the stepped flow, with no game mention", () => {
     mount("onboarding");
-    expect(document.body.textContent).toContain("Welcome back, Ada!");
-    expect(document.body.textContent).not.toContain("pixel avatar");
-    press("Get started");
+    expect(document.body.textContent).toContain("Welcome back, Ada");
+    expect(document.body.textContent).not.toContain("pixel");
+    press("Finish my profile");
     expect(where()).toBe("/alumni/onboarding");
   });
 
-  it("stays quiet for the rest of the session after Maybe later", () => {
-    mount("onboarding");
-    press("Maybe later");
-    expect(document.body.textContent).not.toContain("Get started");
+  it("offers both paths in the choice variant", () => {
+    mount("choice");
+    pressText("Fill it in");
+    expect(where()).toBe("/alumni/onboarding");
+    act(() => root.unmount());
+    container.remove();
+    mount("choice");
+    pressText("Walk the pixel lab");
+    expect(where()).toBe("/alumni/welcome");
+  });
+
+  it("stays quiet for the rest of the session after Later", () => {
+    mount("choice");
+    press("Later");
+    expect(document.body.textContent).not.toContain("Fill it in");
     act(() => root.unmount());
     container.remove();
     mount("onboarding");
-    expect(document.body.textContent).not.toContain("Get started");
+    expect(document.body.textContent).not.toContain("Finish my profile");
   });
 });

@@ -89,36 +89,23 @@ describe("who may edit a profile", () => {
   });
 });
 
-describe("open-to toggles", () => {
-  it("flips a toggle for the member themself", async () => {
-    const res = await run({ intent: "open-to", field: "portfolioReviews", value: "on" });
-    expect(res).toBeNull();
-    expect(db.user.update).toHaveBeenCalledWith({
-      where: { id: ME },
-      data: { openToPortfolioReviews: true },
+describe("profile field save", () => {
+  it("saves comma-separated majors and minors as lists", async () => {
+    await run(profile({ majors: "Computer Science, Studio Art", minors: "Economics" }));
+    expect(written()).toMatchObject({
+      majors: ["Computer Science", "Studio Art"],
+      major: "Computer Science, Studio Art",
+      minors: ["Economics"],
     });
   });
 
-  it("turns a toggle off when the value is not on", async () => {
-    await run({ intent: "open-to", field: "coffeeChats", value: "off" });
-    expect(db.user.update).toHaveBeenCalledWith({
-      where: { id: ME },
-      data: { openToCoffeeChats: false },
-    });
-  });
-
-  it("rejects an unknown field and a peer's toggle", async () => {
-    expect(await run({ intent: "open-to", field: "walletPassSecret", value: "on" })).toEqual({
-      error: "Unknown open-to field.",
-    });
-    expect(await run({ intent: "open-to", field: "coffeeChats", value: "on" }, { targetId: OTHER })).toEqual({
-      error: "You don't have permission to edit this member.",
+  it("rejects a fifth major with the study message", async () => {
+    expect(await run(profile({ majors: "a, b, c, d, e" }))).toEqual({
+      error: "Add up to 4 majors or minors, 60 characters each.",
     });
     expect(db.user.update).not.toHaveBeenCalled();
   });
-});
 
-describe("profile field save", () => {
   it("requires a first and last name", async () => {
     expect(await run({ firstName: " ", lastName: "Lovelace" })).toEqual({ error: "First and last name are required." });
     expect(await run({ firstName: "Ada", lastName: "" })).toEqual({ error: "First and last name are required." });

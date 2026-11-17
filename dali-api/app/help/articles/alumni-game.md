@@ -3,10 +3,12 @@ title: The alumni lab game
 summary: Build a pixel avatar, walk around a pixel DALI lab, and finish your alumni profile by chatting with Tim.
 flag: alumni-game
 keywords: [alumni, game, avatar, pixel, lab, quest, Tim, Lorie, onboarding]
-paths: [/alumni/welcome, /alumni/lab, /alumni/form]
+paths: [/alumni/welcome, /alumni/lab]
 ---
 
-New alumni get a playful way to settle in. When the alumni welcome flow is on, it is the first thing you see after you sign in, and it ends with a link to the pixel lab. Otherwise, the first time you sign in, DALI OS invites you to build a pixel avatar of yourself. After that you can finish your alumni profile the normal way on your [profile](/profile), or do it inside a small game set in the lab.
+New alumni get a playful way to settle in. The first time you sign in, DALI OS invites you to finish your alumni profile, and **Walk the pixel lab** does it inside a small game set in the lab. You build a pixel avatar first, then choose between the lab and **Fill in my profile**, the three-step form. Finishing either one counts.
+
+**Finish later** in the top corner of the avatar page takes you back to DALI OS.
 
 ## Build your avatar
 
@@ -25,10 +27,7 @@ Use **Leave the lab** in the top corner to go back to DALI OS.
 
 ## Tim's quest
 
-Talk to Tim and accept his quest to open a phone on the side of the screen. Tim asks about the same things as the profile form, one question at a time, and each answer is saved straight to your profile. He confirms your name, the email you want to be reached at (shown as **Primary** on your profile), your birthday, and shows you the DALI roles and projects we have on file. If something in that history looks wrong, just tell him in the chat and it gets flagged for the team to fix.
+Talk to Tim and accept his quest to open a phone on the side of the screen. Tim asks about the same things as the profile form, one question at a time, and each answer is saved straight to your profile. He confirms your name and the email you want to be reached at (shown as **Primary** on your profile), then asks about your work now and before that, your majors and minors, a fun fact, what students can ask you about, what you do outside of work, your birthday, and what you are open to: coffee chats, resume or portfolio reviews, mentoring a project, speaking at a lab event and partner referrals. He also shows you the DALI roles and projects on file. If something in that history looks wrong, tell him in the chat and Core gets a notification to fix it.
 
-The bar at the top of the phone shows how complete your profile is. You can **Skip** any question and finish the rest on your [profile](/profile) later. When the questions run out, use **View my complete profile** on the phone to double check everything landed where you expect.
+The bar at the top of the phone shows how complete your profile is. You can **Skip** any question except your name and email, and fill the rest in on your [profile](/profile) later. When the questions run out, your profile counts as finished and the invite stops showing. Use **View my profile** on the phone to see everything Tim saved.
 
-## The quick form
-
-Prefer to type it all in at once? [Fill in your profile](/alumni/form) covers the same checklist as the quest: your name, primary email, class year, birthday, where you are based, work, links, dietary restrictions, the DALI history check, and what you are open to (coffee chats, resume and portfolio reviews). Saving takes you to your profile so you can double check it.

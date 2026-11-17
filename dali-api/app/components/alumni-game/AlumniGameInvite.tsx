@@ -2,34 +2,53 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { Modal } from "~/components/Modal";
 import { Button } from "~/components/ui/Button";
+import type { AlumniInvite } from "~/lib/alumni-onboarding";
 
 const DISMISS_KEY = "dalios-alumni-game-invite-dismissed-v1";
 
-const COPY = {
-  game: {
-    body: "The lab saved you a spot. Build your pixel avatar, then finish your alumni profile your way: fill it in directly, or walk around a pixel DALI lab and chat with Tim.",
-    cta: "Create my avatar",
-    to: "/alumni/welcome",
-  },
-  onboarding: {
-    body: "The lab saved you a spot. Check your details, add a few interests and choose what you're open to. It takes about two minutes.",
-    cta: "Get started",
-    to: "/alumni/onboarding",
-  },
-} as const;
+const FORM_PATH = "/alumni/onboarding";
+const GAME_PATH = "/alumni/welcome";
 
-// First-login invite for alumni: shown by the layout until they've finished the
-// flow it points at; "Maybe later" quiets it for the browser session only.
-export function AlumniGameInvite({
-  firstName,
-  variant = "game",
+const BODY: Record<AlumniInvite, string> = {
+  choice:
+    "Your alumni profile is already started from your time at DALI. The rest takes a few minutes, in three short steps or in a pixel version of the lab with Tim.",
+  onboarding:
+    "Your alumni profile is already started from your time at DALI, and the rest takes a few minutes.",
+  game: "Your alumni profile is already started from your time at DALI. The rest happens in a pixel version of the lab, chatting with Tim.",
+};
+
+function ChoiceCard({
+  title,
+  detail,
+  primary,
+  onClick,
 }: {
-  firstName: string;
-  variant?: keyof typeof COPY;
+  title: string;
+  detail: string;
+  primary?: boolean;
+  onClick: () => void;
 }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={
+        primary
+          ? "dali-btn--primary flex flex-1 flex-col gap-1 rounded-os-card p-4 text-left transition-colors"
+          : "flex flex-1 flex-col gap-1 rounded-os-card border border-os-container p-4 text-left text-os-fg transition-colors hover:bg-os-hover"
+      }
+    >
+      <span className="text-base font-bold">{title}</span>
+      <span className={primary ? "text-sm" : "text-sm text-os-grey"}>{detail}</span>
+    </button>
+  );
+}
+
+// First-login invite for alumni: shown by the layout until they've finished
+// onboarding; Later quiets it for the browser session only.
+export function AlumniGameInvite({ firstName, variant = "game" }: { firstName: string; variant?: AlumniInvite }) {
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
-  const copy = COPY[variant];
 
   useEffect(() => {
     try {
@@ -53,15 +72,29 @@ export function AlumniGameInvite({
     <Modal open={open} onClose={dismiss} labelledBy="alumni-game-invite-title">
       <div className="flex flex-col items-center gap-4 p-6 text-center">
         <h2 id="alumni-game-invite-title" className="font-heading text-xl font-bold text-foreground">
-          Welcome back{firstName ? `, ${firstName}` : ""}!
+          Welcome back{firstName ? `, ${firstName}` : ""}
         </h2>
-        <p className="text-sm text-muted-foreground">{copy.body}</p>
-        <div className="flex gap-2">
-          <Button onClick={() => navigate(copy.to)}>{copy.cta}</Button>
-          <Button variant="secondary" onClick={dismiss}>
-            Maybe later
-          </Button>
-        </div>
+        <p className="text-sm text-muted-foreground">{BODY[variant]}</p>
+        {variant === "choice" ? (
+          <div className="flex w-full flex-col gap-2">
+            <div className="flex w-full flex-col gap-2 sm:flex-row">
+              <ChoiceCard primary title="Fill it in" detail="Three short steps" onClick={() => navigate(FORM_PATH)} />
+              <ChoiceCard title="Walk the pixel lab" detail="Chat with Tim as you go" onClick={() => navigate(GAME_PATH)} />
+            </div>
+            <Button variant="ghost" onClick={dismiss}>
+              Later
+            </Button>
+          </div>
+        ) : (
+          <div className="flex gap-2">
+            <Button onClick={() => navigate(variant === "game" ? GAME_PATH : FORM_PATH)}>
+              {variant === "game" ? "Walk the pixel lab" : "Finish my profile"}
+            </Button>
+            <Button variant="secondary" onClick={dismiss}>
+              Later
+            </Button>
+          </div>
+        )}
       </div>
     </Modal>
   );

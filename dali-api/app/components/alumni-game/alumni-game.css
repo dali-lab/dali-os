@@ -734,6 +734,28 @@ body:has(.ag-lab) {
   animation: ag-pop-in 420ms ease-out 80ms backwards;
 }
 
+.ag-exit {
+  position: absolute;
+  top: 18px;
+  right: 22px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  font-family: var(--font-arcade);
+  font-size: 10px;
+  color: #0c4876;
+  background: #ffffff;
+  border: 2px solid #0c4876;
+  box-shadow: 3px 3px 0 #0c4876;
+  text-decoration: none;
+}
+
+.ag-exit:hover {
+  background: #fff3b5;
+}
+
 /* ── Tile illustration (DALI TilePattern, CSS edition) ───────────────────── */
 
 .ag-tiles {

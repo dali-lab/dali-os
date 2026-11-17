@@ -8,6 +8,7 @@ vi.mock("~/lib/ai.server", () => ({
   stripJsonFences: (text: string) => text.trim(),
 }));
 vi.mock("~/lib/ai-quota.server", () => ({ claimAiQuota: vi.fn() }));
+vi.mock("~/lib/alumni-history.server", () => ({ reportHistoryCorrection: vi.fn() }));
 vi.mock("~/members/lib/profile-update.server", async () => {
   const { BadRequestError, ConflictError } = await import("~/lib/http-error");
   class ProfileValidationError extends BadRequestError {
@@ -33,6 +34,7 @@ import { mockedPrisma } from "~/test-utils/prisma";
 import { requireMemberSession } from "~/lib/auth";
 import { isAiEnabled, generateShortText } from "~/lib/ai.server";
 import { claimAiQuota } from "~/lib/ai-quota.server";
+import { reportHistoryCorrection } from "~/lib/alumni-history.server";
 import {
   updateProfileFields,
   ProfileValidationError,
@@ -62,9 +64,11 @@ const emptyUser = {
   currentLocation: null,
   hometown: null,
   birthday: null,
-  major: null,
-  minors: null,
+  majors: [] as string[],
+  minors: [] as string[],
+  askMeAbout: [] as string[],
   funFact: null,
+  outsideOfWork: null,
   dietaryRestrictions: null,
   linkedinUrl: null,
   personalSite: null,
@@ -77,15 +81,17 @@ const fullUser = {
   currentLocation: "Brooklyn, New York, United States",
   hometown: "Austin",
   birthday: new Date("2001-06-05T00:00:00Z"),
-  major: "Computer Science",
-  minors: "Studio Art",
-  funFact: "Ask me about analog synths",
+  majors: ["Computer Science"],
+  minors: ["Studio Art"],
+  askMeAbout: ["Grad school"],
+  funFact: "Builds analog synths",
+  outsideOfWork: "Climbing",
   dietaryRestrictions: "Vegetarian",
   linkedinUrl: "https://linkedin.com/in/x",
   personalSite: "https://x.dev",
 };
 
-const ALL_CONFIRMED = ["name", "email", "work", "history", "openTo"];
+const ALL_CONFIRMED = ["name", "email", "work", "pastWork", "history", "openTo"];
 
 function mockState(user: object, confirmed: string[], workCount = 0) {
   db.user.findUniqueOrThrow.mockResolvedValue(user as never);
@@ -176,21 +182,21 @@ describe("POST /api/alumni-game/quest", () => {
     });
 
     it("rejects an empty answer", async () => {
-      const res = await post({ intent: "answer", field: "major", value: "   " });
+      const res = await post({ intent: "answer", field: "majors", value: "   " });
       expect(res.status).toBe(400);
       expect(updateProfileFields).not.toHaveBeenCalled();
     });
 
-    it("writes a text answer through the shared profile updater", async () => {
-      const res = await post({ intent: "answer", field: "major", value: "  CS  " });
+    it("writes a list answer through the shared profile updater", async () => {
+      const res = await post({ intent: "answer", field: "majors", value: "  CS  " });
       expect(res.status).toBe(200);
       expect(updateProfileFields).toHaveBeenCalledWith(
         "u1",
-        { major: "CS" },
+        { majors: ["CS"] },
         { allowNetId: false },
       );
       const body = await res.json();
-      expect(body.savedField).toBe("major");
+      expect(body.savedField).toBe("majors");
       expect(Object.keys(body.profile).sort()).toEqual(
         QUEST_FIELDS.map((f) => f.key).sort(),
       );
@@ -293,12 +299,10 @@ describe("POST /api/alumni-game/quest", () => {
         where: { userId: "u1", NOT: { confirmedFields: { has: "history" } } },
         data: { confirmedFields: { push: "history" } },
       });
-      expect(db.pixelAvatar.updateMany).not.toHaveBeenCalledWith(
-        expect.objectContaining({ data: expect.objectContaining({ historyNote: expect.anything() }) }),
-      );
+      expect(reportHistoryCorrection).not.toHaveBeenCalled();
     });
 
-    it("stores a history correction as a note, flags it, and still confirms", async () => {
+    it("sends a history correction to Core, flags it, and still confirms", async () => {
       const res = await post({
         intent: "answer",
         field: "history",
@@ -306,10 +310,7 @@ describe("POST /api/alumni-game/quest", () => {
       });
       const body = await res.json();
       expect(body.savedField).toBe("history");
-      expect(db.pixelAvatar.updateMany).toHaveBeenCalledWith({
-        where: { userId: "u1" },
-        data: { historyNote: "I was never on the kiosk project" },
-      });
+      expect(reportHistoryCorrection).toHaveBeenCalledWith("u1", "I was never on the kiosk project");
       expect(db.pixelAvatar.updateMany).toHaveBeenCalledWith({
         where: { userId: "u1", NOT: { confirmedFields: { has: "history" } } },
         data: { confirmedFields: { push: "history" } },
@@ -317,30 +318,14 @@ describe("POST /api/alumni-game/quest", () => {
       expect(body.say).toContain("flagged");
     });
 
-    it("appends a second history correction under the first", async () => {
-      db.pixelAvatar.findUnique.mockResolvedValue({
-        userId: "u1",
-        confirmedFields: [],
-        historyNote: "first note",
-      } as never);
-      await post({ intent: "answer", field: "history", value: "also the terms are wrong" });
-      expect(db.pixelAvatar.updateMany).toHaveBeenCalledWith({
-        where: { userId: "u1" },
-        data: { historyNote: "first note\nalso the terms are wrong" },
-      });
-    });
-
-    it("saves the model's history note when it reports a correction", async () => {
+    it("sends the model's history note to Core when it reports a correction", async () => {
       aiReply(
         '{"field":"history","value":"confirmed","work":null,"openTo":null,"note":"missing the robotics project","reply":"aah noted, I flagged that for the team!"}',
       );
       const res = await post({ intent: "answer", field: "history", value: "the robotics one is missing" });
       const body = await res.json();
       expect(body.savedField).toBe("history");
-      expect(db.pixelAvatar.updateMany).toHaveBeenCalledWith({
-        where: { userId: "u1" },
-        data: { historyNote: "missing the robotics project" },
-      });
+      expect(reportHistoryCorrection).toHaveBeenCalledWith("u1", "missing the robotics project");
     });
 
     it("saves a parsed birthday as YYYY-MM-DD through the profile updater", async () => {
@@ -369,25 +354,96 @@ describe("POST /api/alumni-game/quest", () => {
       });
       const body = await res.json();
       expect(body.savedField).toBe("openTo");
-      expect(db.user.update).toHaveBeenCalledWith({
-        where: { id: "u1" },
-        data: {
-          openToCoffeeChats: true,
-          openToResumeReviews: false,
-          openToPortfolioReviews: true,
+      expect(updateProfileFields).toHaveBeenCalledWith(
+        "u1",
+        {
+          openTo: {
+            coffeeChats: true,
+            resumeReviews: true,
+            portfolioReviews: true,
+            partnerReferrals: false,
+            mentoring: false,
+            speaking: false,
+          },
         },
-      });
+        { allowNetId: false },
+      );
     });
 
     it("turns every toggle off on a clear no", async () => {
       await post({ intent: "answer", field: "openTo", value: "none for now" });
-      expect(db.user.update).toHaveBeenCalledWith({
-        where: { id: "u1" },
-        data: {
-          openToCoffeeChats: false,
-          openToResumeReviews: false,
-          openToPortfolioReviews: false,
+      expect(updateProfileFields).toHaveBeenCalledWith(
+        "u1",
+        {
+          openTo: {
+            coffeeChats: false,
+            resumeReviews: false,
+            portfolioReviews: false,
+            partnerReferrals: false,
+            mentoring: false,
+            speaking: false,
+          },
         },
+        { allowNetId: false },
+      );
+    });
+
+    it("reads mentoring, speaking and partner referrals from the answer", async () => {
+      await post({ intent: "answer", field: "openTo", value: "happy to mentor and give a talk, and refer a partner" });
+      expect(vi.mocked(updateProfileFields).mock.calls[0][1]).toEqual({
+        openTo: {
+          coffeeChats: false,
+          resumeReviews: false,
+          portfolioReviews: false,
+          partnerReferrals: true,
+          mentoring: true,
+          speaking: true,
+        },
+      });
+    });
+
+    it("splits an ask me about answer into topics", async () => {
+      const res = await post({ intent: "answer", field: "askMeAbout", value: "grad school, moving to NYC; startups" });
+      expect((await res.json()).savedField).toBe("askMeAbout");
+      expect(updateProfileFields).toHaveBeenCalledWith(
+        "u1",
+        { askMeAbout: ["grad school", "moving to NYC", "startups"] },
+        { allowNetId: false },
+      );
+    });
+
+    it("saves the job before that with the year they left", async () => {
+      const res = await post({ intent: "answer", field: "pastWork", value: "design intern at Etsy, 2023" });
+      expect((await res.json()).savedField).toBe("pastWork");
+      const left = new Date(Date.UTC(2023, 0, 1));
+      expect(db.workExperience.create).toHaveBeenCalledWith({
+        data: { userId: "u1", company: "Etsy", position: "design intern", startDate: left, endDate: left },
+      });
+      expect(db.pixelAvatar.updateMany).toHaveBeenCalledWith({
+        where: { userId: "u1", NOT: { confirmedFields: { has: "pastWork" } } },
+        data: { confirmedFields: { push: "pastWork" } },
+      });
+    });
+
+    it("probes for the year instead of saving the job before that without one", async () => {
+      const res = await post({ intent: "answer", field: "pastWork", value: "design intern at Etsy" });
+      expect((await res.json()).savedField).toBeNull();
+      expect(db.workExperience.create).not.toHaveBeenCalled();
+    });
+
+    it("marks onboarding done once no unskipped questions are left", async () => {
+      mockState(emptyUser, ["name", "email"]);
+      const skipped = QUEST_FIELDS.map((f) => f.key).filter((k) => k !== "hometown");
+      await post({ intent: "answer", field: "hometown", value: "Austin", skipped });
+      expect(db.user.updateMany).not.toHaveBeenCalled();
+      vi.mocked(updateProfileFields).mockImplementation(async () => {
+        mockState({ ...emptyUser, hometown: "Austin" }, ["name", "email"]);
+        return { updated: {} };
+      });
+      await post({ intent: "answer", field: "hometown", value: "Austin", skipped });
+      expect(db.user.updateMany).toHaveBeenCalledWith({
+        where: { id: "u1", alumniOnboardedAt: null },
+        data: { alumniOnboardedAt: expect.any(Date) },
       });
     });
 
@@ -400,10 +456,14 @@ describe("POST /api/alumni-game/quest", () => {
         where: { userId: "u1", questCompletedAt: null },
         data: { questCompletedAt: expect.any(Date) },
       });
+      expect(db.user.updateMany).toHaveBeenCalledWith({
+        where: { id: "u1", alumniOnboardedAt: null },
+        data: { alumniOnboardedAt: expect.any(Date) },
+      });
     });
 
     it("does not stamp completion while fields remain empty", async () => {
-      const res = await post({ intent: "answer", field: "major", value: "CS" });
+      const res = await post({ intent: "answer", field: "majors", value: "CS" });
       expect((await res.json()).percent).toBe(0);
       expect(db.pixelAvatar.updateMany).not.toHaveBeenCalledWith(
         expect.objectContaining({ where: { userId: "u1", questCompletedAt: null } }),
@@ -411,10 +471,10 @@ describe("POST /api/alumni-game/quest", () => {
     });
 
     it("composes a scripted reply and stores the exchange when AI is off", async () => {
-      const res = await post({ intent: "answer", field: "major", value: "CS" });
+      const res = await post({ intent: "answer", field: "majors", value: "CS" });
       const body = await res.json();
       expect(body.say).toContain("aah interesting!");
-      expect(body.savedField).toBe("major");
+      expect(body.savedField).toBe("majors");
       expect(generateShortText).not.toHaveBeenCalled();
       expect(db.alumniChatMessage.createMany).toHaveBeenCalledWith({
         data: [
@@ -430,7 +490,7 @@ describe("POST /api/alumni-game/quest", () => {
       );
       const res = await post({
         intent: "answer",
-        field: "major",
+        field: "majors",
         value: "actually my hometown is Austin",
         history: [{ from: "you", text: "hi" }],
       });
@@ -498,20 +558,38 @@ describe("POST /api/alumni-game/quest", () => {
         error: "limit",
         retryAfterSeconds: 60,
       } as never);
-      const res = await post({ intent: "answer", field: "major", value: "CS" });
+      const res = await post({ intent: "answer", field: "majors", value: "CS" });
       const body = await res.json();
       expect(body.say).toContain("aah interesting!");
-      expect(body.savedField).toBe("major");
+      expect(body.savedField).toBe("majors");
       expect(generateShortText).not.toHaveBeenCalled();
     });
 
     it("falls back to the scripted parser when the model returns junk", async () => {
       aiReply("not json at all");
-      const res = await post({ intent: "answer", field: "major", value: "CS" });
+      const res = await post({ intent: "answer", field: "majors", value: "CS" });
       const body = await res.json();
-      expect(body.savedField).toBe("major");
-      expect(updateProfileFields).toHaveBeenCalledWith("u1", { major: "CS" }, { allowNetId: false });
+      expect(body.savedField).toBe("majors");
+      expect(updateProfileFields).toHaveBeenCalledWith("u1", { majors: ["CS"] }, { allowNetId: false });
       expect(body.say).toContain("aah interesting!");
+    });
+  });
+
+  describe("finish", () => {
+    it("refuses while a required question is unanswered", async () => {
+      const res = await post({ intent: "finish", skipped: QUEST_FIELDS.map((f) => f.key) });
+      expect(res.status).toBe(400);
+      expect(db.user.updateMany).not.toHaveBeenCalled();
+    });
+
+    it("marks onboarding done when every remaining question was skipped", async () => {
+      mockState(emptyUser, ["name", "email"]);
+      const res = await post({ intent: "finish", skipped: QUEST_FIELDS.map((f) => f.key) });
+      expect(res.status).toBe(200);
+      expect(db.user.updateMany).toHaveBeenCalledWith({
+        where: { id: "u1", alumniOnboardedAt: null },
+        data: { alumniOnboardedAt: expect.any(Date) },
+      });
     });
   });
 });
