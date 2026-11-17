@@ -466,7 +466,18 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
           "resume_review.accepted",
           "gallery.comment",
           "gallery.reaction",
-          "community.event_nearby"
+          "community.event_nearby",
+          "opportunities.interest",
+          "opportunities.chat_offered",
+          "opportunities.chat_ask_match",
+          "opportunities.still_open",
+          "opportunities.referral_shipped",
+          "expense.submitted",
+          "expense.returned",
+          "expense.approved",
+          "expense.paid",
+          "expense.needs_receipt",
+          "expense.unpaid_reminder"
         ],
         "description": "Event type key, as returned by \`list_notification_preferences\`."
       },

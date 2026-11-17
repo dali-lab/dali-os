@@ -699,6 +699,56 @@ export const NOTIFICATION_COPY = {
     body: "{{itemDetail}}",
   },
 
+  // ── Expenses ─────────────────────────────────────────────────────────────
+  "expense.submitted": {
+    eventType: "expense.submitted",
+    label: "Expense to approve",
+    description: "Sent to approvers when an expense is filed.",
+    variables: ["itemTitle", "itemDetail"],
+    subject: "Expense to approve: {{itemTitle}}",
+    body: "{{itemDetail}}",
+  },
+  "expense.returned": {
+    eventType: "expense.returned",
+    label: "Expense returned",
+    description: "Sent to the filer when an approver returns an expense.",
+    variables: ["itemTitle", "itemDetail"],
+    subject: "Expense returned: {{itemTitle}}",
+    body: "{{itemDetail}}",
+  },
+  "expense.approved": {
+    eventType: "expense.approved",
+    label: "Expense approved",
+    description: "Sent to the filer when an expense is approved.",
+    variables: ["itemTitle", "itemDetail"],
+    subject: "Expense approved: {{itemTitle}}",
+    body: "{{itemDetail}}",
+  },
+  "expense.paid": {
+    eventType: "expense.paid",
+    label: "Expense paid",
+    description: "Sent to the filer when an expense is marked as paid back.",
+    variables: ["itemTitle", "itemDetail"],
+    subject: "Expense paid: {{itemTitle}}",
+    body: "{{itemDetail}}",
+  },
+  "expense.needs_receipt": {
+    eventType: "expense.needs_receipt",
+    label: "Receipt needed",
+    description: "Sent when a card charge has no receipt.",
+    variables: ["itemTitle", "itemDetail"],
+    subject: "Receipt needed: {{itemTitle}}",
+    body: "{{itemDetail}}",
+  },
+  "expense.unpaid_reminder": {
+    eventType: "expense.unpaid_reminder",
+    label: "Unpaid reimbursements",
+    description: "Sent to staff about approved expenses not yet paid back.",
+    variables: ["itemTitle", "itemDetail"],
+    subject: "Unpaid reimbursements: {{itemTitle}}",
+    body: "{{itemDetail}}",
+  },
+
   // ── Announcements ────────────────────────────────────────────────────────
   // No `body`: Core and instructors author these per send, so only the framing
   // is template-owned.

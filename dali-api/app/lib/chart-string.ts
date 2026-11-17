@@ -32,6 +32,11 @@ export const GL_SUBACTIVITIES: Record<string, string> = {
   "1500": "Student Meetings",
   "2000": "Full Stack",
   "3000": "Programs",
+  "3100": "Immersion",
+  "3200": "Technigala",
+  "3300": "Miniseries",
+  "3400": "Workshops",
+  "3500": "Fellowships",
   "4000": "Projects",
   "5000": "External Funding",
 };
