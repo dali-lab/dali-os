@@ -36,6 +36,7 @@ import {
   Download,
   Sparkles,
   Library,
+  Receipt,
 } from "lucide-react";
 import { Modal } from "~/components/Modal";
 import { Avatar } from "~/components/ui/Avatar";
@@ -308,6 +309,17 @@ export function CommandPalette({ open, onClose, focusMode, roles = NO_ROLES, fla
         icon: Compass,
         action: { kind: "run", run: () => window.dispatchEvent(new Event("dali:start-tour")) },
       },
+      ...(flags.expenses && !roles.isAlumni
+        ? [
+            {
+              id: "cmd-add-receipt",
+              title: "Add receipt",
+              subtitle: "Command",
+              icon: Receipt,
+              action: { kind: "navigate", url: "/expenses", label: "Expenses" },
+            } satisfies PaletteItem,
+          ]
+        : []),
       {
         id: "copy-page-link",
         title: "Copy link to this page",

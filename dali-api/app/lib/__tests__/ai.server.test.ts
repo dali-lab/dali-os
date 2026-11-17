@@ -189,7 +189,7 @@ describe("aiProvidersFor", () => {
   });
 
   it("keeps Ask DALI and the other tasks on Anthropic first", () => {
-    for (const task of ["ask", "doc", "meetingNotes", "resumeExtract"] as const) {
+    for (const task of ["ask", "doc", "meetingNotes", "resumeExtract", "receiptExtract"] as const) {
       expect(aiProvidersFor(task).map((p) => p.name)).toEqual(["anthropic", "dartmouth"]);
     }
   });

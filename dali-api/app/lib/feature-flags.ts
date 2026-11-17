@@ -203,6 +203,12 @@ export const FEATURE_FLAGS = [
     description:
       "Community > Opportunities becomes a feed where alumni share jobs (a pasted link fills in the company and its logo) and anyone can ask for a coffee chat, with reactions and comments. Partner referrals show their progress and a post when one becomes a project. Off shows the coming soon page. Ships off.",
   },
+  {
+    key: "expenses",
+    label: "Expenses",
+    description:
+      "An Expenses page under Lab where members drop receipts and track what they spent on staff cards or their own, staff and card owners approve, and card statements match to receipts. Ships off.",
+  },
 ] as const satisfies readonly FeatureFlagDef[];
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[number]["key"];

@@ -2,7 +2,7 @@
   "expo": {
     "name": "DALI OS",
     "slug": "dali-os",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -52,6 +52,14 @@
           "microphonePermission": "DALI OS uses the microphone to record and transcribe your meeting notes.",
           "enableBackgroundRecording": true,
           "enableBackgroundPlayback": false
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "DALI OS uses the camera to photograph receipts for your expenses.",
+          "photosPermission": "DALI OS reads receipt photos you choose from your library.",
+          "microphonePermission": false
         }
       ],
       "expo-asset"

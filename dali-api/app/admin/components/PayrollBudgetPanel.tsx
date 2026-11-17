@@ -58,6 +58,7 @@ export function PayrollBudgetPanel({ term }: { term: string }) {
 
 function BudgetTable({ budget, termId }: { budget: BudgetData; termId: string }) {
   const anyPateo = budget.groups.some((g) => g.rows.some((r) => r.isPateo));
+  const showPurchases = budget.grandTotalPurchases !== 0;
 
   if (budget.groups.length === 0) {
     return (
@@ -80,6 +81,7 @@ function BudgetTable({ budget, termId }: { budget: BudgetData; termId: string })
               <th className={TH_NUM}>Revenue</th>
               <th className={TH_NUM}>Adj. revenue</th>
               <th className={TH_NUM}>Expense</th>
+              {showPurchases && <th className={TH_NUM}>Purchases</th>}
               <th className={TH_NUM}>Net</th>
               <th className={TH}>Notes</th>
               <th className={TH}>
@@ -89,7 +91,7 @@ function BudgetTable({ budget, termId }: { budget: BudgetData; termId: string })
           </thead>
           <tbody>
             {budget.groups.map((g) => (
-              <GroupRows key={g.projectId ?? "__none__"} group={g} termId={termId} />
+              <GroupRows key={g.projectId ?? "__none__"} group={g} termId={termId} showPurchases={showPurchases} />
             ))}
             <tr className="border-t border-os-container font-semibold text-foreground">
               <td className={adminTable.td} colSpan={3}>
@@ -104,6 +106,11 @@ function BudgetTable({ budget, termId }: { budget: BudgetData; termId: string })
               <td className={cn(TD_NUM, "font-semibold")}>
                 {formatUsd(budget.grandTotalExpense)}
               </td>
+              {showPurchases && (
+                <td className={cn(TD_NUM, "font-semibold")}>
+                  {formatUsd(budget.grandTotalPurchases)}
+                </td>
+              )}
               <td className={cn(TD_NUM, netClass(budget.grandTotalNet), "font-semibold")}>
                 {formatNet(budget.grandTotalNet)}
               </td>
@@ -123,12 +130,12 @@ function BudgetTable({ budget, termId }: { budget: BudgetData; termId: string })
   );
 }
 
-function GroupRows({ group, termId }: { group: BudgetGroup; termId: string }) {
+function GroupRows({ group, termId, showPurchases }: { group: BudgetGroup; termId: string; showPurchases: boolean }) {
   const isBucket = group.projectId === null;
   return (
     <>
       <tr className={cn(adminTable.row, "bg-os-well/60")}>
-        <td className="px-6 py-2 text-xs font-semibold text-foreground" colSpan={9}>
+        <td className="px-6 py-2 text-xs font-semibold text-foreground" colSpan={showPurchases ? 10 : 9}>
           {group.projectName}
         </td>
       </tr>
@@ -138,6 +145,7 @@ function GroupRows({ group, termId }: { group: BudgetGroup; termId: string }) {
           row={row}
           termId={termId}
           isBucket={isBucket}
+          showPurchases={showPurchases}
         />
       ))}
       <tr className={cn(adminTable.row, "text-foreground")}>
@@ -153,6 +161,11 @@ function GroupRows({ group, termId }: { group: BudgetGroup; termId: string }) {
         <td className={cn(TD_NUM, "text-xs font-semibold")}>
           {formatUsd(group.totalExpense)}
         </td>
+        {showPurchases && (
+          <td className={cn(TD_NUM, "text-xs font-semibold")}>
+            {formatUsd(group.totalPurchases)}
+          </td>
+        )}
         <td className={cn(TD_NUM, "text-xs font-semibold", netClass(group.totalNet))}>
           {formatNet(group.totalNet)}
         </td>
@@ -166,10 +179,12 @@ function BudgetRowView({
   row,
   termId,
   isBucket,
+  showPurchases,
 }: {
   row: BudgetRow;
   termId: string;
   isBucket: boolean;
+  showPurchases: boolean;
 }) {
   const { iconBtn } = useOsChrome();
   const [notesOpen, setNotesOpen] = useState(false);
@@ -205,6 +220,7 @@ function BudgetRowView({
           )}
         </td>
         <td className={TD_NUM}>{formatUsd(row.expense)}</td>
+        {showPurchases && <td className={TD_NUM}>{formatUsd(row.purchases)}</td>}
         <td className={cn(TD_NUM, netClass(row.net), "font-semibold")}>
           {formatNet(row.net)}
         </td>
@@ -227,7 +243,7 @@ function BudgetRowView({
       </tr>
       {notesOpen && (
         <tr className="bg-os-well/60">
-          <td colSpan={9} className="px-6 py-3">
+          <td colSpan={showPurchases ? 10 : 9} className="px-6 py-3">
             <NoteEditor
               row={row}
               termId={termId}

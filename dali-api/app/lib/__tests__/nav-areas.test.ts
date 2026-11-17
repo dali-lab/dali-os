@@ -734,3 +734,25 @@ describe("LayoutOS nav flags", () => {
     for (const key of readByNav) expect(navFlagBlock, key).toContain(`useFeatureFlag('${key}')`);
   });
 });
+
+describe("Expenses subtab", () => {
+  const labHrefs = (flags: Record<string, boolean>, r: RoleFlags) =>
+    visibleSubtabs(areasFor(flags).find((a) => a.key === "projects")!, r).map((t) => t.href);
+
+  it("is hidden while the expenses flag is off", () => {
+    expect(labHrefs({}, NOBODY)).not.toContain("/expenses");
+  });
+
+  it("shows for every lab member once the flag is on", () => {
+    expect(labHrefs({ expenses: true }, NOBODY)).toContain("/expenses");
+    expect(labHrefs({ expenses: true }, CORE)).toContain("/expenses");
+  });
+
+  it("stays hidden from alumni", () => {
+    expect(labHrefs({ expenses: true }, { ...NOBODY, isAlumni: true })).not.toContain("/expenses");
+  });
+
+  it("belongs to the Lab area", () => {
+    expect(areaForPath("/expenses", { expenses: true })?.key).toBe("projects");
+  });
+});

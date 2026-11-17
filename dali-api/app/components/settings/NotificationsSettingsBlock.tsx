@@ -34,6 +34,7 @@ const AREA_ORDER = [
   "Mentorship",
   "People",
   "Community",
+  "Expenses",
   "Announcements",
   "Release notes",
   "Forms",
