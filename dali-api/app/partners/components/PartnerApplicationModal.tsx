@@ -42,6 +42,7 @@ import { EmailTab } from "./application/EmailTab";
 import { PropertyRail } from "./application/PropertyRail";
 import { STAGE_TONE } from "./application/rail";
 import { StageActions } from "./application/StageActions";
+import { DeleteApplicationButton } from "./application/DeleteApplicationButton";
 import { SowTab } from "./application/SowTab";
 import { ScheduleInterviewModal } from "./ScheduleInterviewModal";
 import { ProjectIcon } from "~/components/ProjectIcon";
@@ -312,6 +313,16 @@ export function PartnerApplicationModal({
               >
                 <Pencil className="h-4 w-4" aria-hidden />
               </button>
+            )}
+            {!isCreate && !editingTitle && canEdit && detail && !detail.application.resultingProjectId && (
+              <DeleteApplicationButton
+                applicationId={detail.application.id}
+                title={detail.application.title}
+                onDeleted={() => {
+                  onClose();
+                  onChanged();
+                }}
+              />
             )}
             <button type="button" onClick={() => void guardedClose()} className="os-icon-btn" aria-label="Close">
               <X className="h-5 w-5" aria-hidden />
