@@ -652,6 +652,41 @@ export const EVENT_TYPES = {
     description: "When an alum hosts an event within 50 km of where you're based.",
     defaults: { inApp: false, desktop: false, slackDm: false, email: "Off" },
   },
+  "opportunities.interest": {
+    kind: "General",
+    area: "Community",
+    label: "Interest in your jobs",
+    description: "When someone says they're interested in a job you shared.",
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Instant" },
+  },
+  "opportunities.chat_offered": {
+    kind: "General",
+    area: "Community",
+    label: "Coffee chat offers",
+    description: "When someone offers to chat about something you asked.",
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Instant" },
+  },
+  "opportunities.chat_ask_match": {
+    kind: "General",
+    area: "Community",
+    label: "Coffee chat asks for you",
+    description: "When someone asks to chat about a topic on your Ask me about list or a review you're open to.",
+    defaults: { inApp: false, desktop: false, slackDm: false, email: "Off" },
+  },
+  "opportunities.still_open": {
+    kind: "General",
+    area: "Community",
+    label: "Is your job still open?",
+    description: "A check-in a month after you share a job. Posts with no answer are closed.",
+    defaults: { inApp: true, desktop: false, slackDm: false, email: "Instant" },
+  },
+  "opportunities.referral_shipped": {
+    kind: "General",
+    area: "Community",
+    label: "Your referral became a project",
+    description: "When a partner you referred becomes a DALI project.",
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Instant" },
+  },
   // Fallback stamped on rows that predate the registry (schema column
   // default). Never emitted by code; hidden from the settings page.
   general: {

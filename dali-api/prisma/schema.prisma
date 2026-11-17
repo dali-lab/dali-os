@@ -20,12 +20,12 @@ enum MembershipStatus {
 
 model User {
   // unique identifier
-  id String @id @default(cuid())
-  slidePresentations SlidePresentation[]
+  id                    String               @id @default(cuid())
+  slidePresentations    SlidePresentation[]
   hostedCommunityEvents CommunityEvent[]     @relation("CommunityEventHost")
   communityEventRsvps   CommunityEventRsvp[]
-  slidePollVotes     SlidePollVote[]
-  slideTemplates     SlideTemplate[]
+  slidePollVotes        SlidePollVote[]
+  slideTemplates        SlideTemplate[]
 
   // Term-by-term PI assignments, and applications this person is PI of.
   piProjectTerms        ProjectTerm[]        @relation("ProjectTermPi")
@@ -128,54 +128,54 @@ model User {
   dartmouthDepartmentClass String?
   dartmouthPeopleSyncedAt  DateTime?
 
-  pronouns            String?
-  photoUrl            String?
+  pronouns                 String?
+  photoUrl                 String?
   // Bio stored as a collab doc reference for rich formatting + @mentions.
-  bioDocId            String?
-  major               String?
-  hometown            String?
+  bioDocId                 String?
+  major                    String?
+  hometown                 String?
   // Where the person lives now ("Based in" on the profile). Free text; the
   // coordinates are geocoded from it on save (app/lib/geocode.server.ts) and
   // place the person on the Community map. Null coordinates = no pin.
-  currentLocation     String?
-  currentLocationLat  Float?
-  currentLocationLng  Float?
-  currentLocationCity String?
-  currentLocationRegion String?
-  currentLocationCountry String?
+  currentLocation          String?
+  currentLocationLat       Float?
+  currentLocationLng       Float?
+  currentLocationCity      String?
+  currentLocationRegion    String?
+  currentLocationCountry   String?
   currentLocationGeonameId Int?
   // "I'm open to" on the alumni Home. Off hides the matching request button
   // on this person's profile and refuses new requests.
-  openToCoffeeChats   Boolean   @default(true)
-  openToResumeReviews Boolean   @default(false)
-  openToPortfolioReviews Boolean @default(false)
-  openToPartnerReferrals Boolean @default(false)
-  openToMentoring     Boolean   @default(false)
-  openToSpeaking      Boolean   @default(false)
+  openToCoffeeChats        Boolean   @default(true)
+  openToResumeReviews      Boolean   @default(false)
+  openToPortfolioReviews   Boolean   @default(false)
+  openToPartnerReferrals   Boolean   @default(false)
+  openToMentoring          Boolean   @default(false)
+  openToSpeaking           Boolean   @default(false)
   // Short topics alumni are happy to be asked about, and a line on life outside
   // work. Both show on the alumni profile.
-  askMeAbout          String[]  @default([])
-  outsideOfWork       String?
+  askMeAbout               String[]  @default([])
+  outsideOfWork            String?
   // Set when an alumnus finishes the first-login profile flow (alumni-onboarding).
-  alumniOnboardedAt   DateTime?
-  linkedinUrl         String?
+  alumniOnboardedAt        DateTime?
+  linkedinUrl              String?
   // The member's current resume (PDF). Private: the member and admins only,
   // served through /api/members/:id/resume, never api/upload/url.
-  resumeKey           String? // uploads/resumes/<userId>/<uuid>.pdf
-  resumeFileName      String?
-  resumeSizeBytes     Int?
-  resumeUploadedAt    DateTime?
+  resumeKey                String? // uploads/resumes/<userId>/<uuid>.pdf
+  resumeFileName           String?
+  resumeSizeBytes          Int?
+  resumeUploadedAt         DateTime?
   // Bare GitHub login (e.g. "octocat"). Used to add the member to their
   // project's GitHub team during staffing finalize, and to derive a profile
   // link in the UI. Editable in member details; nullable — a member with no
   // username is silently skipped (and reported) by that automation.
-  githubUsername      String?
-  personalSite        String?
+  githubUsername           String?
+  personalSite             String?
   // Short public handle for @-mentions (e.g. "spark" for Sophie Park). Seeded
   // from first-initial + last-name (lowercased), auto-suffixed on collision,
   // and editable in profile. Nullable + unique like the other identity handles;
   // a user with no handle simply can't be @-mentioned until they set one.
-  handle              String?   @unique
+  handle                   String?   @unique
 
   // Per-member secret mixed into the signed barcode carried by the member's
   // Apple/Google Wallet membership pass (see app/lib/wallet-token.ts). Set
@@ -285,18 +285,18 @@ model User {
   projectDomainScopesUpdated ProjectDomainScope[] @relation("ProjectDomainScopeUpdatedBy")
 
   // ─── Phase 1: staffing back-relations ─────────────────────────────────────
-  staffingPreferences   StaffingPreference[]
-  essentialityFormsAsPm EssentialityForm[]         @relation("EssentialityFormPm")
-  essentialityRatings   EssentialityRating[]
-  staffingAssignments   StaffingAssignment[]
-  staffingBoardMembers  StaffingBoardMember[]
-  staffingCardOrders    StaffingCardOrder[]
-  intentToWork          IntentToWork[]
-  formsCreated          Form[]
-  formVersions          FormVersion[]
-  formSubmissions       FormSubmission[]
-  formSubmissionsEntered FormSubmission[] @relation("FormSubmissionEnteredBy")
-  formBindingsSet       StaffingCycleFormBinding[]
+  staffingPreferences    StaffingPreference[]
+  essentialityFormsAsPm  EssentialityForm[]         @relation("EssentialityFormPm")
+  essentialityRatings    EssentialityRating[]
+  staffingAssignments    StaffingAssignment[]
+  staffingBoardMembers   StaffingBoardMember[]
+  staffingCardOrders     StaffingCardOrder[]
+  intentToWork           IntentToWork[]
+  formsCreated           Form[]
+  formVersions           FormVersion[]
+  formSubmissions        FormSubmission[]
+  formSubmissionsEntered FormSubmission[]           @relation("FormSubmissionEnteredBy")
+  formBindingsSet        StaffingCycleFormBinding[]
 
   // ─── Phase 1: education back-relations ────────────────────────────────────
   educationApplications  EducationApplication[]  @relation("EducationApplicant")
@@ -370,6 +370,12 @@ model User {
   feedbackReactions FeedbackReaction[]
   feedbackComments  FeedbackComment[]
 
+  // ─── Community opportunities ──────────────────────────────────────────────
+  opportunityPosts     OpportunityPost[]
+  opportunityReactions OpportunityReaction[]
+  opportunityComments  OpportunityComment[]
+  opportunityResponses OpportunityResponse[]
+
   // ─── Community gallery ────────────────────────────────────────────────────
   galleryPosts     GalleryPost[]     @relation("GalleryPostAuthor")
   galleryHidden    GalleryPost[]     @relation("GalleryPostHider")
@@ -379,12 +385,12 @@ model User {
   customEmoji      CustomEmoji[]
 
   // ─── Page documentation (per-page guides) ─────────────────────────────────
-  pageDocsMaintained PageDoc[]  @relation("PageDocMaintainer")
+  pageDocsMaintained PageDoc[]      @relation("PageDocMaintainer")
   blogPosts          BlogPost[]
   blogReactions      BlogReaction[]
   blogComments       BlogComment[]
-  pageDocsCreated    PageDoc[]  @relation("PageDocCreatedBy")
-  pageDocsLastEdited PageDoc[]  @relation("PageDocLastEditedBy")
+  pageDocsCreated    PageDoc[]      @relation("PageDocCreatedBy")
+  pageDocsLastEdited PageDoc[]      @relation("PageDocLastEditedBy")
 
   // ─── Payroll: Reconcile back-relation ─────────────────────────────────────
   timesheetImports     TimesheetImport[]
@@ -395,11 +401,11 @@ model User {
   projectShowcasesUpdated ProjectShowcase[] @relation("ProjectShowcaseUpdatedBy")
 
   // ─── Easter-egg games ─────────────────────────────────────────────────────
-  tetrisScore TetrisScore?
-  dinoScore   DinoScore?
-  tunnelScore TunnelScore?
-  tunnelRuns  TunnelRun[]
-  pixelAvatar PixelAvatar?
+  tetrisScore        TetrisScore?
+  dinoScore          DinoScore?
+  tunnelScore        TunnelScore?
+  tunnelRuns         TunnelRun[]
+  pixelAvatar        PixelAvatar?
   alumniChatMessages AlumniChatMessage[]
 
   // ─── Onboarding journeys ──────────────────────────────────────────────────
@@ -1686,6 +1692,93 @@ model FeedbackComment {
   @@index([postId, createdAt])
 }
 
+// ─── Community opportunities ─────────────────────────────────────────────────
+// The /community/opportunities feed. A null author is a DALI post.
+model OpportunityPost {
+  id                String              @id @default(cuid())
+  kind              OpportunityPostKind
+  authorId          String?
+  body              String
+  topic             String?
+  jobUrl            String?
+  companyName       String?
+  companyDomain     String?
+  logoKey           String?
+  blockColor        String?
+  role              String?
+  location          String?
+  jobType           String?
+  willRefer         Boolean             @default(false)
+  imageKey          String?
+  // Loose ref to PartnerReferral.id; unique so a shipped referral posts once.
+  partnerReferralId String?             @unique
+  stillOpenAskedAt  DateTime?
+  closedAt          DateTime?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  author    User?                 @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  reactions OpportunityReaction[]
+  comments  OpportunityComment[]
+  responses OpportunityResponse[]
+
+  @@index([createdAt])
+  @@index([authorId])
+}
+
+enum OpportunityPostKind {
+  Job
+  ChatAsk
+  DaliUpdate
+}
+
+model OpportunityReaction {
+  id        String   @id @default(cuid())
+  postId    String
+  userId    String
+  emoji     String   @db.VarChar(64)
+  createdAt DateTime @default(now())
+
+  post OpportunityPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId, emoji])
+  @@index([postId])
+}
+
+model OpportunityComment {
+  id        String   @id @default(cuid())
+  postId    String
+  authorId  String
+  body      String
+  createdAt DateTime @default(now())
+
+  post   OpportunityPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  author User            @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([postId])
+}
+
+model OpportunityResponse {
+  id        String                  @id @default(cuid())
+  postId    String
+  userId    String
+  kind      OpportunityResponseKind
+  note      String?
+  createdAt DateTime                @default(now())
+
+  post OpportunityPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId, kind])
+  @@index([postId])
+}
+
+enum OpportunityResponseKind {
+  Interested
+  ChatOffer
+}
+
 // One photo in the Community gallery. A bulk upload makes one post per photo.
 // width/height/color are read in the browser at upload so the masonry can
 // reserve each tile's space (and paint its placeholder) before the image loads.
@@ -2326,29 +2419,29 @@ model MeetingRecording {
   occurrenceStart    DateTime?
 
   // Channels with at least one stored chunk: "mic" | "call".
-  channels       String[]  @default([])
+  channels           String[]  @default([])
   // Channels with at least one chunk above the silence floor. Only these are
   // sent to transcription; empty (rows from before this column) sends all.
-  voicedChannels String[]  @default([])
+  voicedChannels     String[]  @default([])
   // Segment start offsets in seconds, index = segment. Continue appends one;
   // segment 0's start is implicitly 0.
-  segmentStarts  Float[]   @default([])
+  segmentStarts      Float[]   @default([])
   // Highest seq stored per channel per segment, for the job description.
-  chunkIndex     Json      @default("{}") // { mic: [41, 12], call: [41] }
-  lastChunkAt    DateTime?
+  chunkIndex         Json      @default("{}") // { mic: [41, 12], call: [41] }
+  lastChunkAt        DateTime?
   // Reported by the client at create. Null on rows from before these columns
   // and on anything the client didn't send.
-  captureSource  String?   // "desktop" | "browser"
-  appVersion     String?   // the desktop shell's version, when there is one
-  clientPlatform String?
+  captureSource      String? // "desktop" | "browser"
+  appVersion         String? // the desktop shell's version, when there is one
+  clientPlatform     String?
   // Reported by the desktop recorder once capture starts, and micSilent again
   // whenever the mic goes quiet or comes back. systemAudioAllowed is null
   // when macOS hasn't asked yet or couldn't say.
   micDevice          String?
   systemAudioAllowed Boolean?
-  micSilent          Boolean  @default(false)
+  micSilent          Boolean   @default(false)
   // When the chunks were removed, a day after finalizedAt.
-  audioDeletedAt DateTime?
+  audioDeletedAt     DateTime?
 
   // Per-channel word arrays with absolute timestamps; lines derive from these.
   words    Json @default("{}") // { mic: [{ s, e, w, sp }], call: [...] }
@@ -2358,17 +2451,17 @@ model MeetingRecording {
 
   // Seconds recorded across finished sessions. Continue starts a new session
   // whose timeline is stamped from here, so the transcript reads as one.
-  recordedSeconds Float     @default(0)
+  recordedSeconds  Float     @default(0)
   // When the latest session went Pending → Recording. The live clock is
   // recordedSeconds + (now - this); only meaningful while status is Recording.
   sessionStartedAt DateTime?
-  error           String?
+  error            String?
   // Latest Modal progress while Processing; cleared by applyResult.
-  progress        Json?
-  insertedAt      DateTime? // notes or transcript inserted into the doc
-  finalizedAt     DateTime? // audio deleted
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  progress         Json?
+  insertedAt       DateTime? // notes or transcript inserted into the doc
+  finalizedAt      DateTime? // audio deleted
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   // Enhance (specs/meeting-notes-model.md §2): the last server-verified merge
   // plan, keyed to the editor snapshot it was computed from. A function of
@@ -3841,10 +3934,10 @@ model ExternalMentor {
 // broad access to everything; the title affords UI surfacing but does not
 // gate permissions.
 model CoreAssignment {
-  id        String  @id @default(cuid())
-  userId    String
-  termId    String
-  leadTitle String?
+  id         String  @id @default(cuid())
+  userId     String
+  termId     String
+  leadTitle  String?
   // Imported from payroll history rather than granted in the app. Excluded
   // from the public team list, which these members never opted into.
   backfilled Boolean @default(false)
@@ -3879,7 +3972,7 @@ model CoreMilestone {
   createdAt DateTime          @default(now())
   updatedAt DateTime          @updatedAt
 
-  term Term @relation(fields: [termId], references: [id], onDelete: Cascade)
+  term   Term                 @relation(fields: [termId], references: [id], onDelete: Cascade)
   // No owners means the item is for the whole lab.
   owners CoreMilestoneOwner[]
 
@@ -4098,7 +4191,7 @@ model Project {
   neonProjectIds   String[] @default([])
   flyReadTokenEnc  String? // read-only Fly token (drives the sweep), encrypted
   flyWriteTokenEnc String? // write Fly token (gates console actions), encrypted
-  infraEnabled     Boolean @default(true) // off keeps config but skips the sweep
+  infraEnabled     Boolean  @default(true) // off keeps config but skips the sweep
 
   // Private projects are excluded from every `projects:*` form reference
   // source, so they can't be picked as an answer on a bid/preference form.
@@ -4111,36 +4204,36 @@ model Project {
   publicWriteupPage   Page? @relation("ProjectPublicWriteup", fields: [publicWriteupPageId], references: [id], onDelete: SetNull)
   meetingNoteTemplate Page? @relation("ProjectMeetingNoteTemplate", fields: [meetingNoteTemplateId], references: [id], onDelete: SetNull)
 
-  partners          ProjectPartner[]
+  partners           ProjectPartner[]
   // The project's planned term set — the source of truth for which terms the
   // project runs. The start term is the earliest of these (by Term.sortKey).
-  projectTerms      ProjectTerm[]
-  termStatuses      ProjectTermStatus[]
-  assignments       ProjectAssignment[]
-  mailAccounts      MailAccount[]
-  roleRequests      ProjectRoleRequest[]
-  planningNote      PlanningNote?
-  maintenancePlans  ProjectMaintenance[]
+  projectTerms       ProjectTerm[]
+  termStatuses       ProjectTermStatus[]
+  assignments        ProjectAssignment[]
+  mailAccounts       MailAccount[]
+  roleRequests       ProjectRoleRequest[]
+  planningNote       PlanningNote?
+  maintenancePlans   ProjectMaintenance[]
   returnApplications PartnerApplication[] @relation("PartnerApplicationContinues")
-  mentorshipPairs   MentorshipPair[]
-  externalMentors   ExternalMentor[]
-  epics             Epic[]
-  tasks             Task[]
+  mentorshipPairs    MentorshipPair[]
+  externalMentors    ExternalMentor[]
+  epics              Epic[]
+  tasks              Task[]
   // Declared domains for the project — surfaced on the project detail page
   // and editable by Admin/Core/Hiring Lead. Display-only today; staffing
   // gating off this set is a follow-up.
-  domains           ProjectDomain[]
-  domainScopes      ProjectDomainScope[]
+  domains            ProjectDomain[]
+  domainScopes       ProjectDomainScope[]
   // Standalone uploaded files in the project's Files section.
-  files             ProjectFile[]
-  budgetEntries     BudgetEntry[]
-  budgetNotes       BudgetNote[]
-  chartStrings      ProjectChartString[]
-  scheduledMeetings ScheduledMeeting[]
-  timeEntries       TimeEntry[]
+  files              ProjectFile[]
+  budgetEntries      BudgetEntry[]
+  budgetNotes        BudgetNote[]
+  chartStrings       ProjectChartString[]
+  scheduledMeetings  ScheduledMeeting[]
+  timeEntries        TimeEntry[]
   // The curated public face of this project, if it has one. Absent until
   // someone opens the project's Public view.
-  showcase          ProjectShowcase?
+  showcase           ProjectShowcase?
 
   createdAt DateTime @default(now())
 }
@@ -5355,11 +5448,11 @@ model Form {
   // staffing-slot-bound, not education-scoped) is accepted at most once.
   // notifyOnSubmission: each submission creates an in-app Notification for
   // createdById (best-effort, after the submission transaction commits).
-  oneResponsePerMember Boolean @default(false)
-  notifyOnSubmission   Boolean @default(false)
+  oneResponsePerMember Boolean   @default(false)
+  notifyOnSubmission   Boolean   @default(false)
   // allowResponseEdit: the respondent may change their own answers while the
   // form is open. Only meaningful with oneResponsePerMember.
-  allowResponseEdit    Boolean @default(false)
+  allowResponseEdit    Boolean   @default(false)
   // remindBeforeClose: the form-reminders job nudges people who haven't
   // responded a day before closesAt. lastRemindedAt is the last MANUAL
   // reminder (the tracker modal), which limits those to one per 24 hours.
@@ -5787,9 +5880,9 @@ model Page {
   favorites UserFavorite[]
 
   // Set only when kind == Form: the form body sharing this page's id.
-  form      Form?      @relation("FormPage")
+  form              Form?              @relation("FormPage")
   // Set only when kind == Slides: the deck body sharing this page's id.
-  slideDeck SlideDeck?
+  slideDeck         SlideDeck?
   slidePresentation SlidePresentation?
 
   // Pinned to the top of the project's Documents block. Timestamp so pins can
@@ -7244,16 +7337,16 @@ model PartnerSurveyFormBinding {
 
 // Singleton (id "default") of operator knobs for the CRM.
 model PartnerCrmSettings {
-  id                    String   @id @default("default")
+  id                      String   @id @default("default")
   // Core members whose mutual availability partners see when requesting an
   // interview. Empty = every active Core member.
-  interviewPanelUserIds String[] @default([])
-  staleDays             Int      @default(14)
+  interviewPanelUserIds   String[] @default([])
+  staleDays               Int      @default(14)
   // Price per term for each maintenance tier; null = not set yet.
   maintenanceHostingCents Int?
   maintenanceMildCents    Int?
   maintenanceMediumCents  Int?
-  updatedAt             DateTime @updatedAt
+  updatedAt               DateTime @updatedAt
 }
 
 // A Core↔partner meeting attached to an opportunity. Supports "meet in pairs":
@@ -7383,6 +7476,10 @@ model PartnerReferral {
   // Full Pitch only: the referrer's own pitch for the partner.
   pitchBody          String?
 
+  // The application this referral led to, set by Partner Relations. Loose ref
+  // to PartnerApplication.id, like PartnerApplication.resultingProjectId.
+  partnerApplicationId String?
+
   // Partner Relations working notes + "we've reached out" marker.
   coreNotes          String?
   reachedOutAt       DateTime?
@@ -7392,6 +7489,7 @@ model PartnerReferral {
   @@index([createdAt])
   @@index([referredByUserId])
   @@index([tier])
+  @@index([partnerApplicationId])
 }
 
 enum PartnerReferralTier {
@@ -8103,19 +8201,19 @@ model SlideDeck {
 // Who is presenting a slide deck right now and where they are. One row per
 // deck, reused across presentations; endedAt is null while it is live.
 model SlidePresentation {
-  id          String    @id @default(cuid())
-  pageId      String    @unique
-  page        Page      @relation(fields: [pageId], references: [id], onDelete: Cascade)
-  presenterId String
-  presenter   User      @relation(fields: [presenterId], references: [id], onDelete: Cascade)
-  slideId     String
-  build       Int       @default(0)
-  startedAt   DateTime  @default(now())
-  endedAt     DateTime?
-  updatedAt   DateTime  @updatedAt
+  id           String          @id @default(cuid())
+  pageId       String          @unique
+  page         Page            @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  presenterId  String
+  presenter    User            @relation(fields: [presenterId], references: [id], onDelete: Cascade)
+  slideId      String
+  build        Int             @default(0)
+  startedAt    DateTime        @default(now())
+  endedAt      DateTime?
+  updatedAt    DateTime        @updatedAt
   // Poll element ids the presenter closed this session, and whether followers may react.
-  closedPolls  String[]  @default([])
-  reactionsOff Boolean   @default(false)
+  closedPolls  String[]        @default([])
+  reactionsOff Boolean         @default(false)
   pollVotes    SlidePollVote[]
 }
 
@@ -8294,7 +8392,7 @@ model Banner {
   updatedAt   DateTime        @updatedAt
 
   untilFormId String?
-  untilForm   Form?           @relation(fields: [untilFormId], references: [id], onDelete: SetNull)
+  untilForm   Form?   @relation(fields: [untilFormId], references: [id], onDelete: SetNull)
 
   impressions BannerImpression[]
 

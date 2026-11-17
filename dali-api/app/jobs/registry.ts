@@ -108,6 +108,7 @@ import { runPartnerSurveySend } from "~/jobs/partner-survey-send.server";
 import { runRecordingFinalizer } from "~/jobs/recording-finalizer.server";
 import { runMeetingRecordPrompts } from "~/jobs/meeting-record-prompts.server";
 import { runMeetingNotesNudge } from "~/jobs/meeting-notes-nudge.server";
+import { runOpportunitiesFreshness } from "~/jobs/opportunities-freshness.server";
 
 export const JOBS: JobDefinition[] = [
   {
@@ -662,6 +663,18 @@ export const JOBS: JobDefinition[] = [
       },
     ],
     handler: runMeetingNotesNudge,
+  },
+  {
+    name: "opportunities-freshness",
+    description:
+      "Asks whoever shared a job in Community > Opportunities whether it's still open, closes it when they don't answer or its link stops working, and closes coffee chat asks after a month.",
+    intervalMinutes: 60,
+    settings: [
+      { key: "askAfterDays", label: "Ask after", unit: "days", min: 7, max: 120, default: 30 },
+      { key: "closeAfterDays", label: "Close with no answer after", unit: "days", min: 1, max: 30, default: 7 },
+      { key: "chatAskDays", label: "Close coffee chat asks after", unit: "days", min: 7, max: 120, default: 30 },
+    ],
+    handler: runOpportunitiesFreshness,
   },
 ];
 

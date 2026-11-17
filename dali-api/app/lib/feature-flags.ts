@@ -191,6 +191,12 @@ export const FEATURE_FLAGS = [
     description:
       "New alumni are invited on first sign-in to check their details, add a few interests and choose what they are open to, in three short steps. With the alumni onboarding game on too, the flow ends with a link into the pixel lab. Ships off.",
   },
+  {
+    key: "alumni-opportunities",
+    label: "Alumni: Opportunities feed",
+    description:
+      "Community > Opportunities becomes a feed where alumni share jobs (a pasted link fills in the company and its logo) and anyone can ask for a coffee chat, with reactions and comments. Partner referrals show their progress and a post when one becomes a project. Off shows the coming soon page. Ships off.",
+  },
 ] as const satisfies readonly FeatureFlagDef[];
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[number]["key"];
