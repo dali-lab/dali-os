@@ -302,3 +302,58 @@ export interface RecordingState {
   error: string | null;
   progress: { stage: 'fetching' | 'transcribing' | 'labeling'; completed: number; total: number } | null;
 }
+
+// Expenses (behind the `expenses` flag; every route 404s when it is off).
+// Receipts upload straight to S3: ask for presigned POSTs, POST each file to its url
+// with `fields` + the file, then create the expense from the returned keys.
+// Photos are converted to JPEG on device first (the server rejects HEIC).
+export type ExpenseStatus = 'DRAFT' | 'SUBMITTED' | 'RETURNED' | 'APPROVED' | 'PAID';
+export type ExpensePaidWith = 'STAFF_CARD' | 'OWN_CARD';
+
+export interface ExpenseCardOption { id: string; nickname: string; last4: string }
+export interface ExpenseCategoryOption { id: string; label: string }
+
+// GET /api/mobile/expenses/options
+export interface ExpenseOptionsResponse {
+  cards: ExpenseCardOption[]; // staff cards this member may file on
+  categories: ExpenseCategoryOption[];
+  lastPaidWith: { paidWith: ExpensePaidWith; cardId: string | null } | null;
+}
+
+// POST /api/mobile/expenses/uploads { files: [{ contentType, fileName }] } (max 10; jpeg/png/webp/pdf)
+export interface ExpenseUploadsResponse {
+  uploads: { key: string; url: string; fields: Record<string, string> }[]; // same order as files
+}
+
+export interface ExpenseCheck { level: 'ok' | 'warn'; message: string }
+export interface ExpenseSummary {
+  id: string;
+  status: ExpenseStatus;
+  paidWith: ExpensePaidWith | null;
+  card: ExpenseCardOption | null;
+  merchant: string | null;
+  purpose: string | null;
+  category: ExpenseCategoryOption | null;
+  total: string | null; // decimal string, e.g. "36.87"
+  purchasedAt: string | null;
+  noReceipt: boolean;
+  matched: boolean; // staff card only: linked to a statement charge
+  receiptCount: number;
+}
+
+// GET /api/mobile/expenses -> { expenses } (the caller's own, newest first)
+export interface ExpensesResponse { expenses: ExpenseSummary[] }
+
+// GET /api/mobile/expenses/:id
+export interface ExpenseDetail extends ExpenseSummary {
+  lineItems: { description: string; amount: string | null }[];
+  categoryReason: string | null; // "PO says Technigala"
+  checks: ExpenseCheck[];
+  receipts: { id: string; kind: 'PAYMENT_PROOF' | 'ITEMIZED' | 'OTHER'; url: string; contentType: string }[]; // short-lived URLs
+  decisionNote: string | null; // set when RETURNED
+}
+
+// POST /api/mobile/expenses { receiptKeys, paidWith?, cardId? } -> ExpenseDetail (a DRAFT; reads the receipts)
+// PATCH /api/mobile/expenses/:id { merchant?, purpose?, categoryId?, total?, purchasedAt?, paidWith?, cardId?, attendeeIds? } -> ExpenseDetail
+// POST /api/mobile/expenses/:id { action: 'submit' | 'withdraw' | 'markPaid' } -> ExpenseDetail
+// DELETE /api/mobile/expenses/:id (drafts only)

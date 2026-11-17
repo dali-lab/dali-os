@@ -1,9 +1,10 @@
 import React from 'react';
 import { Pressable, View } from 'react-native';
-import { AtSign, Fingerprint, LogOut, Mail, MapPin, RefreshCw, Server } from 'lucide-react-native';
+import { AtSign, Fingerprint, LogOut, Mail, MapPin, Receipt, RefreshCw, Server } from 'lucide-react-native';
 import { colors, tw } from '../theme';
 import { ENVIRONMENTS } from '../api/env';
 import { useAuth } from '../contexts/AuthContext';
+import { useExpenses } from '../contexts/ExpensesContext';
 import { useData } from '../contexts/DataContext';
 import type { Presence } from '../types/user';
 import { roleTone } from '../utils/roles';
@@ -21,9 +22,11 @@ interface ProfileSheetProps {
   open: boolean;
   onClose: () => void;
   onSignOut: () => void;
+  onOpenExpenses: () => void;
 }
 
-export function ProfileSheet({ open, onClose, onSignOut }: ProfileSheetProps) {
+export function ProfileSheet({ open, onClose, onSignOut, onOpenExpenses }: ProfileSheetProps) {
+  const { available: expensesAvailable } = useExpenses();
   const { me: meResource, setPresence } = useData();
   const { environmentId, setEnvironment } = useAuth();
   const profile = meResource.data;
@@ -140,7 +143,15 @@ export function ProfileSheet({ open, onClose, onSignOut }: ProfileSheetProps) {
         </View>
       ) : null}
 
-      <View style={tw`mt-5`}>
+      {expensesAvailable ? (
+        <View style={tw`mt-5`}>
+          <Button fullWidth variant="outline" color="navy" leftIcon={Receipt} onPress={onOpenExpenses}>
+            Expenses
+          </Button>
+        </View>
+      ) : null}
+
+      <View style={tw`mt-3`}>
         <Button fullWidth variant="outline" color="coral" leftIcon={LogOut} onPress={onSignOut}>
           Sign out
         </Button>

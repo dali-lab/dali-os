@@ -35,7 +35,8 @@ export type EventDef = {
     | "Onboarding"
     | "Partners"
     | "People"
-    | "Community";
+    | "Community"
+    | "Expenses";
   label: string;
   description: string;
   // The in-app row IS the workflow surface (RSVP buttons, form todo,
@@ -686,6 +687,48 @@ export const EVENT_TYPES = {
     label: "Your referral became a project",
     description: "When a partner you referred becomes a DALI project.",
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Instant" },
+  },
+  "expense.submitted": {
+    kind: "General",
+    area: "Expenses",
+    label: "Expenses to approve",
+    description: "When someone files an expense you can approve.",
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Daily" },
+  },
+  "expense.returned": {
+    kind: "General",
+    area: "Expenses",
+    label: "Expense returned",
+    description: "When an approver returns your expense with a note.",
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Daily" },
+  },
+  "expense.approved": {
+    kind: "General",
+    area: "Expenses",
+    label: "Expense approved",
+    description: "When your expense is approved.",
+    defaults: { inApp: true, desktop: false, slackDm: false, email: "Daily" },
+  },
+  "expense.paid": {
+    kind: "General",
+    area: "Expenses",
+    label: "Expense paid",
+    description: "When your out-of-pocket expense is marked as paid back.",
+    defaults: { inApp: true, desktop: false, slackDm: false, email: "Daily" },
+  },
+  "expense.needs_receipt": {
+    kind: "General",
+    area: "Expenses",
+    label: "Receipt needed",
+    description: "When a charge on a card you can use has no receipt yet.",
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Daily" },
+  },
+  "expense.unpaid_reminder": {
+    kind: "General",
+    area: "Expenses",
+    label: "Unpaid reimbursements",
+    description: "A reminder about approved expenses that have not been paid back.",
+    defaults: { inApp: true, desktop: false, slackDm: false, email: "Daily" },
   },
   // Fallback stamped on rows that predate the registry (schema column
   // default). Never emitted by code; hidden from the settings page.

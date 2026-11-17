@@ -29,6 +29,8 @@ export type BudgetRow = {
   revenue: number;
   adjustedRevenue: number;
   expense: number;
+  /** Approved and paid Expenses-feature purchases; payroll stays in `expense`. */
+  purchases: number;
   net: number;
   note: string | null;
   /** True when projectType is "DALI PATEO" (revenue was scaled). */
@@ -44,6 +46,7 @@ export type BudgetGroup = {
   totalRevenue: number;
   totalAdjustedRevenue: number;
   totalExpense: number;
+  totalPurchases: number;
   totalNet: number;
 };
 
@@ -52,5 +55,6 @@ export type BudgetData = {
   grandTotalRevenue: number;
   grandTotalAdjustedRevenue: number;
   grandTotalExpense: number;
+  grandTotalPurchases: number;
   grandTotalNet: number;
 };

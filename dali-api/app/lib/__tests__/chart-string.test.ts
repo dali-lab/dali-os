@@ -65,17 +65,31 @@ describe("GL strings", () => {
     expect(r.warnings.map((w) => w.code)).toContain("gl_subactivity_unknown");
   });
 
-  it("knows the six documented subactivity codes", () => {
+  it("knows the documented subactivity codes", () => {
     expect(Object.keys(GL_SUBACTIVITIES).sort()).toEqual([
       "0000",
       "1500",
       "2000",
       "3000",
+      "3100",
+      "3200",
+      "3300",
+      "3400",
+      "3500",
       "4000",
       "5000",
     ]);
     expect(GL_SUBACTIVITIES["4000"]).toBe("Projects");
   });
+
+  it.each(["3100", "3200", "3300", "3400", "3500"])(
+    "accepts program subactivity %s without a warning",
+    (sub) => {
+      const r = parseChartString(`20.330.161028.128512.${sub}`, "GL");
+      expect(r.errors).toEqual([]);
+      expect(r.warnings).toEqual([]);
+    },
+  );
 });
 
 describe("PTAEO strings", () => {

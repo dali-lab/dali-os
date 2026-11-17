@@ -1,7 +1,8 @@
 import type { Route } from "./+types/admin.payroll.csv";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { isAdmin } from "~/lib/roles";
+import { isAdmin, getUserRoles } from "~/lib/roles";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { rowsToCsv, csvResponse } from "~/lib/csv";
 import { resolveTermFilter } from "~/lib/terms";
 import { getReconciliation } from "~/admin/lib/payroll-reconcile.server";
@@ -158,9 +159,19 @@ function buildRows(view: View, r: CollatedResult): unknown[][] {
 
 function buildBudgetRows(
   budget: Awaited<ReturnType<typeof getBudgetData>>,
+  withPurchases = false,
 ): unknown[][] {
   const rows: unknown[][] = [
-    ["Project", "Chart String", "Type", "Revenue", "Adj. Revenue", "Expense", "Net"],
+    [
+      "Project",
+      "Chart String",
+      "Type",
+      "Revenue",
+      "Adj. Revenue",
+      "Expense",
+      ...(withPurchases ? ["Purchases"] : []),
+      "Net",
+    ],
   ];
   for (const g of budget.groups) {
     for (const row of g.rows) {
@@ -171,6 +182,7 @@ function buildBudgetRows(
         row.revenue,
         row.adjustedRevenue,
         row.expense,
+        ...(withPurchases ? [row.purchases] : []),
         row.net,
       ]);
     }
@@ -182,6 +194,7 @@ function buildBudgetRows(
     budget.grandTotalRevenue,
     budget.grandTotalAdjustedRevenue,
     budget.grandTotalExpense,
+    ...(withPurchases ? [budget.grandTotalPurchases] : []),
     budget.grandTotalNet,
   ]);
   return rows;
@@ -203,10 +216,18 @@ export async function loader({ request }: Route.LoaderArgs) {
     return new Response("No term selected", { status: 404 });
   }
 
-  const rows =
-    viewParam === "budget"
-      ? buildBudgetRows(await getBudgetData(termId))
-      : buildRows(viewParam, await getReconciliation(termId));
+  let rows: unknown[][];
+  if (viewParam === "budget") {
+    const purchases = await isFeatureEnabled(
+      "expenses",
+      auth.user.sub,
+      await getUserRoles(auth.user.sub, request),
+      request,
+    );
+    rows = buildBudgetRows(await getBudgetData(termId, { purchases }), purchases);
+  } else {
+    rows = buildRows(viewParam, await getReconciliation(termId));
+  }
   const csv = rowsToCsv(rows);
 
   const termCode = terms.find((t) => t.id === selected)?.code ?? "term";
