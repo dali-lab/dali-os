@@ -74,6 +74,7 @@ export interface HubAccess {
   viewerId: string;
   core: boolean;
   canEdit: boolean;
+  canModerate: boolean;
 }
 
 /** One hub for a caller outside the web session (MCP): null unless the flag is on, they are a member, and the hub is published or theirs to edit. */
@@ -101,7 +102,9 @@ export async function loadHubAccess(
   if (!hub) return null;
   const canEdit = await canEditResourceHub(userId, hub);
   if (!hub.publishedAt && !canEdit) return null;
-  return { hub, viewerId: userId, core: viewer.core, canEdit };
+  const led = viewer.core ? [] : await ledDomainIds(userId);
+  const canModerate = viewer.core || (hub.domainId !== null && led.includes(hub.domainId));
+  return { hub, viewerId: userId, core: viewer.core, canEdit, canModerate };
 }
 
 // Behind the `resource-hub` flag, open to every lab member. 404 (not a
