@@ -3,6 +3,11 @@ import type {
   AddTimeEntryBody,
   CalendarResponse,
   CreateEventBody,
+  ExpenseDetail,
+  ExpenseOptionsResponse,
+  ExpensePaidWith,
+  ExpensesResponse,
+  ExpenseUploadsResponse,
   MemberSummary,
   MeResponse,
   NoteDetail,
@@ -133,6 +138,20 @@ export const api = {
   recordingAction: (id: string, body: Record<string, unknown>) =>
     request<Record<string, unknown>>('POST', `/api/meeting-recordings/${encodeURIComponent(id)}`, body),
   discardRecording: (id: string) => request<{ ok: true }>('DELETE', `/api/meeting-recordings/${encodeURIComponent(id)}`),
+  expenseOptions: () => request<ExpenseOptionsResponse>('GET', '/api/mobile/expenses/options'),
+  expenses: () => request<ExpensesResponse>('GET', '/api/mobile/expenses'),
+  expense: (id: string) => request<ExpenseDetail>('GET', `/api/mobile/expenses/${encodeURIComponent(id)}`),
+  expenseUploads: (files: { contentType: string; fileName: string }[]) =>
+    request<ExpenseUploadsResponse>('POST', '/api/mobile/expenses/uploads', { files }),
+  createExpense: (body: { receiptKeys: string[]; paidWith?: ExpensePaidWith; cardId?: string }) =>
+    request<ExpenseDetail>('POST', '/api/mobile/expenses', body),
+  updateExpense: (
+    id: string,
+    body: { merchant?: string; purpose?: string; categoryId?: string; total?: string; purchasedAt?: string; paidWith?: ExpensePaidWith; cardId?: string | null },
+  ) => request<ExpenseDetail>('PATCH', `/api/mobile/expenses/${encodeURIComponent(id)}`, body),
+  expenseAction: (id: string, action: 'submit' | 'withdraw') =>
+    request<ExpenseDetail>('POST', `/api/mobile/expenses/${encodeURIComponent(id)}`, { action }),
+  deleteExpense: (id: string) => request<{ ok: true }>('DELETE', `/api/mobile/expenses/${encodeURIComponent(id)}`),
   createTasks: (id: string, items: { index: number; title: string; assigneeId?: string; dueAt?: string }[]) =>
     request<{ created: { index: number; taskId: string }[] }>('POST', `/api/meeting-recordings/${encodeURIComponent(id)}`, {
       action: 'createTasks',
