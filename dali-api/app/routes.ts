@@ -405,6 +405,7 @@ export default [
   // in each loader; see specs via app/components/alumni-game/.
   route("alumni/welcome", "routes/alumni.welcome.tsx"),
   route("alumni/lab", "routes/alumni.lab.tsx"),
+  route("alumni/onboarding", "routes/alumni.onboarding.tsx"),
 
   // Login / signup / onboarding (no layout)
   route("login", "routes/login.tsx"),

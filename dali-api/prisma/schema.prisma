@@ -149,6 +149,15 @@ model User {
   openToCoffeeChats   Boolean   @default(true)
   openToResumeReviews Boolean   @default(false)
   openToPortfolioReviews Boolean @default(false)
+  openToPartnerReferrals Boolean @default(false)
+  openToMentoring     Boolean   @default(false)
+  openToSpeaking      Boolean   @default(false)
+  // Short topics alumni are happy to be asked about, and a line on life outside
+  // work. Both show on the alumni profile.
+  askMeAbout          String[]  @default([])
+  outsideOfWork       String?
+  // Set when an alumnus finishes the first-login profile flow (alumni-onboarding).
+  alumniOnboardedAt   DateTime?
   linkedinUrl         String?
   // The member's current resume (PDF). Private: the member and admins only,
   // served through /api/members/:id/resume, never api/upload/url.
