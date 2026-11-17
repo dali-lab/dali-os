@@ -245,6 +245,7 @@ model User {
   accounts                      Account[]
   passkeys                      Passkey[]
   emails                        UserEmail[]
+  alumniInvites                 AlumniInvite[]
   rubricVersions                RubricVersion[]
   authoredSigningVersions       SigningDocumentVersion[]       @relation("SigningVersionAuthor")
   signingSignatures             SigningSignature[]             @relation("SigningSigner")
@@ -2113,6 +2114,21 @@ model UserEmail {
   verifiedAt DateTime?
 
   createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+// One-time sign-in link sent to an alumnus. Only the sha256 of the token is stored.
+model AlumniInvite {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  sentTo    String
+  batch     String?
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
 
   @@index([userId])
 }

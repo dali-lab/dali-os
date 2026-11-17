@@ -415,6 +415,29 @@ export const EMAIL_TEMPLATES = {
     whenMissing: "skip",
   },
 
+  // ── Alumni ───────────────────────────────────────────────────────────────
+  "alumni.invite": {
+    area: "Alumni",
+    label: "Alumni invite",
+    description:
+      "The launch email that gives each alumnus a personal one-time sign-in link. Sent by the invite script; {{inviteLink}} must stay in the body.",
+    purpose: "General",
+    variables: ["firstName", "inviteLink"],
+    requiredVariables: ["inviteLink"],
+    sample: { firstName: "Alex", inviteLink: "https://os.dali.dartmouth.edu/alumni/invite/example" },
+    footer: "transactional",
+    whenMissing: "default",
+    defaults: {
+      subject: "DALI OS is open to alumni",
+      body: [
+        "Hi {{firstName}},",
+        "DALI OS is now open to alumni. The link below signs you in to your account and works once.",
+        '<a href="{{inviteLink}}">Sign in to DALI OS</a>',
+        "The link works once and expires in 60 days. If it has expired, open it and ask for a new one.",
+      ].join("\n\n"),
+    },
+  },
+
   // ── Forms: receipts ──────────────────────────────────────────────────────
   // Two keys because the copy differs in kind, not wording: the public one has
   // no {{answers}} on purpose (anyone can type any address into a public form),

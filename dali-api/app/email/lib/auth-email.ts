@@ -69,6 +69,27 @@ export function signInLinkEmail(args: { url: string }): AuthEmailParts {
   };
 }
 
+export const ALUMNI_INVITE_TTL_SECONDS = 60 * 86_400;
+
+export function alumniInviteEmail(args: { url: string }): AuthEmailParts {
+  const expiry = humanDuration(ALUMNI_INVITE_TTL_SECONDS);
+  const ignore = "If you didn't expect this, you can ignore this email.";
+  return {
+    subject: "Your new DALI OS link",
+    preheader: "Here is a new link to sign in to DALI OS.",
+    cta: { href: args.url, label: "Sign in to DALI OS" },
+    bodyHtml: [
+      `<p style="margin:0 0 16px;">Here is a new link to sign in to DALI OS.</p>`,
+      `<p style="margin:0;color:#52525b;font-size:14px;">The link works once and expires in ${expiry}. ${ignore}</p>`,
+    ].join("\n"),
+    text: [
+      "Here is a new link to sign in to DALI OS.",
+      args.url,
+      `The link works once and expires in ${expiry}. ${ignore}`,
+    ].join("\n\n"),
+  };
+}
+
 // One callback serves four BetterAuth OTP types. Labelling them all "sign-in
 // code" meant a password-reset or email-change code arrived describing itself as
 // something it wasn't.

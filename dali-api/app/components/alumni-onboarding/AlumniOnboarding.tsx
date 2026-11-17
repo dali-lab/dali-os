@@ -10,6 +10,7 @@ import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import type { AuthTile } from "~/components/auth/auth-tiles";
 import { BlockTile, BlockWall } from "~/components/alumni-onboarding/Wall";
+import { ContactEmailPicker } from "~/components/contact-email/ContactEmailPicker";
 import {
   ASK_ME_ABOUT_SUGGESTIONS,
   OPEN_TO_CHOICES,
@@ -20,8 +21,9 @@ import {
 } from "~/lib/alumni-onboarding";
 import { MAX_ASK_ME_ABOUT, MAX_ASK_ME_ABOUT_LENGTH } from "~/members/lib/profile-limits";
 import type { OnboardingData } from "~/lib/alumni-onboarding.server";
+import type { ContactEmailOptions } from "~/lib/contact-email.server";
 
-export type OnboardingView = OnboardingData & { gameOn: boolean };
+export type OnboardingView = OnboardingData & { gameOn: boolean; contactEmail: ContactEmailOptions };
 
 type ActionData = { ok?: boolean; error?: string };
 
@@ -190,6 +192,21 @@ function workLine(job: OnboardingView["now"], withYear: boolean): string {
   if (!job) return "Not added yet";
   const base = `${job.position} at ${job.company}`;
   return withYear && job.year ? `${base}, ${job.year}` : base;
+}
+
+function ContactStep({ data, next }: { data: OnboardingView; next: () => void }) {
+  return (
+    <>
+      <StepHeader
+        eyebrow="First, a quick one"
+        title="Your email"
+        sub="Sign-in codes and DALI OS updates go to this address. It can be changed later in settings."
+      />
+      <div className="pb-8">
+        <ContactEmailPicker data={data.contactEmail} onDone={next} />
+      </div>
+    </>
+  );
 }
 
 function DetailsStep({ data, next }: { data: OnboardingView; next: () => void }) {
@@ -522,7 +539,7 @@ function FinishedBlock({ data }: { data: OnboardingView }) {
 }
 
 export function AlumniOnboarding({ data }: { data: OnboardingView }) {
-  const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
+  const [step, setStep] = useState<0 | 1 | 2 | 3 | 4>(0);
   const fetcher = useFetcher<ActionData>();
   const advanceTo = useRef<2 | 3 | 4 | null>(null);
   const handled = useRef<unknown>(null);
@@ -542,14 +559,16 @@ export function AlumniOnboarding({ data }: { data: OnboardingView }) {
   };
 
   const error = fetcher.data?.error;
+  const brandStep = Math.max(step, 1) as 1 | 2 | 3 | 4;
   const brand = {
-    lines: brandLines(step, data.firstName),
-    sub: BRAND[step].sub,
+    lines: brandLines(brandStep, data.firstName),
+    sub: BRAND[brandStep].sub,
     visual: step === 4 ? <FinishedBlock data={data} /> : <BlockWall filled={wallFilledForStep(step)} />,
   };
 
   return (
     <AuthShellV2 title="Welcome back" stepKey={`step-${step}`} brand={brand} header={<></>} wide hideLegal>
+      {step === 0 && <ContactStep data={data} next={() => setStep(1)} />}
       {step === 1 && <DetailsStep data={data} next={() => setStep(2)} />}
       {step === 2 && (
         <AboutStep

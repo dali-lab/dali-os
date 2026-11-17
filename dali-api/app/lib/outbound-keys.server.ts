@@ -45,3 +45,11 @@ export function opportunityChatIntroKey(responseId: string): string {
 export function opportunityReferralShippedKey(referralId: string): string {
   return `opportunities.referral_shipped:${referralId}`;
 }
+
+export function alumniInviteLaunchKey(batch: string, userId: string): string {
+  return `alumni.invite.launch:${batch}:${userId}`;
+}
+
+export function alumniInviteFreshKey(inviteId: string): string {
+  return `alumni.invite.fresh:${inviteId}`;
+}
