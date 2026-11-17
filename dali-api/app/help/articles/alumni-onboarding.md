@@ -1,12 +1,20 @@
 ---
 title: Alumni welcome flow
-summary: Check your details, add a few interests and choose what you are open to the first time you sign in as an alum.
+summary: Choose where we reach you, check your details, add a few interests and choose what you are open to the first time you sign in as an alum.
 flag: alumni-onboarding
-keywords: [alumni, onboarding, welcome, profile, open to, coffee chats, resume reviews, ask me about]
-paths: [/alumni/onboarding]
+keywords: [alumni, onboarding, welcome, profile, open to, coffee chats, resume reviews, ask me about, email, invite link, sign in, expired link]
+paths: [/alumni/onboarding, /alumni/invite/:token, /settings/security]
 ---
 
+If DALI sent you a personal link, open it and choose **Continue to DALI OS** to sign in. Opening the link alone does not use it up.
+
 The first time you sign in as an alum, DALI OS invites you to a short welcome flow. It takes about two minutes and ends on a page of places worth a look. If you choose **Maybe later**, the invite comes back next time you open DALI OS.
+
+## First: Where should we reach you?
+
+Pick the email address for sign-in codes and updates. Your current address is marked, and the address your invite went to is already filled in. To use a different address, choose **Use a different email** and type it. If DALI OS has not confirmed that address yet, it sends a 6-digit code to it, and you enter the code to switch. You cannot leave this blank, and keeping your current address is fine.
+
+If an address is already on another DALI OS account, DALI OS tells you to ask DALI staff to merge them.
 
 ## Step 1: Check your details
 
@@ -20,6 +28,12 @@ Add a fun fact, pick the topics people can ask you about (or add your own), and 
 
 Turn on what you are happy to help with: coffee chats, resume reviews, partner referrals, mentoring a project and speaking at a lab event. Students and DALI staff only ask you for what you turn on. **Resume reviews** covers both resumes and portfolios.
 
+## If your link has expired
+
+A link works once and expires after 60 days. Open it and choose **Email me a new link**. If the link was one of ours, a new one goes to the address the first one was sent to. You can ask for one new link every 10 minutes.
+
 ## Change it later
 
 Everything from the flow lives on your [profile](/profile). **Alumni details** holds your topics, fun fact, outside of work and what you are open to, and you can edit them any time.
+
+To change your sign-in and contact email, go to [Settings](/settings/security) and use **Sign-in and contact email**. Your old address still works on the sign-in page, and the code goes to your new one.

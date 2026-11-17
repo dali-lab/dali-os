@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { initialsFromName, userInitials, termCodeLabel, formatMonthDayTime } from "~/lib/display";
+import { initialsFromName, userInitials, termCodeLabel, formatMonthDayTime, primaryEmail, displayEmail } from "~/lib/display";
 
 describe("initialsFromName", () => {
   it("returns first + last initial for a full name", () => {
@@ -79,5 +79,21 @@ describe("formatMonthDayTime", () => {
 
   it("crosses the date line in the given zone", () => {
     expect(formatMonthDayTime("2026-11-13T02:30:00Z", "America/New_York")).toBe("Nov 12, 9:30 PM");
+  });
+});
+
+describe("primaryEmail and displayEmail", () => {
+  const row = { daliEmail: "ada@dali.dartmouth.edu", dartmouthEmail: "ada@dartmouth.edu", personalEmail: "ada@example.com", netId: "f00abc" };
+
+  it("puts the chosen login email first", () => {
+    expect(primaryEmail({ ...row, email: "me@example.com" })).toBe("me@example.com");
+    expect(displayEmail({ ...row, email: "me@example.com" })).toBe("me@example.com");
+  });
+
+  it("keeps the old order when there is no login email", () => {
+    expect(primaryEmail(row)).toBe("ada@dali.dartmouth.edu");
+    expect(primaryEmail({ ...row, email: null, daliEmail: null })).toBe("ada@dartmouth.edu");
+    expect(displayEmail({ ...row, daliEmail: null, dartmouthEmail: null, personalEmail: null })).toBe("f00abc@dartmouth.edu");
+    expect(primaryEmail({})).toBeNull();
   });
 });

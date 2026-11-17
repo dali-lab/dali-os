@@ -234,6 +234,7 @@ export async function runDigest(
     select: {
       id: true,
       firstName: true,
+      email: true,
       daliEmail: true,
       dartmouthEmail: true,
       personalEmail: true,
@@ -286,7 +287,7 @@ export async function runDigest(
   let sent = 0;
   for (const user of pending) {
     const userId = user.id;
-    const to = user.daliEmail ?? user.dartmouthEmail ?? user.personalEmail;
+    const to = user.email ?? user.daliEmail ?? user.dartmouthEmail ?? user.personalEmail;
     if (!to) continue;
     const userRows = matched.filter((r) => r.recipientUserId === userId);
     if (userRows.length === 0) continue; // no empty digests

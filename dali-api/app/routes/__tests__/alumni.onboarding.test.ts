@@ -14,6 +14,10 @@ vi.mock("~/lib/alumni-onboarding.server", () => ({
   saveHometown: vi.fn(),
   saveWorkSlot: vi.fn(),
 }));
+vi.mock("~/lib/contact-email.server", () => ({
+  listContactEmailOptions: vi.fn(),
+  runContactEmailIntent: vi.fn(),
+}));
 vi.mock("~/members/lib/profile-update.server", async () => {
   const { BadRequestError, ConflictError } = await import("~/lib/http-error");
   class ProfileValidationError extends BadRequestError {
@@ -41,6 +45,7 @@ import { getUserRoles } from "~/lib/roles";
 import { readOnlyRoles } from "~/lib/read-only-roles.server";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { BadRequestError } from "~/lib/http-error";
+import { listContactEmailOptions, runContactEmailIntent } from "~/lib/contact-email.server";
 import {
   finishOnboarding,
   loadOnboarding,
@@ -73,6 +78,8 @@ beforeEach(() => {
   vi.mocked(getUserRoles).mockResolvedValue({ isAlumni: true } as never);
   flags(true);
   vi.mocked(loadOnboarding).mockResolvedValue({ firstName: "Ada" } as never);
+  vi.mocked(listContactEmailOptions).mockResolvedValue({ options: [], preselected: null });
+  vi.mocked(runContactEmailIntent).mockResolvedValue(null);
 });
 
 describe("loader", () => {
@@ -98,9 +105,12 @@ describe("loader", () => {
   });
 
   it("returns the profile data and whether the pixel lab link should show", async () => {
-    expect(await runLoader()).toEqual({ firstName: "Ada", gameOn: false });
+    const contactEmail = { options: [{ address: "ada@example.com", proven: true, current: true }], preselected: "ada@example.com" };
+    vi.mocked(listContactEmailOptions).mockResolvedValue(contactEmail);
+    expect(await runLoader()).toEqual({ firstName: "Ada", gameOn: false, contactEmail });
     flags(true, true);
-    expect(await runLoader()).toEqual({ firstName: "Ada", gameOn: true });
+    expect(await runLoader()).toEqual({ firstName: "Ada", gameOn: true, contactEmail });
+    expect(listContactEmailOptions).toHaveBeenCalledWith("u1");
   });
 });
 
@@ -116,6 +126,19 @@ describe("action", () => {
     vi.mocked(getUserRoles).mockResolvedValue({ isAlumni: true } as never);
     flags(false);
     expect((await post({ intent: "finish" })).status).toBe(403);
+    expect(finishOnboarding).not.toHaveBeenCalled();
+  });
+
+  it("hands the contact email intents to the shared handler and returns its reply", async () => {
+    vi.mocked(runContactEmailIntent).mockResolvedValue({ ok: true, status: "code_sent", address: "ada@example.com" });
+    const res = await post({ intent: "choose-contact-email", address: "ada@example.com" });
+    expect(await res.json()).toEqual({ ok: true, status: "code_sent", address: "ada@example.com" });
+    expect(runContactEmailIntent).toHaveBeenCalledWith("choose-contact-email", expect.any(FormData), "u1", expect.any(Request));
+
+    vi.mocked(runContactEmailIntent).mockResolvedValue({ error: "That code didn't match." });
+    const bad = await post({ intent: "confirm-contact-email", address: "ada@example.com", code: "1" });
+    expect(bad.status).toBe(400);
+    expect(await bad.json()).toEqual({ error: "That code didn't match." });
     expect(finishOnboarding).not.toHaveBeenCalled();
   });
 

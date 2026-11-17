@@ -52,20 +52,22 @@ export function fullName(user: { firstName?: string | null; lastName?: string | 
 }
 
 export function primaryEmail(user: {
+  email?: string | null;
   daliEmail?: string | null;
   dartmouthEmail?: string | null;
   personalEmail?: string | null;
 }): string | null {
-  return user.daliEmail || user.dartmouthEmail || user.personalEmail || null;
+  return user.email || user.daliEmail || user.dartmouthEmail || user.personalEmail || null;
 }
 
 export function displayEmail(user: {
+  email?: string | null;
   daliEmail?: string | null;
   dartmouthEmail?: string | null;
   netId?: string | null;
   personalEmail?: string | null;
 }): string {
-  const primary = user.daliEmail || user.dartmouthEmail || user.personalEmail;
+  const primary = user.email || user.daliEmail || user.dartmouthEmail || user.personalEmail;
   if (primary) return primary;
   // Last resort only. The netid form delivers but nobody recognises it, and
   // treating it as someone's identity is what made CAS-era rows unreachable

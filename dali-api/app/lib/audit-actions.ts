@@ -9,6 +9,8 @@ export const AUDIT_ACTIONS = [
   "logout",
   "account.create",
   "auth.passkey.register",
+  "account.contact_email.code",
+  "account.contact_email.change",
   "auth.passkey.remove",
   "auth.token.invalid",
   "auth.token.malformed",

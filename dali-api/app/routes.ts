@@ -400,6 +400,7 @@ export default [
   route("alumni/welcome", "routes/alumni.welcome.tsx"),
   route("alumni/lab", "routes/alumni.lab.tsx"),
   route("alumni/onboarding", "routes/alumni.onboarding.tsx"),
+  route("alumni/invite/:token", "routes/alumni.invite.$token.tsx"),
 
   // Login / signup / onboarding (no layout)
   route("login", "routes/login.tsx"),

@@ -50,12 +50,12 @@ describe("resolvePrefill", () => {
 
   it("fills the filler's own name and email, and reads only their user row", async () => {
     const got = await resolvePrefill([ask("n", "text", "me.name"), ask("e", "email", "me.email")], "u1");
-    expect(got).toEqual({ n: "Ada Lovelace", e: "ada@example.com" });
+    expect(got).toEqual({ n: "Ada Lovelace", e: "ada@login.example.com" });
     expect(m.user.findUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "u1" } }));
     expect(m.partnerContact.findUnique).not.toHaveBeenCalled();
   });
 
-  it("falls back to the login email when no other address is on file", async () => {
+  it("uses the login email, even when other addresses are on file", async () => {
     m.user.findUnique.mockResolvedValue({ ...ada, personalEmail: null });
     expect(await resolvePrefill([ask("e", "email", "me.email")], "u1")).toEqual({ e: "ada@login.example.com" });
   });

@@ -46,6 +46,10 @@ export const TEMPLATE_VARIABLES_REGISTRY = {
     description: "Link to the DALI Slack workspace.",
     contexts: ["email"],
   },
+  inviteLink: {
+    description: "The alumnus's personal one-time sign-in link. Only offered on the alumni invite email.",
+    contexts: ["email"],
+  },
   loginUrl: {
     description: "Link to the DALI OS login page.",
     contexts: ["email"],

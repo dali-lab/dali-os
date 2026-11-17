@@ -169,6 +169,13 @@ describe("runDigest", () => {
     });
   });
 
+  it("sends to the address the member chose before their work address", async () => {
+    mockPrisma.user.findMany.mockResolvedValue([{ ...ada, email: "ada@example.com" }]);
+    await runDigest("Daily", WED_0901_ET, AT_9);
+    expect(mockEnqueue).toHaveBeenCalledWith(expect.objectContaining({ target: "ada@example.com" }), mockPrisma);
+    expect(mockPrisma.user.findMany.mock.calls.at(-1)![0].select).toMatchObject({ email: true });
+  });
+
   it("selects only unread, un-emailed rows inside the cadence window", async () => {
     await runDigest("Daily", WED_0901_ET, AT_9);
     const where = mockPrisma.notification.findMany.mock.calls[0][0].where;
