@@ -5,5 +5,5 @@ import { mobileOptions, requireMobileExpenses } from "~/expenses/lib/mobile.serv
 export async function loader({ request }: Route.LoaderArgs) {
   const guard = await requireMobileExpenses(request);
   if (!guard.ok) return guard.response;
-  return mobileJson(await mobileOptions(guard.userId));
+  return mobileJson(await mobileOptions(guard.viewer));
 }

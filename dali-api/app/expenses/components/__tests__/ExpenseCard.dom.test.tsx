@@ -25,7 +25,7 @@ let root: Root;
 
 const categories: CategoryOption[] = [{ id: "c1", label: "Technigala", chartString: null, hints: [], archived: false }];
 const cards: CardOption[] = [
-  { id: "k1", nickname: "Programs Visa", last4: "4821", ownerId: "o", ownerName: "Grace Hopper", holderIds: ["filer"], defaultCategoryId: null, archived: false },
+  { id: "k1", nickname: "Programs Visa", last4: "4821", ownerId: "o", ownerName: "Grace Hopper", holderIds: ["filer"], holderGroupIds: [], defaultCategoryId: null, archived: false },
 ];
 const filer: ViewerSummary = { userId: "filer", isCore: false, isStaff: false, ownedCardIds: [] };
 

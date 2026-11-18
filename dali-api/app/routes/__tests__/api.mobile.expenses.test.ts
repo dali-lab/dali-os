@@ -38,7 +38,7 @@ import { loader as listLoader, action as createAction } from "../api.mobile.expe
 import { loader as detailLoader, action as detailAction } from "../api.mobile.expenses.$id";
 
 const db = prisma as unknown as Record<string, Record<string, ReturnType<typeof vi.fn>>>;
-const viewer = { userId: "u1", isCore: false, isStaff: false, ownedCardIds: [] };
+const viewer = { userId: "u1", isCore: false, isStaff: false, ownedCardIds: [], groupIds: ["g1"] };
 const req = (method: string, body?: unknown, path = "/api/mobile/expenses") =>
   new Request(`https://os.example${path}`, {
     method,
@@ -114,7 +114,10 @@ describe("GET /options", () => {
       categories: [{ id: "k1", label: "Supplies" }],
       lastPaidWith: { paidWith: "STAFF_CARD", cardId: "c1" },
     });
-    expect(db.expenseCard.findMany.mock.calls[0][0].where).toEqual({ archivedAt: null, OR: [{ ownerId: "u1" }, { holderIds: { has: "u1" } }] });
+    expect(db.expenseCard.findMany.mock.calls[0][0].where).toEqual({
+      archivedAt: null,
+      OR: [{ ownerId: "u1" }, { holderIds: { has: "u1" } }, { holderGroupIds: { hasSome: ["g1"] } }],
+    });
     expect(db.expense.findFirst.mock.calls[0][0].where).toEqual({ submitterId: "u1", paidWith: { not: null } });
   });
 

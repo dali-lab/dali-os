@@ -23,6 +23,7 @@ const m = vi.hoisted(() => {
     },
     getChargeForFiling: fn(),
     requestReceipt: fn(),
+    listAllGroups: fn(),
   };
 });
 
@@ -40,6 +41,7 @@ vi.mock("../../lib/viewer.server", () => ({ loadExpenseViewer: m.loadExpenseView
 vi.mock("../../lib/expenses.server", () => m.lib);
 vi.mock("../../lib/charge-filing.server", () => ({ getChargeForFiling: m.getChargeForFiling }));
 vi.mock("../../lib/reminders.server", () => ({ requestReceipt: m.requestReceipt }));
+vi.mock("~/lib/groups.server", () => ({ listAllGroups: m.listAllGroups }));
 vi.mock("../../components/ExpensesPage", () => ({ ExpensesPage: () => null }));
 
 import { ExpenseError } from "../../lib/errors";
@@ -114,7 +116,7 @@ describe("loader data", () => {
 
   it("offers only cards the viewer may file on", async () => {
     const card = (id: string, holderIds: string[], ownerId = "x") => ({
-      id, nickname: id, last4: "1111", ownerId, holderIds, defaultCategoryId: null, archivedAt: null, owner: { firstName: "G", lastName: "H" },
+      id, nickname: id, last4: "1111", ownerId, holderIds, holderGroupIds: [], defaultCategoryId: null, archivedAt: null, owner: { firstName: "G", lastName: "H" },
     });
     m.lib.listCards.mockResolvedValue([card("mine", ["u1"]), card("theirs", [])]);
     const data = await run("/expenses");
@@ -154,7 +156,7 @@ describe("loader data", () => {
 
   it("gives a card owner the cards tab with their cards and charges", async () => {
     m.loadExpenseViewer.mockResolvedValue(viewer({ ownedCardIds: ["k1"] }));
-    const card = (id: string) => ({ id, nickname: id, last4: "1", ownerId: "u1", holderIds: [], defaultCategoryId: null, archivedAt: null, owner: { firstName: "G", lastName: "H" } });
+    const card = (id: string) => ({ id, nickname: id, last4: "1", ownerId: "u1", holderIds: [], holderGroupIds: [], defaultCategoryId: null, archivedAt: null, owner: { firstName: "G", lastName: "H" } });
     m.lib.listCards.mockResolvedValue([card("k1"), card("k2")]);
     m.lib.listCharges.mockResolvedValue([
       { id: "ch1", postedAt: new Date("2026-11-17T00:00:00Z"), merchant: "GNOMON", amountCents: 100, state: "needs_receipt", expense: null },
@@ -165,6 +167,37 @@ describe("loader data", () => {
     expect(m.lib.listCharges).toHaveBeenCalledWith(expect.anything(), "k1", { state: "needs_receipt" });
     expect(data.cardsTab?.charges[0]).toMatchObject({ id: "ch1", postedAt: "2026-11-17" });
     expect(m.prisma.user.findMany).not.toHaveBeenCalled();
+    expect(m.listAllGroups).not.toHaveBeenCalled();
+  });
+
+  it("offers Core only current lab members and active lab groups as card holders", async () => {
+    m.loadExpenseViewer.mockResolvedValue(viewer({ isCore: true }));
+    m.lib.listCards.mockResolvedValue([]);
+    m.prisma.user.findMany.mockResolvedValue([
+      { id: "s1", firstName: "Grace", lastName: "Hopper", adminMembership: { isStaff: true } },
+      { id: "m1", firstName: "Ada", lastName: "Lovelace", adminMembership: null },
+    ]);
+    const group = (id: string, systemKey: string | null, over: Record<string, unknown> = {}) => ({
+      id, name: id, systemKey, memberIds: ["m1"], archived: false, ...over,
+    });
+    m.listAllGroups.mockResolvedValue([
+      group("Term 26F", "term:t1"),
+      group("Alumni", "alumni"),
+      group("Course", "offering:o1"),
+      group("Old crew", null, { archived: true }),
+      group("Empty project", "project:p1", { memberIds: [] }),
+      group("Designers", null, { memberIds: ["m1", "s1"] }),
+    ]);
+    const data = await run("/expenses?tab=cards");
+    expect(m.prisma.user.findMany.mock.calls[0][0].where).toEqual({
+      OR: [{ daliMember: { isNot: null }, membershipStatus: "Active" }, { adminMembership: { is: { isStaff: true } } }],
+    });
+    expect(data.cardsTab?.members.map((p) => p.id)).toEqual(["s1", "m1"]);
+    expect(data.cardsTab?.staff.map((p) => p.id)).toEqual(["s1"]);
+    expect(data.cardsTab?.groups).toEqual([
+      { id: "Designers", name: "Designers", memberCount: 2 },
+      { id: "Term 26F", name: "Term 26F", memberCount: 1 },
+    ]);
   });
 });
 
@@ -334,7 +367,14 @@ describe("cards, categories and statements", () => {
   it("adds and edits a card", async () => {
     const fields = { nickname: "Visa", last4: "1234", ownerId: "o", holderIds: '["a","b"]', defaultCategoryId: "" };
     await post({ intent: "card-save", ...fields });
-    expect(m.lib.createCard).toHaveBeenCalledWith(expect.anything(), { nickname: "Visa", last4: "1234", ownerId: "o", holderIds: ["a", "b"], defaultCategoryId: null });
+    expect(m.lib.createCard).toHaveBeenCalledWith(expect.anything(), {
+      nickname: "Visa",
+      last4: "1234",
+      ownerId: "o",
+      holderIds: ["a", "b"],
+      holderGroupIds: [],
+      defaultCategoryId: null,
+    });
     await post({ intent: "card-save", id: "k1", ...fields });
     expect(m.lib.updateCard).toHaveBeenCalledWith(expect.anything(), "k1", expect.objectContaining({ nickname: "Visa" }));
   });

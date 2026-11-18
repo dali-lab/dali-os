@@ -3,14 +3,14 @@ import { Button } from "~/components/ui/Button";
 import { FormField } from "~/components/ui/FormField";
 import { Field } from "~/components/ui/modal-fields";
 import { PersonPicker } from "~/components/ui/PersonPicker";
-import { Select } from "~/components/ui/floating";
+import { MultiSelect, Select } from "~/components/ui/floating";
 import { Modal } from "~/components/Modal";
 import { modalCardClass } from "~/components/os-chrome";
-import type { CardOption, CategoryOption, PersonRow } from "./types";
+import type { CardOption, CategoryOption, GroupRow, PersonRow } from "./types";
 
 export function cardSaveFields(
   id: string | null,
-  f: { nickname: string; last4: string; ownerId: string; holderIds: string[]; defaultCategoryId: string },
+  f: { nickname: string; last4: string; ownerId: string; holderIds: string[]; holderGroupIds: string[]; defaultCategoryId: string },
 ): Record<string, string> {
   return {
     ...(id ? { id } : {}),
@@ -18,7 +18,19 @@ export function cardSaveFields(
     last4: f.last4.trim(),
     ownerId: f.ownerId,
     holderIds: JSON.stringify(f.holderIds),
+    holderGroupIds: JSON.stringify(f.holderGroupIds),
     defaultCategoryId: f.defaultCategoryId,
+  };
+}
+
+export function initialCardForm(card: CardOption | null, members: PersonRow[], groups: GroupRow[]) {
+  return {
+    nickname: card?.nickname ?? "",
+    last4: card?.last4 ?? "",
+    ownerId: card?.ownerId ?? "",
+    holderIds: (card?.holderIds ?? []).filter((id) => members.some((p) => p.id === id)),
+    holderGroupIds: (card?.holderGroupIds ?? []).filter((id) => groups.some((g) => g.id === id)),
+    defaultCategoryId: card?.defaultCategoryId ?? "",
   };
 }
 
@@ -28,6 +40,7 @@ export function CardFormModal({
   onClose,
   staff,
   members,
+  groups,
   categories,
   busy,
   error,
@@ -38,18 +51,13 @@ export function CardFormModal({
   onClose: () => void;
   staff: PersonRow[];
   members: PersonRow[];
+  groups: GroupRow[];
   categories: CategoryOption[];
   busy: boolean;
   error: string | null;
   onSave: (fields: Record<string, string>) => void;
 }) {
-  const [form, setForm] = useState({
-    nickname: card?.nickname ?? "",
-    last4: card?.last4 ?? "",
-    ownerId: card?.ownerId ?? "",
-    holderIds: card?.holderIds ?? [],
-    defaultCategoryId: card?.defaultCategoryId ?? "",
-  });
+  const [form, setForm] = useState(() => initialCardForm(card, members, groups));
   return (
     <Modal open={open} onClose={onClose} labelledBy="card-form-title" containerClassName={modalCardClass("max-w-lg")}>
       <h2 id="card-form-title" className="mb-4 text-lg font-semibold text-foreground">
@@ -68,14 +76,26 @@ export function CardFormModal({
           />
         </Field>
         <Field label="Who can file on it">
-          <PersonPicker
-            mode="multi"
-            ariaLabel="Card holders"
-            values={form.holderIds}
-            onChange={(holderIds) => setForm({ ...form, holderIds })}
-            people={members.map((p) => ({ id: p.id, name: p.name }))}
-            placeholder="Add members"
-          />
+          <div className="flex flex-col gap-2">
+            <MultiSelect
+              ariaLabel="Card holder groups"
+              values={form.holderGroupIds}
+              onChange={(holderGroupIds) => setForm({ ...form, holderGroupIds })}
+              options={groups.map((g) => ({ value: g.id, label: g.name, description: `${g.memberCount} ${g.memberCount === 1 ? "member" : "members"}` }))}
+              searchable
+              placeholder="Add groups"
+              searchPlaceholder="Search groups"
+              noMatchesLabel="No groups match that search."
+            />
+            <PersonPicker
+              mode="multi"
+              ariaLabel="Card holders"
+              values={form.holderIds}
+              onChange={(holderIds) => setForm({ ...form, holderIds })}
+              people={members.map((p) => ({ id: p.id, name: p.name }))}
+              placeholder="Add people"
+            />
+          </div>
         </Field>
         <Field label="Default category">
           <Select
