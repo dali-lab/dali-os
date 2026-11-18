@@ -699,8 +699,8 @@ export const EVENT_TYPES = {
   "expense.submitted": {
     kind: "General",
     area: "Expenses",
-    label: "Expenses to approve",
-    description: "When someone files an expense you can approve.",
+    label: "Expenses to review or approve",
+    description: "When someone files an expense you can review or approve.",
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Daily" },
   },
   "expense.returned": {
@@ -713,8 +713,8 @@ export const EVENT_TYPES = {
   "expense.approved": {
     kind: "General",
     area: "Expenses",
-    label: "Expense approved",
-    description: "When your expense is approved.",
+    label: "Expense approved or reviewed",
+    description: "When your expense is approved, or reviewed if it was on a staff card.",
     defaults: { inApp: true, desktop: false, slackDm: false, email: "Daily" },
   },
   "expense.paid": {

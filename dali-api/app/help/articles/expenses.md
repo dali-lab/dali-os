@@ -22,10 +22,10 @@ If anything is missing, the page lists what to fix before it can go. Warnings un
 
 **Paid with** lists the staff cards you may use, by nickname and last four digits, plus **Personal card**. You may use a card you own, a card Core added you to, or a card Core added one of your groups to. If a card you need is missing, ask Core to add you.
 
-- **Staff card**: the card's owner or any staff member approves it. Once approved, it is matched against the card's statement.
+- **Staff card**: the money is already spent, so the card's owner or any staff member reviews it instead of approving it. They check the receipt and category, then select **Mark reviewed**. Once reviewed, it is matched against the card's statement.
 - **Personal card**: you paid out of pocket. Any staff member approves it. After approval it shows as owed to you until you are paid back. Select **Got paid** when that happens, or staff mark it paid.
 
-Nobody can approve their own expense. A card owner who files on their own card needs another staff member to approve it.
+Nobody can review or approve their own expense. A card owner who files on their own card needs another staff member to review it.
 
 ## No receipt
 
@@ -33,7 +33,7 @@ If a receipt is lost, select **No receipt?** on the drop zone. Enter the merchan
 
 ## After you submit
 
-Your expenses show their status: **Draft**, **Waiting on approval**, **Returned**, **Approved** and **Paid**. Staff card expenses show **Matched** once the charge appears on the statement.
+Your expenses show their status: **Draft**, **Waiting on approval**, **Returned**, **Approved** and **Paid**. Staff card expenses show **Waiting on review** and **Reviewed** instead, then **Matched** once the charge appears on the statement.
 
 - Select **Withdraw** on a submitted expense to edit it again.
 - A returned expense comes back with a note. Fix it and submit again.
@@ -41,15 +41,15 @@ Your expenses show their status: **Draft**, **Waiting on approval**, **Returned*
 
 ## Approvals
 
-The **Approvals** tab is for card owners and staff. Pick an expense in the queue, review the receipts, and select **Approve** or **Return with note**. A note is required to return one. Before deciding, you can change the category and purpose.
+The **Approvals** tab is for card owners and staff. Pick an expense in the queue, review the receipts, and select **Approve** (or **Mark reviewed** for a staff card) or **Return with note**. A note is required to return one. Before deciding, you can change the category and purpose.
 
 ## Cards and statements
 
-The **Cards** tab is for Core and card owners. Core adds, edits and archives cards and manages categories. Under **Who can file on it**, Core picks groups, people or both. Only current lab members and staff can be picked, and groups are limited to active lab groups, so alumni and education offering groups are not offered. When people join or leave a group, who can file on the card changes with it. Archiving a card with expenses waiting on approval asks you to confirm, and those expenses then go to staff.
+The **Cards** tab is for Core and card owners. Core adds, edits and archives cards and manages categories. Under **Who can file on it**, Core picks groups, people or both. Only current lab members and staff can be picked, and groups are limited to active lab groups, so alumni and education offering groups are not offered. When people join or leave a group, who can file on the card changes with it. Archiving a card with expenses waiting on review asks you to confirm, and those expenses then go to staff.
 
 To match charges, export the card's transactions from the bank as a CSV and select **Upload statement**. Choose which columns hold the date, merchant and amount each time. Turn on **Amounts are negative for charges** if the bank lists charges as negative numbers. Uploading an overlapping period is safe: charges already imported are skipped.
 
-Charges with no expense show **Needs a receipt**. Select **Ask card holders** to send a reminder, or match a charge to an approved expense by hand.
+Charges with no expense show **Needs a receipt**. Select **Ask card holders** to send a reminder, or match a charge to a reviewed expense by hand.
 
 ## Export
 

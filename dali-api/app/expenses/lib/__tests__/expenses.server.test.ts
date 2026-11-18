@@ -335,6 +335,14 @@ describe("submitExpense", () => {
     expect(call.message.link).toBe("/expenses?expense=e1");
     expect(JSON.stringify(call)).not.toContain("signed");
   });
+  it("asks approvers to review a staff-card expense and approve a personal-card one", async () => {
+    setRecord();
+    await submitExpense(filer, "e1");
+    expect(m.notify.mock.calls[0][0].message.title).toMatch(/^Expense to review: /);
+    setRecord({ paidWith: "OWN_CARD", cardId: null, card: null });
+    await submitExpense(filer, "e1");
+    expect(m.notify.mock.calls[1][0].message.title).toMatch(/^Expense to approve: /);
+  });
   it("routes an archived card's expense to staff only", async () => {
     m.prisma.adminMembership.findMany.mockResolvedValue([{ userId: "staff1" }]);
     setRecord({ card: { ...card, archivedAt: new Date() } });
@@ -402,6 +410,14 @@ describe("decideExpense", () => {
       data: expect.objectContaining({ status: "APPROVED", approverId: "owner", chartString: "20.330.161028.128512.3200" }),
     });
     expect(m.notify.mock.calls[0][0]).toMatchObject({ eventType: "expense.approved", recipients: [{ userId: "filer" }] });
+  });
+  it("tells the filer a staff-card expense was reviewed and a personal-card one approved", async () => {
+    setRecord({ status: "SUBMITTED" });
+    await decideExpense(owner, "e1", { decision: "approve" });
+    expect(m.notify.mock.calls[0][0].message.title).toMatch(/^Expense reviewed: /);
+    setRecord({ status: "SUBMITTED", paidWith: "OWN_CARD", cardId: null, card: null });
+    await decideExpense(staff, "e1", { decision: "approve" });
+    expect(m.notify.mock.calls[1][0].message.title).toMatch(/^Expense approved: /);
   });
   it("returns with a note and sends the note to the filer", async () => {
     setRecord({ status: "SUBMITTED" });

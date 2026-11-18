@@ -311,8 +311,8 @@ async function run(viewer: ExpenseViewer, intent: string, form: FormData): Promi
     case "submit": {
       const id = requireId(form);
       await applyPatch(viewer, id, form);
-      await submitExpense(viewer, id);
-      return ok({ expenseId: id, message: "Submitted for approval." });
+      const submitted = await submitExpense(viewer, id);
+      return ok({ expenseId: id, message: submitted.paidWith === "STAFF_CARD" ? "Submitted for review." : "Submitted for approval." });
     }
     case "withdraw": {
       const id = requireId(form);
@@ -328,8 +328,9 @@ async function run(viewer: ExpenseViewer, intent: string, form: FormData): Promi
       const decision = text(form, "decision");
       if (decision !== "approve" && decision !== "return") throw new ExpenseError("invalid", "Approve or return the expense.");
       await applyPatch(viewer, id, form);
-      await decideExpense(viewer, id, { decision, note: text(form, "note") });
-      return ok({ expenseId: id, message: decision === "approve" ? "Approved." : "Returned with your note." });
+      const decided = await decideExpense(viewer, id, { decision, note: text(form, "note") });
+      if (decision === "return") return ok({ expenseId: id, message: "Returned with your note." });
+      return ok({ expenseId: id, message: decided.paidWith === "STAFF_CARD" ? "Marked reviewed." : "Approved." });
     }
     case "mark-paid": {
       const id = requireId(form);
@@ -353,7 +354,7 @@ async function run(viewer: ExpenseViewer, intent: string, form: FormData): Promi
     case "card-archive": {
       const result = await archiveCard(viewer, requireId(form), { confirm: form.get("confirm") === "1" });
       if (!result.archived) {
-        return Response.json({ ok: false, error: "This card has expenses waiting on approval.", needsConfirm: { submittedCount: result.submittedCount } } satisfies ActionResult, { status: 409 });
+        return Response.json({ ok: false, error: "This card has expenses waiting on review.", needsConfirm: { submittedCount: result.submittedCount } } satisfies ActionResult, { status: 409 });
       }
       return ok({ archived: true, message: "Card archived." });
     }
