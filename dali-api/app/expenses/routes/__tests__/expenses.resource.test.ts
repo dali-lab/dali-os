@@ -11,6 +11,8 @@ const m = vi.hoisted(() => ({
   createReceiptUpload: vi.fn(),
   exportExpensesCsv: vi.fn(),
   exportExpensesPdf: vi.fn(),
+  openReceipt: vi.fn(),
+  isS3Configured: vi.fn(),
 }));
 
 vi.mock("~/lib/db.server", () => ({ prisma: {} }));
@@ -29,11 +31,14 @@ vi.mock("../../lib/receipts.server", async () => {
   return { createReceiptUpload: m.createReceiptUpload, ReceiptKeyError };
 });
 vi.mock("../../lib/export.server", () => ({ exportExpensesCsv: m.exportExpensesCsv, exportExpensesPdf: m.exportExpensesPdf }));
+vi.mock("../../lib/expenses.server", () => ({ openReceipt: m.openReceipt }));
+vi.mock("~/lib/s3.server", () => ({ isS3Configured: m.isS3Configured }));
 
 import { ExpenseError } from "../../lib/errors";
 import { ReceiptKeyError } from "../../lib/receipts.server";
 import { action as upload } from "../expenses.upload";
 import { loader as exportLoader } from "../expenses.export";
+import { loader as receiptLoader } from "../expenses.receipt";
 import { parseExpenseFilters, parseScope } from "../filters";
 
 const viewer = { userId: "u1", isCore: true, isStaff: true, ownedCardIds: [] };
@@ -134,5 +139,44 @@ describe("parseExpenseFilters", () => {
     expect(parseScope("approvals")).toBe("approvals");
     expect(parseScope("x")).toBe("mine");
     expect(parseScope(null)).toBe("mine");
+  });
+});
+
+describe("GET /expenses/receipts/:receiptId", () => {
+  const fetchReceipt = (receiptId = "r1") =>
+    receiptLoader({ request: new Request(`https://os.example/expenses/receipts/${receiptId}`), params: { receiptId } } as never) as Promise<Response>;
+
+  beforeEach(() => m.isS3Configured.mockReturnValue(true));
+
+  it("streams the file from this site so it can show in a frame", async () => {
+    m.openReceipt.mockResolvedValue({
+      body: new Response("%PDF-1.7").body,
+      contentType: "application/pdf",
+    });
+    const r = await fetchReceipt();
+    expect(m.openReceipt).toHaveBeenCalledWith(viewer, "r1");
+    expect(r.status).toBe(200);
+    expect(r.headers.get("Content-Type")).toBe("application/pdf");
+    expect(r.headers.get("Content-Disposition")).toBe("inline");
+    expect(r.headers.get("Cache-Control")).toBe("private, no-store");
+    expect(r.headers.get("X-Content-Type-Options")).toBe("nosniff");
+    expect(await r.text()).toBe("%PDF-1.7");
+  });
+  it("is not found when the caller can't see it", async () => {
+    m.openReceipt.mockRejectedValue(new ExpenseError("not_found", "Receipt not found."));
+    expect((await fetchReceipt()).status).toBe(404);
+  });
+  it("says files are unavailable without storage", async () => {
+    m.isS3Configured.mockReturnValue(false);
+    expect((await fetchReceipt()).status).toBe(503);
+    expect(m.openReceipt).not.toHaveBeenCalled();
+  });
+  it("needs a signed-in member with expenses on", async () => {
+    m.requireAuth.mockResolvedValue({ ok: false });
+    expect((await fetchReceipt()).status).toBe(401);
+    m.requireAuth.mockResolvedValue({ ok: true, user: { sub: "u1" } });
+    m.isFeatureEnabled.mockResolvedValue(false);
+    expect((await fetchReceipt()).status).toBe(404);
+    expect(m.openReceipt).not.toHaveBeenCalled();
   });
 });

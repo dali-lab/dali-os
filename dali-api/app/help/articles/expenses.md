@@ -16,6 +16,8 @@ Expenses is where spending on DALI's behalf is filed and tracked. It replaces th
 4. Check **Purpose** and **Category**. When a category is suggested, the reason shows under it, for example "PO says Technigala".
 5. Choose **Paid with** (see below), then select **Submit**.
 
+To read small print on a receipt, select the image to open it larger. Pinch, scroll or use the zoom buttons to zoom in, drag to move around, and double-click to switch between fit and 2x. With several receipts, the arrows step through them. The open button shows the original file in a new tab.
+
 If anything is missing, the page lists what to fix before it can go. Warnings under **Checks**, such as a card slip with no itemized receipt, do not block submitting.
 
 ## Staff card or personal card

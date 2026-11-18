@@ -1,7 +1,7 @@
 import type { Prisma } from "~/generated/prisma/client";
 import { prisma } from "~/lib/db.server";
 import { notify } from "~/lib/notify.server";
-import { deleteObjects, getDownloadUrl, getObjectBytes, headObject } from "~/lib/s3.server";
+import { deleteObjects, getDownloadUrl, getObjectBytes, getObjectStream, headObject } from "~/lib/s3.server";
 import { canFileOnCard, canViewExpense, expenseTabs, type ExpenseViewer } from "./access";
 import { suggestCategory, type CategorySuggestion } from "./categories";
 import { runChecks, type Check, type CheckReceipt } from "./checks";
@@ -216,6 +216,29 @@ async function toDetail(e: ExpenseRecord, opts: { urls: boolean }): Promise<Expe
 
 export async function getExpense(actor: ExpenseViewer, id: string): Promise<ExpenseDetail> {
   return toDetail(await loadVisible(actor, id), { urls: true });
+}
+
+function toWebStream(source: AsyncIterable<Uint8Array>): ReadableStream<Uint8Array> {
+  const it = source[Symbol.asyncIterator]();
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      const { done, value } = await it.next();
+      if (done) controller.close();
+      else controller.enqueue(value);
+    },
+    async cancel() {
+      await it.return?.();
+    },
+  });
+}
+
+export async function openReceipt(actor: ExpenseViewer, receiptId: string): Promise<{ body: ReadableStream<Uint8Array>; contentType: string }> {
+  const receipt = await prisma.expenseReceipt.findUnique({ where: { id: receiptId }, select: { expenseId: true, s3Key: true, contentType: true } });
+  if (!receipt) throw new ExpenseError("not_found", "Receipt not found.");
+  await loadVisible(actor, receipt.expenseId);
+  const body = await getObjectStream(receipt.s3Key);
+  if (!body) throw new ExpenseError("not_found", "Receipt not found.");
+  return { body: toWebStream(body), contentType: receipt.contentType };
 }
 
 export type CreateFromReceiptsOptions = { paidWith?: PaidWith | null; cardId?: string | null };

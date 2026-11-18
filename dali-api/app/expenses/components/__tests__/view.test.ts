@@ -46,6 +46,9 @@ describe("toExpenseView", () => {
     });
     expect(JSON.stringify(v)).not.toContain("secret");
   });
+  it("points each receipt at its same-origin file route", () => {
+    expect(toExpenseView(detail()).receipts.map((r) => r.fileUrl)).toEqual(["/expenses/receipts/r1", "/expenses/receipts/r2"]);
+  });
   it("collects line items across receipts", () => {
     expect(toExpenseView(detail()).lineItems).toEqual([{ description: "Posters", qty: 2, amountCents: 1381 }]);
   });
