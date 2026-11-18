@@ -7,6 +7,7 @@ import { createRoot, type Root } from "react-dom/client";
 
 const dialog = vi.hoisted(() => ({ confirm: vi.fn(), prompt: vi.fn(), choice: vi.fn() }));
 vi.mock("~/components/ui/dialog", () => ({ useDialog: () => dialog }));
+vi.mock("~/components/ui/toast", () => ({ useToast: () => Object.assign(vi.fn(), { error: vi.fn(), success: vi.fn(), info: vi.fn() }) }));
 vi.mock("~/components/ui/floating", () => ({
   Select: ({ ariaLabel, value }: { ariaLabel?: string; value?: string }) => createElement("div", { "data-select": ariaLabel }, value),
   Tooltip: ({ children }: { children: React.ReactNode }) => children,
@@ -244,6 +245,14 @@ describe("ExpenseCard receipt preview", () => {
     const viewer = document.body.querySelector('[role="dialog"]')!;
     expect(viewer.querySelector("img")?.getAttribute("src")).toBe("https://s3.example/r1");
     expect(viewer.querySelector('button[aria-label="Zoom in"]')).toBeTruthy();
+  });
+
+  it("keeps its buttons outside the PDF frame so they don't cover the browser's PDF toolbar", () => {
+    mount({ actions: makeActions(), expense: view({ receipts: [pdf] }) });
+    const frameBox = container.querySelector("iframe")!.parentElement!;
+    expect(frameBox.querySelector('a[aria-label="Open in a new tab"]')).toBeNull();
+    expect(frameBox.querySelector('button[aria-label="Open viewer"]')).toBeNull();
+    expect(container.querySelector('a[aria-label="Open in a new tab"]')).toBeTruthy();
   });
 
   it("links each receipt to its original in a new tab", () => {

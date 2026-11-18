@@ -12,6 +12,7 @@ const m = vi.hoisted(() => ({
   exportExpensesCsv: vi.fn(),
   exportExpensesPdf: vi.fn(),
   openReceipt: vi.fn(),
+  receiptLink: vi.fn(),
   isS3Configured: vi.fn(),
 }));
 
@@ -31,7 +32,7 @@ vi.mock("../../lib/receipts.server", async () => {
   return { createReceiptUpload: m.createReceiptUpload, ReceiptKeyError };
 });
 vi.mock("../../lib/export.server", () => ({ exportExpensesCsv: m.exportExpensesCsv, exportExpensesPdf: m.exportExpensesPdf }));
-vi.mock("../../lib/expenses.server", () => ({ openReceipt: m.openReceipt }));
+vi.mock("../../lib/expenses.server", () => ({ openReceipt: m.openReceipt, receiptLink: m.receiptLink }));
 vi.mock("~/lib/s3.server", () => ({ isS3Configured: m.isS3Configured }));
 
 import { ExpenseError } from "../../lib/errors";
@@ -143,8 +144,8 @@ describe("parseExpenseFilters", () => {
 });
 
 describe("GET /expenses/receipts/:receiptId", () => {
-  const fetchReceipt = (receiptId = "r1") =>
-    receiptLoader({ request: new Request(`https://os.example/expenses/receipts/${receiptId}`), params: { receiptId } } as never) as Promise<Response>;
+  const fetchReceipt = (receiptId = "r1", query = "") =>
+    receiptLoader({ request: new Request(`https://os.example/expenses/receipts/${receiptId}${query}`), params: { receiptId } } as never) as Promise<Response>;
 
   beforeEach(() => m.isS3Configured.mockReturnValue(true));
 
@@ -161,6 +162,16 @@ describe("GET /expenses/receipts/:receiptId", () => {
     expect(r.headers.get("Cache-Control")).toBe("private, no-store");
     expect(r.headers.get("X-Content-Type-Options")).toBe("nosniff");
     expect(await r.text()).toBe("%PDF-1.7");
+  });
+  it("returns a fresh signed link for the desktop app with ?link=1", async () => {
+    m.receiptLink.mockResolvedValue("https://s3.example/r1?sig");
+    const r = await fetchReceipt("r1", "?link=1");
+    expect(await r.json()).toEqual({ url: "https://s3.example/r1?sig" });
+    expect(r.headers.get("Cache-Control")).toBe("private, no-store");
+    expect(m.receiptLink).toHaveBeenCalledWith(viewer, "r1");
+    expect(m.openReceipt).not.toHaveBeenCalled();
+    m.receiptLink.mockRejectedValue(new ExpenseError("not_found", "Receipt not found."));
+    expect((await fetchReceipt("r1", "?link=1")).status).toBe(404);
   });
   it("is not found when the caller can't see it", async () => {
     m.openReceipt.mockRejectedValue(new ExpenseError("not_found", "Receipt not found."));

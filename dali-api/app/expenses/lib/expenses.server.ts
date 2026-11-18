@@ -232,13 +232,23 @@ function toWebStream(source: AsyncIterable<Uint8Array>): ReadableStream<Uint8Arr
   });
 }
 
-export async function openReceipt(actor: ExpenseViewer, receiptId: string): Promise<{ body: ReadableStream<Uint8Array>; contentType: string }> {
+async function visibleReceipt(actor: ExpenseViewer, receiptId: string) {
   const receipt = await prisma.expenseReceipt.findUnique({ where: { id: receiptId }, select: { expenseId: true, s3Key: true, contentType: true } });
   if (!receipt) throw new ExpenseError("not_found", "Receipt not found.");
   await loadVisible(actor, receipt.expenseId);
+  return receipt;
+}
+
+export async function openReceipt(actor: ExpenseViewer, receiptId: string): Promise<{ body: ReadableStream<Uint8Array>; contentType: string }> {
+  const receipt = await visibleReceipt(actor, receiptId);
   const body = await getObjectStream(receipt.s3Key);
   if (!body) throw new ExpenseError("not_found", "Receipt not found.");
   return { body: toWebStream(body), contentType: receipt.contentType };
+}
+
+export async function receiptLink(actor: ExpenseViewer, receiptId: string): Promise<string> {
+  const receipt = await visibleReceipt(actor, receiptId);
+  return getDownloadUrl(receipt.s3Key, { expiresIn: DOWNLOAD_URL_TTL_SECONDS, inline: true, contentType: receipt.contentType });
 }
 
 export type CreateFromReceiptsOptions = { paidWith?: PaidWith | null; cardId?: string | null };
