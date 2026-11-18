@@ -5,6 +5,7 @@ import { mobileError, requireMobileUser } from "~/lib/mobile-auth.server";
 import type { ExpenseViewer } from "./access";
 import { ExpenseError } from "./errors";
 import { loadExpenseViewer, type ExpenseDetail, type listExpenses } from "./expenses.server";
+import { expenseLineItems } from "./line-items";
 import { centsToDecimalString } from "./money";
 import { ReceiptKeyError } from "./receipts.server";
 
@@ -53,10 +54,7 @@ export function toMobileSummary(e: ListRow) {
 }
 
 export function toMobileDetail(e: ExpenseDetail) {
-  const lineItems = e.receipts.flatMap((r) => {
-    const items = (r.extracted as { lineItems?: { description: string; amountCents: number | null }[] } | null)?.lineItems ?? [];
-    return items.map((l) => ({ description: l.description, amount: money(l.amountCents ?? null) }));
-  });
+  const lineItems = expenseLineItems(e.receipts).map((l) => ({ description: l.description, amount: money(l.amountCents) }));
   const suggestion = e.suggestion;
   return {
     ...toSummary(e, e.receipts.length),

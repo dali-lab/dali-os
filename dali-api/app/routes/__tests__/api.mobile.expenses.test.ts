@@ -187,6 +187,19 @@ describe("GET /expenses/:id", () => {
     expect(body.decisionNote).toBe("Add the PO");
   });
 
+  it("lists only itemized receipts' lines, leaving out the card slip's", async () => {
+    svc.getExpense.mockResolvedValue(
+      detail({
+        receipts: [
+          { id: "r1", kind: "PAYMENT_PROOF", contentType: "image/jpeg", url: "https://s3/r1", extracted: { lineItems: [{ description: "INV #1", amountCents: 1200 }] } },
+          { id: "r2", kind: "ITEMIZED", contentType: "image/jpeg", url: "https://s3/r2", extracted: { lineItems: [{ description: "Paper", amountCents: 1200 }] } },
+        ],
+      }),
+    );
+    const body = await (await call(detailLoader, req("GET"), { id: "e1" })).json();
+    expect(body.lineItems).toEqual([{ description: "Paper", amount: "12.00" }]);
+  });
+
   it("hides the decision note unless returned and the reason when the category changed", async () => {
     svc.getExpense.mockResolvedValue(detail({ status: "DRAFT", categoryId: "other" }));
     const body = await (await call(detailLoader, req("GET"), { id: "e1" })).json();
