@@ -51,6 +51,7 @@ import {
   markPaid,
   matchCharge,
   openReceipt,
+  receiptLink,
   submitExpense,
   unmatchCharge,
   updateExpense,
@@ -620,5 +621,21 @@ describe("openReceipt", () => {
     setRecord();
     m.getObjectStream.mockResolvedValue(null);
     expect(await code(openReceipt(filer, "r1"))).toBe("not_found");
+  });
+});
+
+describe("receiptLink", () => {
+  it("signs a fresh inline link for someone who can see the expense", async () => {
+    m.prisma.expenseReceipt.findUnique.mockResolvedValue({ expenseId: "e1", s3Key: "k", contentType: "image/png" });
+    setRecord();
+    m.getDownloadUrl.mockResolvedValue("https://s3.example/k?sig");
+    expect(await receiptLink(filer, "r1")).toBe("https://s3.example/k?sig");
+    expect(m.getDownloadUrl).toHaveBeenCalledWith("k", { expiresIn: 300, inline: true, contentType: "image/png" });
+  });
+  it("signs nothing for someone who can't", async () => {
+    m.prisma.expenseReceipt.findUnique.mockResolvedValue({ expenseId: "e1", s3Key: "k", contentType: "image/png" });
+    setRecord();
+    expect(await code(receiptLink(viewer(), "r1"))).toBe("not_found");
+    expect(m.getDownloadUrl).not.toHaveBeenCalled();
   });
 });
