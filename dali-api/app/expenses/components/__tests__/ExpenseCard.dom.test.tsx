@@ -180,6 +180,14 @@ describe("ExpenseCard as an approver", () => {
     expect(actions.submit).toHaveBeenCalledWith("decide", { id: "e1", decision: "approve" });
   });
 
+  it("marks a staff-card expense reviewed", () => {
+    const actions = makeActions();
+    mount({ actions, viewer: staff, expense: view({ status: "SUBMITTED", paidWith: "STAFF_CARD", cardId: "c1" }) });
+    expect(button("Approve")).toBeUndefined();
+    click("Mark reviewed");
+    expect(actions.submit).toHaveBeenCalledWith("decide", { id: "e1", decision: "approve" });
+  });
+
   it("returns with the note typed in the prompt", async () => {
     dialog.prompt.mockResolvedValue("Add the invoice");
     const actions = makeActions();

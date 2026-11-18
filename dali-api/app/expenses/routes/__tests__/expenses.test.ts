@@ -73,6 +73,8 @@ beforeEach(() => {
   m.lib.listCards.mockResolvedValue([]);
   m.lib.listCategories.mockResolvedValue([]);
   m.lib.listExpenses.mockResolvedValue([]);
+  m.lib.submitExpense.mockResolvedValue({ paidWith: "OWN_CARD" });
+  m.lib.decideExpense.mockResolvedValue({ paidWith: "OWN_CARD" });
   m.prisma.term.findMany.mockResolvedValue([]);
 });
 
@@ -330,7 +332,10 @@ describe("edit, submit and decide", () => {
   it("saves edits, then submits", async () => {
     const order: string[] = [];
     m.lib.updateExpense.mockImplementation(async () => void order.push("update"));
-    m.lib.submitExpense.mockImplementation(async () => void order.push("submit"));
+    m.lib.submitExpense.mockImplementation(async () => {
+      order.push("submit");
+      return { paidWith: "OWN_CARD" };
+    });
     await post({ intent: "submit", id: "e1", patch: '{"purpose":"Posters"}' });
     expect(order).toEqual(["update", "submit"]);
   });
@@ -356,6 +361,16 @@ describe("edit, submit and decide", () => {
   it("returns with a note", async () => {
     await post({ intent: "decide", id: "e1", decision: "return", note: " Add the invoice " });
     expect(m.lib.decideExpense).toHaveBeenCalledWith(expect.anything(), "e1", { decision: "return", note: "Add the invoice" });
+  });
+  it.each([
+    ["OWN_CARD", "Submitted for approval.", "Approved."],
+    ["STAFF_CARD", "Submitted for review.", "Marked reviewed."],
+  ] as const)("words the toasts for a %s expense", async (paidWith, submitted, decided) => {
+    m.lib.submitExpense.mockResolvedValue({ paidWith });
+    m.lib.decideExpense.mockResolvedValue({ paidWith });
+    expect((await body(await post({ intent: "submit", id: "e1" }))).message).toBe(submitted);
+    expect((await body(await post({ intent: "decide", id: "e1", decision: "approve" }))).message).toBe(decided);
+    expect((await body(await post({ intent: "decide", id: "e1", decision: "return", note: "Fix it" }))).message).toBe("Returned with your note.");
   });
   it("rejects an unknown decision", async () => {
     expect((await post({ intent: "decide", id: "e1", decision: "maybe" })).status).toBe(400);

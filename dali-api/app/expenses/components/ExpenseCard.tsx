@@ -263,7 +263,9 @@ export function ExpenseCard({
             {perms.canDecide && (
               <>
                 <Button variant="secondary" disabled={busy} onClick={returnWithNote}>Return with note</Button>
-                <Button disabled={busy} onClick={() => send("decide", { decision: "approve" })}>Approve</Button>
+                <Button disabled={busy} onClick={() => send("decide", { decision: "approve" })}>
+                  {expense.paidWith === "STAFF_CARD" ? "Mark reviewed" : "Approve"}
+                </Button>
               </>
             )}
             {perms.canMarkPaid && (

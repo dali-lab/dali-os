@@ -10,13 +10,13 @@ export function statusPill({ status, paidWith, matched }: StatusInput): { label:
     case "DRAFT":
       return { label: "Draft", tone: "neutral" };
     case "SUBMITTED":
-      return { label: "Waiting on approval", tone: "warning" };
+      return { label: paidWith === "STAFF_CARD" ? "Waiting on review" : "Waiting on approval", tone: "warning" };
     case "RETURNED":
       return { label: "Returned", tone: "danger" };
     case "PAID":
       return { label: "Paid", tone: "success" };
     case "APPROVED":
-      if (paidWith === "STAFF_CARD") return { label: matched ? "Matched" : "Approved", tone: "success" };
+      if (paidWith === "STAFF_CARD") return { label: matched ? "Matched" : "Reviewed", tone: "success" };
       return { label: "Approved, not paid yet", tone: "accent" };
   }
 }
