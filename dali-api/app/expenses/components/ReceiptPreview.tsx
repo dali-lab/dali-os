@@ -1,18 +1,26 @@
 import { useState } from "react";
-import { ExternalLink, FileText, Maximize2 } from "lucide-react";
+import { FileText, Maximize2 } from "lucide-react";
 import { FileViewer, type ViewerFile } from "~/components/ui/FileViewer";
 import { IconButton } from "~/components/ui/IconButton";
-import { Tooltip } from "~/components/ui/floating";
+import { OpenInNewTab } from "~/components/ui/OpenInNewTab";
 import { cn } from "~/lib/cn";
 import { RECEIPT_KIND_LABEL } from "./format";
 import type { ReceiptView } from "./types";
 
 const isPdf = (r: ReceiptView) => r.contentType === "application/pdf";
 
+export async function fetchReceiptLink(fileUrl: string): Promise<string> {
+  const res = await fetch(`${fileUrl}?link=1`, { credentials: "same-origin" });
+  const body = (await res.json().catch(() => null)) as { url?: unknown } | null;
+  if (!res.ok || typeof body?.url !== "string") throw new Error("Receipt link unavailable");
+  return body.url;
+}
+
 export function toViewerFile(r: ReceiptView): ViewerFile {
+  const externalHref = () => fetchReceiptLink(r.fileUrl);
   return isPdf(r)
-    ? { id: r.id, title: RECEIPT_KIND_LABEL[r.kind], kind: "pdf", src: r.fileUrl, href: r.fileUrl }
-    : { id: r.id, title: RECEIPT_KIND_LABEL[r.kind], kind: "image", src: r.url, href: r.fileUrl };
+    ? { id: r.id, title: RECEIPT_KIND_LABEL[r.kind], kind: "pdf", src: r.fileUrl, href: r.fileUrl, externalHref }
+    : { id: r.id, title: RECEIPT_KIND_LABEL[r.kind], kind: "image", src: r.url, href: r.fileUrl, externalHref };
 }
 
 export function ReceiptPreview({ receipts }: { receipts: ReceiptView[] }) {
@@ -24,7 +32,16 @@ export function ReceiptPreview({ receipts }: { receipts: ReceiptView[] }) {
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="relative flex min-h-72 items-center justify-center overflow-hidden rounded-os-card bg-os-well">
+      {file.src && (
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-sm text-os-grey">{file.title}</span>
+          <div className="flex gap-1">
+            <IconButton label="Open viewer" icon={Maximize2} onClick={() => setViewing(true)} />
+            <OpenInNewTab href={current.fileUrl} externalHref={file.externalHref} />
+          </div>
+        </div>
+      )}
+      <div className="flex min-h-72 items-center justify-center overflow-hidden rounded-os-card bg-os-well">
         {!file.src ? (
           <p className="text-sm text-os-grey">Preview isn't available right now.</p>
         ) : file.kind === "pdf" ? (
@@ -33,16 +50,6 @@ export function ReceiptPreview({ receipts }: { receipts: ReceiptView[] }) {
           <button type="button" aria-label={`View ${file.title} larger`} onClick={() => setViewing(true)} className="w-full cursor-zoom-in">
             <img src={file.src} alt={file.title} className="max-h-[28rem] w-full object-contain" />
           </button>
-        )}
-        {file.src && (
-          <div className="absolute right-2 top-2 flex gap-1 rounded-md bg-os-card/90">
-            <IconButton label="Open viewer" icon={Maximize2} onClick={() => setViewing(true)} />
-            <Tooltip content="Open in a new tab">
-              <a href={current.fileUrl} target="_blank" rel="noreferrer" aria-label="Open in a new tab" className="os-icon-btn">
-                <ExternalLink className="h-4 w-4" aria-hidden />
-              </a>
-            </Tooltip>
-          </div>
         )}
       </div>
       {receipts.length > 1 && (

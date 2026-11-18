@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
+vi.mock("~/components/ui/toast", () => ({ useToast: () => Object.assign(vi.fn(), { error: vi.fn(), success: vi.fn(), info: vi.fn() }) }));
 vi.mock("~/components/ui/floating", () => ({
   Tooltip: ({ children }: { children: React.ReactNode }) => children,
 }));

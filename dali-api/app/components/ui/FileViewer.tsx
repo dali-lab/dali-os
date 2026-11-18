@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useId, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { ChevronLeft, ChevronRight, ExternalLink, Maximize, ZoomIn, ZoomOut } from "lucide-react";
+import { ChevronLeft, ChevronRight, Maximize, ZoomIn, ZoomOut } from "lucide-react";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { cn } from "~/lib/cn";
 import { IconButton } from "./IconButton";
-import { Tooltip } from "./floating";
+import { OpenInNewTab } from "./OpenInNewTab";
 import { Z } from "./z";
 import { FIT, MAX_SCALE, MIN_SCALE, ZOOM_STEP, panBy, toggleZoom, wheelFactor, zoomBy, type Point, type ZoomState } from "./zoom";
 
@@ -13,6 +13,7 @@ export type ViewerFile = {
   kind: "image" | "pdf";
   src: string | null;
   href?: string | null;
+  externalHref?: () => Promise<string>;
 };
 
 type Props = {
@@ -145,13 +146,7 @@ export function FileViewer({ files, index, onIndexChange, open, onClose }: Props
           <IconButton label="Fit" shortcut="0" icon={Maximize} disabled={zoom.scale === MIN_SCALE} onClick={() => setZoom(FIT)} />
         </>
       )}
-      {file.href && (
-        <Tooltip content="Open in a new tab">
-          <a href={file.href} target="_blank" rel="noreferrer" aria-label="Open in a new tab" className="os-icon-btn">
-            <ExternalLink className="h-5 w-5" aria-hidden />
-          </a>
-        </Tooltip>
-      )}
+      {file.href && <OpenInNewTab href={file.href} externalHref={file.externalHref} iconClassName="h-5 w-5" />}
     </>
   );
 
