@@ -11,7 +11,8 @@ describe("statusPill", () => {
     ["RETURNED", "OWN_CARD", false, "Returned"],
     ["PAID", "OWN_CARD", false, "Paid"],
     ["APPROVED", "OWN_CARD", false, "Approved, not paid yet"],
-    ["APPROVED", "STAFF_CARD", false, "Approved"],
+    ["SUBMITTED", "STAFF_CARD", false, "Waiting on review"],
+    ["APPROVED", "STAFF_CARD", false, "Reviewed"],
     ["APPROVED", "STAFF_CARD", true, "Matched"],
   ] as const)("%s on %s (matched %s) reads %s", (status, paidWith, matched, label) => {
     expect(statusPill({ status, paidWith, matched }).label).toBe(label);

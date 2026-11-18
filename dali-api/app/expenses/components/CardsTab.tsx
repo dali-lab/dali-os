@@ -75,7 +75,7 @@ export function CardsTab({
     if (intent === "card-archive" && result.needsConfirm && lastArchive) {
       const yes = await dialog.confirm({
         title: "Archive this card?",
-        description: `${result.needsConfirm.submittedCount} expense${result.needsConfirm.submittedCount === 1 ? " is" : "s are"} waiting on approval. They will go to staff instead of the card owner.`,
+        description: `${result.needsConfirm.submittedCount} expense${result.needsConfirm.submittedCount === 1 ? " is" : "s are"} waiting on review. They will go to staff instead of the card owner.`,
         confirmLabel: "Archive card",
         tone: "destructive",
       });

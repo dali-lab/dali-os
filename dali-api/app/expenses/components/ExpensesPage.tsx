@@ -111,7 +111,7 @@ export function ExpensesPage({ data }: { data: ExpensesLoaderData }) {
       {data.tab === "yours" && (
         <>
           <div className="grid gap-3 sm:grid-cols-2">
-            <Stat label="Waiting on approval" value={String(stats.waiting)} />
+            <Stat label="Waiting on staff" value={String(stats.waiting)} />
             <Stat label="Owed to you" value={formatCents(stats.owedCents)} />
           </div>
           {data.charge && (

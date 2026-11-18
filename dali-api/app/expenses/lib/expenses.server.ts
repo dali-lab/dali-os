@@ -473,7 +473,7 @@ export async function submitExpense(actor: ExpenseViewer, id: string) {
   await notifySafely({
     eventType: "expense.submitted",
     createdByUserId: actor.userId,
-    message: { title: `Expense to approve: ${titleOf(e)}`, body: [submitter, e.purpose].filter(Boolean).join(": "), link: expenseLink(id) },
+    message: { title: `${e.paidWith === "STAFF_CARD" ? "Expense to review" : "Expense to approve"}: ${titleOf(e)}`, body: [submitter, e.purpose].filter(Boolean).join(": "), link: expenseLink(id) },
     recipients: recipients.map((userId) => ({ userId })),
   });
   return toDetail(await load(id), { urls: false });
@@ -532,7 +532,7 @@ export async function decideExpense(actor: ExpenseViewer, id: string, input: Dec
     eventType: action === "approve" ? "expense.approved" : "expense.returned",
     createdByUserId: actor.userId,
     message: {
-      title: `${action === "approve" ? "Expense approved" : "Expense returned"}: ${titleOf(e)}`,
+      title: `${action === "return" ? "Expense returned" : e.paidWith === "STAFF_CARD" ? "Expense reviewed" : "Expense approved"}: ${titleOf(e)}`,
       body: action === "return" ? note : null,
       link: expenseLink(id),
     },
