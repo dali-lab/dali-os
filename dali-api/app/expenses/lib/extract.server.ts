@@ -229,7 +229,7 @@ export async function extractReceipts(userId: string, images: ReceiptImageInput[
       max_tokens: 4096,
       system: SYSTEM_PROMPT,
       tools: [TOOL],
-      tool_choice: { type: "tool", name: TOOL_NAME },
+      tool_choice: { type: "auto" },
       messages: [{ role: "user", content }],
       stream: false,
     });
@@ -237,7 +237,10 @@ export async function extractReceipts(userId: string, images: ReceiptImageInput[
 
     const block = message.content.find((b) => b.type === "tool_use" && b.name === TOOL_NAME);
     const parsed = ResultSchema.safeParse(block && block.type === "tool_use" ? block.input : null);
-    if (!parsed.success) return empty("failed");
+    if (!parsed.success) {
+      console.error("[expenses:extract] no usable record_receipts call, stop_reason:", message.stop_reason);
+      return empty("failed");
+    }
 
     const result = emptyExtraction(images.length);
     for (const r of parsed.data.receipts) {
@@ -271,7 +274,8 @@ export async function extractReceipts(userId: string, images: ReceiptImageInput[
       cardLast4: e.cardLast4,
     };
     return result;
-  } catch {
+  } catch (err) {
+    console.error("[expenses:extract] receipt extraction failed:", err instanceof Error ? err.message : String(err));
     return empty("failed");
   }
 }
