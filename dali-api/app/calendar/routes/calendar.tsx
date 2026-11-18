@@ -99,6 +99,7 @@ import { CreateEventModal } from "~/calendar/components/CreateEventModal";
 import { EditMeetingModal } from "~/calendar/components/EditMeetingModal";
 import { TimesheetEditPopover, TimesheetDragPopover, LogHoursDialog } from "~/calendar/components/timesheet";
 import { CalendarSettingsModal } from "~/calendar/components/CalendarSettingsModal";
+import { settingsSectionParam } from "~/calendar/lib/settings-section";
 import { CalendarSidebar } from "~/calendar/components/CalendarSidebar";
 import { fetchParticipantOptions, useParticipantOptions } from "~/calendar/lib/participant-options";
 import { useIsMobile } from "~/hooks/useIsMobile";
@@ -256,7 +257,8 @@ function CalendarScreen({ data }: { data: LoaderData }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const linkedSettingsSection = settingsSectionParam(searchParams.get("settings"));
+  const [settingsOpen, setSettingsOpen] = useState(linkedSettingsSection !== null);
 
   const [roleColors, setRoleColors] = usePersistedState<Record<string, string>>(
     CALENDAR_ROLE_COLORS_KEY,
@@ -1069,6 +1071,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
           data={data}
           hiddenCals={hiddenCals}
           toggleHiddenCal={toggleHiddenCal}
+          initialSection={linkedSettingsSection ?? undefined}
           onClose={() => setSettingsOpen(false)}
         />
       )}

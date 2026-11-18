@@ -229,6 +229,8 @@ model User {
   presenceAway Boolean   @default(false)
 
   desktopHintDismissedAt DateTime?
+  // Apple adds are known from WalletPassRegistration; Google reports none, so this marks the save link being issued.
+  googleWalletSavedAt    DateTime?
 
   // ─── Notification digests ────────────────────────────────────────────────
   // The ET hour this member's daily and weekly digests go out. Null = the

@@ -50,6 +50,7 @@ import {
 import { useOpenAsk } from '~/ask/components/use-ask'
 import { useFeatureFlag } from '~/components/FeatureFlags'
 import { useAdminAttention } from '~/admin/useAdminAttention'
+import { usePaperworkCount } from '~/paperwork/usePaperworkCount'
 import { useEmailUnread } from '~/email/lib/use-email-unread'
 import { Rail } from '~/components/shell/Rail'
 import { useUpcomingMeetings } from '~/components/shell/RailUpcoming'
@@ -229,6 +230,7 @@ export function LayoutOS({
     'core-taskboard': useFeatureFlag('core-taskboard'),
     'alumni-game': useFeatureFlag('alumni-game'),
     expenses: useFeatureFlag('expenses'),
+    paperwork: useFeatureFlag('paperwork'),
   }
   const releaseNotesEnabled = useFeatureFlag('release-notes')
   const askEnabled = useFeatureFlag('ask-dali')
@@ -247,6 +249,7 @@ export function LayoutOS({
   const adminAttention = useAdminAttention(activeArea?.key === 'admin', path)
   const activeSubtabs = activeArea ? visibleSubtabs(activeArea, roleFlags) : []
   const activeHref = activeArea ? activeSubtabHref(activeArea, path) : undefined
+  const paperworkCount = usePaperworkCount(activeSubtabs.some((t) => t.href === '/paperwork'), path)
   // Nothing to switch to, so the area's sub-tabs join the pinned list.
   const singleArea = areas.length === 1
 
@@ -378,6 +381,7 @@ export function LayoutOS({
       activeArea={activeArea}
       activeSubtabs={activeSubtabs}
       activeHref={activeHref}
+      subtabCounts={{ '/paperwork': paperworkCount }}
       onSelectArea={selectArea}
       userMenuItems={userMenuItems}
       showWhatsNewDot={showWhatsNewDot}

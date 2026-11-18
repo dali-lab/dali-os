@@ -407,3 +407,29 @@ describe("Rail section order", () => {
     expect(container.textContent).not.toContain("Weekly sync");
   });
 });
+
+describe("Rail sub-tab counts", () => {
+  const lab = { ...area("projects"), label: "Lab" };
+  const subtabs = [
+    { label: "Projects", href: "/projects", icon: Settings },
+    { label: "Paperwork", href: "/paperwork", icon: Settings },
+  ];
+  const row = (label: string) =>
+    [...container.querySelectorAll("button")].find((b) => b.textContent?.startsWith(label))!;
+
+  it("shows a count beside the sub-tab it belongs to", async () => {
+    await mount({ areas: [lab, area("core")], activeArea: lab, activeSubtabs: subtabs, subtabCounts: { "/paperwork": 2 } });
+    expect(row("Paperwork").textContent).toBe("Paperwork2");
+    expect(row("Projects").textContent).toBe("Projects");
+  });
+
+  it("hides a zero count", async () => {
+    await mount({ areas: [lab, area("core")], activeArea: lab, activeSubtabs: subtabs, subtabCounts: { "/paperwork": 0 } });
+    expect(row("Paperwork").textContent).toBe("Paperwork");
+  });
+
+  it("caps a large count", async () => {
+    await mount({ areas: [lab, area("core")], activeArea: lab, activeSubtabs: subtabs, subtabCounts: { "/paperwork": 140 } });
+    expect(row("Paperwork").textContent).toBe("Paperwork99+");
+  });
+});

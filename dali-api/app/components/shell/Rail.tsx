@@ -64,6 +64,7 @@ export type RailProps = {
   activeArea: NavArea | undefined
   activeSubtabs: SubTab[]
   activeHref: string | undefined
+  subtabCounts?: Partial<Record<string, number>>
   onSelectArea: (area: NavArea, e: ReactMouseEvent) => void
   userMenuItems: RailUserMenuItem[]
   showWhatsNewDot: boolean
@@ -166,6 +167,7 @@ export function Rail({
   activeArea,
   activeSubtabs,
   activeHref,
+  subtabCounts = {},
   onSelectArea,
   userMenuItems,
   showWhatsNewDot,
@@ -573,6 +575,11 @@ export function Rail({
                         {!compact && (
                           <span className={cn('relative truncate whitespace-nowrap', animated && 'motion-safe:animate-rail-label')}>
                             {t.label}
+                          </span>
+                        )}
+                        {!compact && (subtabCounts[t.href] ?? 0) > 0 && (
+                          <span className="relative ml-auto rounded-full bg-os-amber px-1.5 text-[11px] font-bold leading-[18px] text-os-bg">
+                            {badgeLabel(subtabCounts[t.href]!)}
                           </span>
                         )}
                       </button>

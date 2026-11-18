@@ -756,3 +756,39 @@ describe("Expenses subtab", () => {
     expect(areaForPath("/expenses", { expenses: true })?.key).toBe("projects");
   });
 });
+
+describe("paperwork flag", () => {
+  const ALUM: RoleFlags = { ...NOBODY, isAlumni: true };
+  const ON = { paperwork: true, expenses: true, ...REFER };
+  const OFF = { expenses: true, ...REFER };
+  const lab = (r: RoleFlags, flags: object) => visibleAreas(r, flags).find((a) => a.key === "projects")!;
+  const labHrefs = (r: RoleFlags, flags: object) => visibleSubtabs(lab(r, flags), r).map((t) => t.href);
+
+  it("puts Paperwork in Lab and takes Expenses and Refer a partner out while it's on", () => {
+    const hrefs = labHrefs(NOBODY, ON);
+    expect(hrefs).toContain("/paperwork");
+    expect(hrefs).not.toContain("/expenses");
+    expect(hrefs).not.toContain("/refer");
+  });
+
+  it("keeps Expenses and Refer a partner and hides Paperwork while it's off", () => {
+    const hrefs = labHrefs(NOBODY, OFF);
+    expect(hrefs).not.toContain("/paperwork");
+    expect(hrefs).toContain("/expenses");
+    expect(hrefs).toContain("/refer");
+  });
+
+  it("lights Paperwork up on the expenses and referral pages", () => {
+    for (const path of ["/expenses", "/refer", "/refer/new"]) {
+      expect(areaForPath(path, ON, NOBODY)?.key).toBe("projects");
+      expect(activeSubtabHref(lab(NOBODY, ON), path)).toBe("/paperwork");
+    }
+    expect(activeSubtabHref(lab(NOBODY, ON), "/paperwork")).toBe("/paperwork");
+  });
+
+  it("leaves alumni with Refer a partner and no Paperwork", () => {
+    const hrefs = labHrefs(ALUM, ON);
+    expect(hrefs).toContain("/refer");
+    expect(hrefs).not.toContain("/paperwork");
+  });
+});

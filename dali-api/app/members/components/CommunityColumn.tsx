@@ -1,21 +1,17 @@
 import type { ReactNode } from "react";
 import { Link, useFetcher } from "react-router";
-import { Coffee, Plus, SlidersHorizontal } from "lucide-react";
+import { Coffee, Plus } from "lucide-react";
 import { Avatar } from "~/components/ui/Avatar";
 import { Button } from "~/components/ui/Button";
 import { LoadMore } from "~/components/ui/Pager";
 import { Segmented } from "~/components/ui/Segmented";
 import {
-  FilterCountBadge,
   FilterGroup,
   FilterPill,
-  FilterResetButton,
-  FilterSectionLabel,
   FilterToggleRow,
-  customizeButtonClass,
-  filterPanelClass,
+  FiltersPopover,
 } from "~/components/ui/filter-panel";
-import { Popover, Select } from "~/components/ui/floating";
+import { Select } from "~/components/ui/floating";
 import { useClientSlice } from "~/hooks/useClientSlice";
 import { cn } from "~/lib/cn";
 import { CommunitySearch } from "~/members/components/CommunitySearch";
@@ -80,39 +76,6 @@ const MODE_OPTIONS = [
 ] as const;
 
 const toggled = <T,>(list: T[], v: T) => (list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
-
-function FiltersButton({
-  count,
-  onReset,
-  children,
-}: {
-  count: number;
-  onReset: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <Popover
-      align="right"
-      ariaLabel="Filters"
-      panelClassName={filterPanelClass()}
-      trigger={
-        <button type="button" className={cn(customizeButtonClass(count > 0), "shrink-0")}>
-          <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden />
-          Filters
-          <FilterCountBadge count={count} />
-        </button>
-      }
-    >
-      <div className="flex flex-col gap-3">
-        <div className="flex items-center justify-between">
-          <FilterSectionLabel>Filters</FilterSectionLabel>
-          {count > 0 && <FilterResetButton onClick={onReset} />}
-        </div>
-        {children}
-      </div>
-    </Popover>
-  );
-}
 
 function PeopleFilterPanel({
   filters,
@@ -444,13 +407,13 @@ export function CommunityColumn(p: CommunityColumnProps) {
           />
         </div>
         {peopleTab ? (
-          <FiltersButton count={countPeopleFilters(p.peopleFilters)} onReset={() => p.onPeopleFilters(NO_PEOPLE_FILTERS)}>
+          <FiltersPopover count={countPeopleFilters(p.peopleFilters)} onReset={() => p.onPeopleFilters(NO_PEOPLE_FILTERS)}>
             <PeopleFilterPanel filters={p.peopleFilters} onChange={p.onPeopleFilters} options={p.filterOptions} />
-          </FiltersButton>
+          </FiltersPopover>
         ) : (
-          <FiltersButton count={countEventFilters(p.eventFilters)} onReset={() => p.onEventFilters(DEFAULT_EVENT_FILTERS)}>
+          <FiltersPopover count={countEventFilters(p.eventFilters)} onReset={() => p.onEventFilters(DEFAULT_EVENT_FILTERS)}>
             <EventFilterPanel filters={p.eventFilters} onChange={p.onEventFilters} />
-          </FiltersButton>
+          </FiltersPopover>
         )}
       </div>
 

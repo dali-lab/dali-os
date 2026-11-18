@@ -165,7 +165,7 @@ export function ExpensesPage({ data }: { data: ExpensesLoaderData }) {
         <>
           <AllExpensesFilters
             params={params}
-            onChange={(k, v) => patchParams({ [k]: v, expense: null })}
+            onChange={(changes) => patchParams({ ...changes, expense: null })}
             cards={data.allCards}
             categories={data.categories}
             terms={data.terms}

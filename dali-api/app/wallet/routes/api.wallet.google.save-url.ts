@@ -1,5 +1,6 @@
 import type { Route } from "./+types/api.wallet.google.save-url";
 import { requireAuth, isNonMember } from "~/lib/auth";
+import { prisma } from "~/lib/db.server";
 import {
   walletGoogleConfigured,
   buildGoogleWalletSaveUrl,
@@ -25,5 +26,6 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const origin = new URL(request.url).origin;
   const url = await buildGoogleWalletSaveUrl(auth.user.sub, origin);
+  await prisma.user.update({ where: { id: auth.user.sub }, data: { googleWalletSavedAt: new Date() } });
   return Response.json({ url });
 }
