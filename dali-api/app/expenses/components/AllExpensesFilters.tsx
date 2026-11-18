@@ -10,9 +10,9 @@ const ANY = "";
 const STATUS_OPTIONS = [
   { value: ANY, label: "Any status" },
   { value: "DRAFT", label: "Draft" },
-  { value: "SUBMITTED", label: "Waiting on approval" },
+  { value: "SUBMITTED", label: "Waiting on staff" },
   { value: "RETURNED", label: "Returned" },
-  { value: "APPROVED", label: "Approved" },
+  { value: "APPROVED", label: "Approved or reviewed" },
   { value: "PAID", label: "Paid" },
 ];
 
