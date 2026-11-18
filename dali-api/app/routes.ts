@@ -556,6 +556,7 @@ export default [
 
   route("expenses/upload", "expenses/routes/expenses.upload.ts"),
   route("expenses/export", "expenses/routes/expenses.export.ts"),
+  route("expenses/receipts/:receiptId", "expenses/routes/expenses.receipt.ts"),
   route("api/attendance/feed", "routes/api.attendance.feed.ts"),
 
   // Scheduled meetings

@@ -26,6 +26,10 @@ function uncertainFields(receipts: { kind: string; extracted: unknown }[]): Expe
   );
 }
 
+export function receiptFileUrl(id: string): string {
+  return `/expenses/receipts/${encodeURIComponent(id)}`;
+}
+
 export function toExpenseView(d: ExpenseDetail): ExpenseView {
   const x = (d.extraction ?? {}) as Partial<ExpenseExtractionJson>;
   return {
@@ -51,7 +55,7 @@ export function toExpenseView(d: ExpenseDetail): ExpenseView {
     charge: d.statementCharge
       ? { merchant: d.statementCharge.merchant, postedAt: day(d.statementCharge.postedAt) ?? "", amountCents: d.statementCharge.amountCents }
       : null,
-    receipts: d.receipts.map((r) => ({ id: r.id, kind: r.kind, contentType: r.contentType, url: r.url })),
+    receipts: d.receipts.map((r) => ({ id: r.id, kind: r.kind, contentType: r.contentType, url: r.url, fileUrl: receiptFileUrl(r.id) })),
     lineItems: expenseLineItems(d.receipts),
     checks: d.checks,
     suggestion: d.suggestion,

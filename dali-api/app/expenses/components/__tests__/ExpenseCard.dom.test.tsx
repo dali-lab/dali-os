@@ -227,3 +227,36 @@ describe("ExpenseCard as an approver", () => {
     expect(actions.submit).toHaveBeenCalledWith("unmatch-charge", { expenseId: "e1" });
   });
 });
+
+describe("ExpenseCard receipt preview", () => {
+  const pdf = { id: "r2", kind: "ITEMIZED" as const, contentType: "application/pdf", url: "https://s3.example/r2", fileUrl: "/expenses/receipts/r2" };
+
+  it("loads a PDF from this site, not storage, so the desktop app can show it", () => {
+    mount({ actions: makeActions(), expense: view({ receipts: [pdf] }) });
+    expect(container.querySelector("iframe")?.getAttribute("src")).toBe("/expenses/receipts/r2");
+    expect(container.innerHTML).not.toContain("s3.example");
+  });
+
+  it("opens an image in the zoomable viewer", () => {
+    mount({ actions: makeActions() });
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull();
+    act(() => container.querySelector<HTMLButtonElement>('button[aria-label="View Card slip larger"]')!.click());
+    const viewer = document.body.querySelector('[role="dialog"]')!;
+    expect(viewer.querySelector("img")?.getAttribute("src")).toBe("https://s3.example/r1");
+    expect(viewer.querySelector('button[aria-label="Zoom in"]')).toBeTruthy();
+  });
+
+  it("links each receipt to its original in a new tab", () => {
+    mount({ actions: makeActions() });
+    const link = container.querySelector<HTMLAnchorElement>('a[aria-label="Open in a new tab"]')!;
+    expect(link.getAttribute("href")).toBe("/expenses/receipts/r1");
+    expect(link.target).toBe("_blank");
+  });
+
+  it("steps through several receipts inside the viewer", () => {
+    mount({ actions: makeActions(), expense: view({ receipts: [view().receipts[0], pdf] }) });
+    act(() => container.querySelector<HTMLButtonElement>('button[aria-label="Open viewer"]')!.click());
+    act(() => document.body.querySelector<HTMLButtonElement>('[role="dialog"] button[aria-label="Next"]')!.click());
+    expect(document.body.querySelector('[role="dialog"] iframe')?.getAttribute("src")).toBe("/expenses/receipts/r2");
+  });
+});

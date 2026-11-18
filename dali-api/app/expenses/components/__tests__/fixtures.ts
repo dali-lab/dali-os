@@ -21,7 +21,7 @@ export const view = (over: Partial<ExpenseView> = {}): ExpenseView => ({
   approverName: null,
   matched: false,
   charge: null,
-  receipts: [{ id: "r1", kind: "PAYMENT_PROOF", contentType: "image/jpeg", url: "https://s3.example/r1" }],
+  receipts: [{ id: "r1", kind: "PAYMENT_PROOF", contentType: "image/jpeg", url: "https://s3.example/r1", fileUrl: "/expenses/receipts/r1" }],
   lineItems: [],
   checks: [],
   suggestion: null,

@@ -5,6 +5,7 @@ const m = vi.hoisted(() => {
   return {
     prisma: {
       expense: { findUnique: fn(), findMany: fn(), create: fn(), updateMany: fn(), deleteMany: fn(), count: fn() },
+      expenseReceipt: { findUnique: fn() },
       adminMembership: { findMany: fn(), findFirst: fn() },
       expenseCard: { findUnique: fn(), findMany: fn() },
       expenseCategory: { findMany: fn(), findFirst: fn() },
@@ -14,6 +15,7 @@ const m = vi.hoisted(() => {
     notify: vi.fn(),
     headObject: vi.fn(),
     getObjectBytes: vi.fn(),
+    getObjectStream: vi.fn(),
     getDownloadUrl: vi.fn(),
     deleteObjects: vi.fn(),
     extractReceipts: vi.fn(),
@@ -26,6 +28,7 @@ vi.mock("~/lib/notify.server", () => ({ notify: (...a: unknown[]) => m.notify(..
 vi.mock("~/lib/s3.server", () => ({
   headObject: (...a: unknown[]) => m.headObject(...a),
   getObjectBytes: (...a: unknown[]) => m.getObjectBytes(...a),
+  getObjectStream: (...a: unknown[]) => m.getObjectStream(...a),
   getDownloadUrl: (...a: unknown[]) => m.getDownloadUrl(...a),
   deleteObjects: (...a: unknown[]) => m.deleteObjects(...a),
   getUploadPost: vi.fn(),
@@ -47,6 +50,7 @@ import {
   listExpenses,
   markPaid,
   matchCharge,
+  openReceipt,
   submitExpense,
   unmatchCharge,
   updateExpense,
@@ -559,5 +563,46 @@ describe("listExpenses", () => {
     const [row] = await listExpenses(filer, "mine");
     expect(row.totalCents).toBe(3687);
     expect(row.matched).toBe(true);
+  });
+});
+
+describe("openReceipt", () => {
+  const stored = { expenseId: "e1", s3Key: "uploads/expense-receipts/u/k", contentType: "application/pdf" };
+
+  it("streams the file to anyone who can see the expense", async () => {
+    m.prisma.expenseReceipt.findUnique.mockResolvedValue(stored);
+    for (const who of [filer, staff, owner, viewer({ userId: "core", isCore: true })]) {
+      setRecord();
+      m.getObjectStream.mockResolvedValue(
+        (async function* () {
+          yield new TextEncoder().encode("%PDF-");
+          yield new TextEncoder().encode("1.7");
+        })(),
+      );
+      const opened = await openReceipt(who, "r1");
+      expect(opened.contentType).toBe("application/pdf");
+      expect(await new Response(opened.body).text()).toBe("%PDF-1.7");
+    }
+    expect(m.prisma.expenseReceipt.findUnique).toHaveBeenCalledWith({ where: { id: "r1" }, select: { expenseId: true, s3Key: true, contentType: true } });
+    expect(m.getObjectStream).toHaveBeenCalledWith("uploads/expense-receipts/u/k");
+  });
+  it("hides it from someone who can't see the expense", async () => {
+    m.prisma.expenseReceipt.findUnique.mockResolvedValue(stored);
+    setRecord();
+    expect(await code(openReceipt(viewer(), "r1"))).toBe("not_found");
+    expect(m.getObjectStream).not.toHaveBeenCalled();
+  });
+  it("hides a card owner's view of another card's receipt", async () => {
+    m.prisma.expenseReceipt.findUnique.mockResolvedValue(stored);
+    setRecord();
+    expect(await code(openReceipt(viewer({ userId: "owner2", ownedCardIds: ["c2"] }), "r1"))).toBe("not_found");
+  });
+  it("reports an unknown receipt or a missing file as not found", async () => {
+    m.prisma.expenseReceipt.findUnique.mockResolvedValue(null);
+    expect(await code(openReceipt(filer, "nope"))).toBe("not_found");
+    m.prisma.expenseReceipt.findUnique.mockResolvedValue(stored);
+    setRecord();
+    m.getObjectStream.mockResolvedValue(null);
+    expect(await code(openReceipt(filer, "r1"))).toBe("not_found");
   });
 });

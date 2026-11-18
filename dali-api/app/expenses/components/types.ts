@@ -25,6 +25,7 @@ export type ReceiptView = {
   kind: "PAYMENT_PROOF" | "ITEMIZED" | "OTHER";
   contentType: string;
   url: string | null;
+  fileUrl: string;
 };
 
 export type ExpenseView = {
