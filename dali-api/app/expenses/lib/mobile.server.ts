@@ -66,10 +66,14 @@ export function toMobileDetail(e: ExpenseDetail) {
   };
 }
 
-export async function mobileOptions(userId: string) {
+export async function mobileOptions(viewer: ExpenseViewer) {
+  const userId = viewer.userId;
   const [cards, categories, last] = await Promise.all([
     prisma.expenseCard.findMany({
-      where: { archivedAt: null, OR: [{ ownerId: userId }, { holderIds: { has: userId } }] },
+      where: {
+        archivedAt: null,
+        OR: [{ ownerId: userId }, { holderIds: { has: userId } }, { holderGroupIds: { hasSome: [...(viewer.groupIds ?? [])] } }],
+      },
       select: { id: true, nickname: true, last4: true },
       orderBy: { nickname: "asc" },
     }),

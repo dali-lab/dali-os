@@ -9,6 +9,7 @@ import {
   canViewCard,
   canViewExpense,
   expenseTabs,
+  isCardHolderGroup,
   type ExpenseRef,
   type ExpenseViewer,
 } from "../access";
@@ -88,11 +89,30 @@ describe("other permissions", () => {
     expect(canManageCards(viewer({ ownedCardIds: ["c1"], isStaff: true }))).toBe(false);
   });
   it("lets the owner and holders file on an active card", () => {
-    const card = { id: "c1", ownerId: "o", holderIds: ["h"], archivedAt: null };
+    const card = { id: "c1", ownerId: "o", holderIds: ["h"], holderGroupIds: ["g1"], archivedAt: null };
     expect(canFileOnCard(viewer({ userId: "o" }), card)).toBe(true);
     expect(canFileOnCard(viewer({ userId: "h" }), card)).toBe(true);
     expect(canFileOnCard(viewer({ userId: "x" }), card)).toBe(false);
     expect(canFileOnCard(viewer({ userId: "h" }), { ...card, archivedAt: new Date() })).toBe(false);
+  });
+  it("lets members of a holder group file, and nobody else through groups", () => {
+    const card = { id: "c1", ownerId: "o", holderIds: [], holderGroupIds: ["g1"], archivedAt: null };
+    expect(canFileOnCard(viewer({ userId: "m", groupIds: ["g2", "g1"] }), card)).toBe(true);
+    expect(canFileOnCard(viewer({ userId: "m", groupIds: ["g2"] }), card)).toBe(false);
+    expect(canFileOnCard(viewer({ userId: "m" }), card)).toBe(false);
+    expect(canFileOnCard(viewer({ userId: "m", groupIds: ["g1"] }), { ...card, archivedAt: new Date() })).toBe(false);
+  });
+});
+
+describe("isCardHolderGroup", () => {
+  it("allows custom, lab, project, domain and term groups", () => {
+    for (const systemKey of [null, "core", "hiring", "mentors", "project:p1", "domain:d1", "term:t1"]) {
+      expect(isCardHolderGroup({ systemKey })).toBe(true);
+    }
+  });
+  it("leaves out alumni and education offering groups", () => {
+    expect(isCardHolderGroup({ systemKey: "alumni" })).toBe(false);
+    expect(isCardHolderGroup({ systemKey: "offering:o1" })).toBe(false);
   });
 });
 

@@ -65,7 +65,7 @@ const staff = viewer({ userId: "staff1", isStaff: true });
 const owner = viewer({ userId: "owner", isStaff: true, ownedCardIds: ["c1"] });
 const core = viewer({ userId: "core1", isCore: true });
 
-const card = { id: "c1", nickname: "Programs Visa", last4: "4821", ownerId: "owner", archivedAt: null, defaultCategoryId: null };
+const card = { id: "c1", nickname: "Programs Visa", last4: "4821", ownerId: "owner", holderGroupIds: [], archivedAt: null, defaultCategoryId: null };
 
 function record(over: Record<string, unknown> = {}) {
   return {

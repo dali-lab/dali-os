@@ -1,7 +1,8 @@
 import type { Prisma } from "~/generated/prisma/client";
 import { prisma } from "~/lib/db.server";
 import { isValidChartString } from "~/lib/chart-string";
-import { canFileOnCard, canManageCards, canManageCategories, type ExpenseViewer } from "./access";
+import { ACTIVE_LAB_MEMBER_WHERE } from "~/lib/prisma-shapes";
+import { canFileOnCard, canManageCards, canManageCategories, isCardHolderGroup, type ExpenseViewer } from "./access";
 import { ExpenseError } from "./errors";
 
 const CARD_SELECT = {
@@ -10,6 +11,7 @@ const CARD_SELECT = {
   last4: true,
   ownerId: true,
   holderIds: true,
+  holderGroupIds: true,
   defaultCategoryId: true,
   archivedAt: true,
   createdAt: true,
@@ -21,8 +23,13 @@ export type CardInput = {
   last4: string;
   ownerId: string;
   holderIds?: string[];
+  holderGroupIds?: string[];
   defaultCategoryId?: string | null;
 };
+
+export const CARD_HOLDER_WHERE = {
+  OR: [ACTIVE_LAB_MEMBER_WHERE, { adminMembership: { is: { isStaff: true } } }],
+} satisfies Prisma.UserWhereInput;
 
 export type CategoryInput = {
   label: string;
@@ -53,8 +60,25 @@ function cleanCard(input: Partial<CardInput>): Partial<CardInput> {
   }
   if (input.ownerId !== undefined) out.ownerId = input.ownerId;
   if (input.holderIds !== undefined) out.holderIds = [...new Set(input.holderIds)];
+  if (input.holderGroupIds !== undefined) out.holderGroupIds = [...new Set(input.holderGroupIds)];
   if (input.defaultCategoryId !== undefined) out.defaultCategoryId = input.defaultCategoryId;
   return out;
+}
+
+async function assertHolders(data: Partial<CardInput>): Promise<void> {
+  if (data.holderIds?.length) {
+    const found = await prisma.user.count({ where: { id: { in: data.holderIds }, ...CARD_HOLDER_WHERE } });
+    if (found !== data.holderIds.length) throw new ExpenseError("invalid", "Card holders have to be current lab members.");
+  }
+  if (data.holderGroupIds?.length) {
+    const groups = await prisma.groupDefinition.findMany({
+      where: { id: { in: data.holderGroupIds }, archivedAt: null },
+      select: { systemKey: true },
+    });
+    if (groups.length !== data.holderGroupIds.length || !groups.every(isCardHolderGroup)) {
+      throw new ExpenseError("invalid", "Card holder groups have to be active lab groups.");
+    }
+  }
 }
 
 async function assertCategoryExists(id: string | null | undefined): Promise<void> {
@@ -135,6 +159,7 @@ export async function createCard(actor: ExpenseViewer, input: CardInput) {
   const data = cleanCard(input) as CardInput;
   if (!data.nickname || !data.last4 || !data.ownerId) throw new ExpenseError("invalid", "Nickname, last four and owner are required.");
   await assertStaffOwner(data.ownerId);
+  await assertHolders(data);
   await assertCategoryExists(data.defaultCategoryId);
   return prisma.expenseCard.create({
     data: {
@@ -142,6 +167,7 @@ export async function createCard(actor: ExpenseViewer, input: CardInput) {
       last4: data.last4,
       ownerId: data.ownerId,
       holderIds: data.holderIds ?? [],
+      holderGroupIds: data.holderGroupIds ?? [],
       defaultCategoryId: data.defaultCategoryId ?? null,
     },
     select: CARD_SELECT,
@@ -152,6 +178,7 @@ export async function updateCard(actor: ExpenseViewer, id: string, input: Partia
   requireCore(canManageCards(actor));
   const data = cleanCard(input);
   if (data.ownerId) await assertStaffOwner(data.ownerId);
+  await assertHolders(data);
   await assertCategoryExists(data.defaultCategoryId);
   try {
     return await prisma.expenseCard.update({ where: { id }, data, select: CARD_SELECT });

@@ -118,7 +118,7 @@ async function termIdFor(date: Date | null): Promise<string | null> {
 async function loadFileableCard(actor: ExpenseViewer, cardId: string) {
   const card = await prisma.expenseCard.findUnique({
     where: { id: cardId },
-    select: { id: true, nickname: true, ownerId: true, holderIds: true, archivedAt: true, defaultCategoryId: true, last4: true },
+    select: { id: true, nickname: true, ownerId: true, holderIds: true, holderGroupIds: true, archivedAt: true, defaultCategoryId: true, last4: true },
   });
   if (!card || !canFileOnCard(actor, card)) throw new ExpenseError("invalid", "You can't file on that card.");
   return card;
@@ -259,7 +259,7 @@ export async function createFromReceipts(actor: ExpenseViewer, keys: string[], o
   if (!paidWith && !cardId && extraction.expense.cardLast4) {
     const mine = await prisma.expenseCard.findMany({
       where: { last4: extraction.expense.cardLast4, archivedAt: null },
-      select: { id: true, ownerId: true, holderIds: true, archivedAt: true },
+      select: { id: true, ownerId: true, holderIds: true, holderGroupIds: true, archivedAt: true },
     });
     const usable = mine.filter((c) => canFileOnCard(actor, c));
     if (usable.length === 1) {

@@ -13,7 +13,7 @@ import { CardFormModal, CategoryFormModal } from "./CardForms";
 import { cardLabel, formatDay } from "./format";
 import { NoReceiptForm } from "./NoReceiptForm";
 import { StatementUpload } from "./StatementUpload";
-import type { CardOption, CategoryOption, ChargeRow, ExpenseRow, ImportSummaryView, PersonRow, ViewerSummary } from "./types";
+import type { CardOption, CategoryOption, ChargeRow, ExpenseRow, GroupRow, ImportSummaryView, PersonRow, ViewerSummary } from "./types";
 import { useExpenseActions } from "./useExpenseActions";
 
 export type CardsTabData = {
@@ -24,6 +24,7 @@ export type CardsTabData = {
   candidates: ExpenseRow[];
   members: PersonRow[];
   staff: PersonRow[];
+  groups: GroupRow[];
 };
 
 export const CHARGE_PILL: Record<ChargeRow["state"], { label: string; tone: PillTone }> = {
@@ -207,6 +208,7 @@ export function CardsTab({
           card={cardModal.card}
           staff={tab.staff}
           members={tab.members}
+          groups={tab.groups}
           categories={categories}
           busy={actions.busy}
           error={inCardModal ? formError : null}

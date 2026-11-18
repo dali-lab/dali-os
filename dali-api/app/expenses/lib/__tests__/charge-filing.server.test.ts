@@ -13,7 +13,7 @@ const charge = (over: Record<string, unknown> = {}) => ({
   amount: { toString: () => "36.87" },
   postedAt: new Date("2026-11-17T00:00:00Z"),
   expense: null,
-  card: { id: "k1", nickname: "Programs Visa", last4: "4821", ownerId: "owner", holderIds: ["u1"], archivedAt: null },
+  card: { id: "k1", nickname: "Programs Visa", last4: "4821", ownerId: "owner", holderIds: ["u1"], holderGroupIds: [], archivedAt: null },
   ...over,
 });
 

@@ -1,4 +1,5 @@
 import { prisma } from "~/lib/db.server";
+import { resolveGroupMembers } from "~/lib/groups.server";
 import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 import { notify } from "~/lib/notify.server";
 import type { JobContext, JobResult } from "~/jobs/registry";
@@ -23,7 +24,7 @@ export async function requestReceipt(actor: ExpenseViewer, chargeId: string, now
       amount: true,
       cardId: true,
       expense: { select: { id: true } },
-      card: { select: { id: true, nickname: true, ownerId: true, holderIds: true } },
+      card: { select: { id: true, nickname: true, ownerId: true, holderIds: true, holderGroupIds: true } },
     },
   });
   if (!charge || !canImportStatement(actor, charge.cardId)) throw new ExpenseError("not_found", "That charge wasn't found.");
@@ -36,7 +37,8 @@ export async function requestReceipt(actor: ExpenseViewer, chargeId: string, now
   });
   if (recent) return { notified: 0 };
 
-  const recipients = [...new Set([charge.card.ownerId, ...charge.card.holderIds])].filter((id) => id !== actor.userId);
+  const groupMembers = (await Promise.all(charge.card.holderGroupIds.map(resolveGroupMembers))).flat();
+  const recipients = [...new Set([charge.card.ownerId, ...charge.card.holderIds, ...groupMembers])].filter((id) => id !== actor.userId);
   if (recipients.length === 0) return { notified: 0 };
 
   const cents = parseMoneyToCents(charge.amount.toString());

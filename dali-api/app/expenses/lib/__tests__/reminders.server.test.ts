@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const m = vi.hoisted(() => ({
   notify: vi.fn(),
   flag: vi.fn(),
+  resolveGroupMembers: vi.fn(),
   prisma: {
     cardStatementCharge: { findUnique: vi.fn() },
     notification: { findFirst: vi.fn() },
@@ -12,6 +13,7 @@ const m = vi.hoisted(() => ({
 }));
 vi.mock("~/lib/db.server", () => ({ prisma: m.prisma }));
 vi.mock("~/lib/notify.server", () => ({ notify: m.notify }));
+vi.mock("~/lib/groups.server", () => ({ resolveGroupMembers: m.resolveGroupMembers }));
 vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabledForEveryone: m.flag }));
 
 import type { ExpenseViewer } from "../access";
@@ -24,7 +26,7 @@ const charge = (over: Record<string, unknown> = {}) => ({
   amount: { toString: () => "12.50" },
   cardId: "c1",
   expense: null,
-  card: { id: "c1", nickname: "Social", ownerId: "owner", holderIds: ["h1", "h2"] },
+  card: { id: "c1", nickname: "Social", ownerId: "owner", holderIds: ["h1", "h2"], holderGroupIds: [] as string[] },
   ...over,
 });
 const NOW = new Date("2026-11-20T12:00:00Z");
@@ -47,6 +49,17 @@ describe("requestReceipt", () => {
     expect(arg.message.link).toBe("/expenses?charge=ch1");
     expect(arg.message.dedupKey).toMatch(/^expense-needs-receipt:ch1:/);
     expect(arg.message.title).toContain("$12.50");
+  });
+
+  it("also notifies members of the card's holder groups, once each", async () => {
+    m.prisma.cardStatementCharge.findUnique.mockResolvedValue(
+      charge({ card: { id: "c1", nickname: "Social", ownerId: "owner", holderIds: ["h1"], holderGroupIds: ["g1", "g2"] } }),
+    );
+    m.resolveGroupMembers.mockImplementation(async (id: string) => (id === "g1" ? ["h1", "m1"] : ["m2", "owner"]));
+    const res = await requestReceipt(viewer({ userId: "owner" }), "ch1", NOW);
+    expect(m.resolveGroupMembers.mock.calls.map((c) => c[0])).toEqual(["g1", "g2"]);
+    expect(m.notify.mock.calls[0][0].recipients).toEqual([{ userId: "h1" }, { userId: "m1" }, { userId: "m2" }]);
+    expect(res.notified).toBe(3);
   });
 
   it("includes the owner when Core asks", async () => {
