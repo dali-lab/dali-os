@@ -1,8 +1,11 @@
+import { groupKind } from "~/lib/group-kind";
+
 export type ExpenseViewer = {
   userId: string;
   isCore: boolean;
   isStaff: boolean;
   ownedCardIds: readonly string[];
+  groupIds?: readonly string[];
 };
 
 export type ExpenseRef = {
@@ -16,6 +19,7 @@ export type CardRef = {
   id: string;
   ownerId: string;
   holderIds: readonly string[];
+  holderGroupIds: readonly string[];
   archivedAt: Date | string | null;
 };
 
@@ -70,7 +74,13 @@ export function canImportStatement(viewer: ExpenseViewer, cardId: string): boole
 
 export function canFileOnCard(viewer: ExpenseViewer, card: CardRef): boolean {
   if (card.archivedAt) return false;
-  return card.ownerId === viewer.userId || card.holderIds.includes(viewer.userId);
+  if (card.ownerId === viewer.userId || card.holderIds.includes(viewer.userId)) return true;
+  const groupIds = viewer.groupIds ?? [];
+  return card.holderGroupIds.some((id) => groupIds.includes(id));
+}
+
+export function isCardHolderGroup(g: { systemKey: string | null }): boolean {
+  return g.systemKey !== "alumni" && groupKind(g) !== "offering";
 }
 
 export function expenseTabs(viewer: ExpenseViewer): ExpenseTabs {

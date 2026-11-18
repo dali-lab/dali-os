@@ -2,9 +2,12 @@ import { useLoaderData } from "react-router";
 import type { Route } from "./+types/expenses";
 import { prisma } from "~/lib/db.server";
 import { ExpensesPage } from "../components/ExpensesPage";
-import type { ActionResult, CardOption, CategoryOption, ChargeRow, ExpenseRow, ExpenseView, PersonRow } from "../components/types";
+import type { ActionResult, CardOption, CategoryOption, ChargeRow, ExpenseRow, ExpenseView, GroupRow, PersonRow } from "../components/types";
 import { toExpenseRow, toExpenseView } from "../components/view";
-import { canFileOnCard, expenseTabs, type ExpenseViewer } from "../lib/access";
+import { listAllGroups } from "~/lib/groups.server";
+import { orderGroupsForPicker } from "~/lib/group-kind";
+import { canFileOnCard, expenseTabs, isCardHolderGroup, type ExpenseViewer } from "../lib/access";
+import { CARD_HOLDER_WHERE } from "../lib/cards.server";
 import { ExpenseError } from "../lib/errors";
 import {
   archiveCard,
@@ -62,6 +65,7 @@ function toCardOption(c: Awaited<ReturnType<typeof listCards>>[number]): CardOpt
     ownerId: c.ownerId,
     ownerName: person(c.owner),
     holderIds: c.holderIds,
+    holderGroupIds: c.holderGroupIds,
     defaultCategoryId: c.defaultCategoryId,
     archived: c.archivedAt !== null,
   };
@@ -88,7 +92,7 @@ async function loadExpenseParam(viewer: ExpenseViewer, id: string | null): Promi
   }
 }
 
-async function loadCardsTab(viewer: ExpenseViewer, params: URLSearchParams, cards: CardOption[]) {
+async function loadCardsTab(viewer: ExpenseViewer, params: URLSearchParams, cards: CardOption[], request: Request) {
   const visible = cards.filter((c) => viewer.isCore || viewer.ownedCardIds.includes(c.id));
   const requested = params.get("card");
   const selected = visible.find((c) => c.id === requested) ?? visible.find((c) => !c.archived) ?? visible[0] ?? null;
@@ -116,16 +120,24 @@ async function loadCardsTab(viewer: ExpenseViewer, params: URLSearchParams, card
     candidates = approved.filter((e) => !e.matched && e.paidWith === "STAFF_CARD").map(toExpenseRow);
   }
 
-  const people = viewer.isCore
-    ? await prisma.user.findMany({
-        where: { OR: [{ membershipStatus: "Active" }, { adminMembership: { is: { isStaff: true } } }] },
-        select: { id: true, firstName: true, lastName: true, adminMembership: { select: { isStaff: true } } },
-        orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
-      })
-    : [];
+  const [people, allGroups] = viewer.isCore
+    ? await Promise.all([
+        prisma.user.findMany({
+          where: CARD_HOLDER_WHERE,
+          select: { id: true, firstName: true, lastName: true, adminMembership: { select: { isStaff: true } } },
+          orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
+        }),
+        listAllGroups(request),
+      ])
+    : [[], []];
   const members: PersonRow[] = people.map((u) => ({ id: u.id, name: person(u) }));
   const staff: PersonRow[] = people.filter((u) => u.adminMembership?.isStaff).map((u) => ({ id: u.id, name: person(u) }));
-  return { cards: visible, selectedCardId: selected?.id ?? null, chargeFilter, charges, candidates, members, staff };
+  const groups: GroupRow[] = orderGroupsForPicker(allGroups.filter((g) => !g.archived && isCardHolderGroup(g))).map((g) => ({
+    id: g.id,
+    name: g.name,
+    memberCount: g.memberIds.length,
+  }));
+  return { cards: visible, selectedCardId: selected?.id ?? null, chargeFilter, charges, candidates, members, staff, groups };
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -173,7 +185,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     allCards: tab === "all" ? allCards : [],
     categories,
     terms,
-    cardsTab: tab === "cards" ? await loadCardsTab(viewer, params, allCards) : null,
+    cardsTab: tab === "cards" ? await loadCardsTab(viewer, params, allCards, request) : null,
   };
 }
 
@@ -331,6 +343,7 @@ async function run(viewer: ExpenseViewer, intent: string, form: FormData): Promi
         last4: text(form, "last4"),
         ownerId: text(form, "ownerId"),
         holderIds: parseJson<unknown[]>(form, "holderIds", []).filter((h): h is string => typeof h === "string"),
+        holderGroupIds: parseJson<unknown[]>(form, "holderGroupIds", []).filter((h): h is string => typeof h === "string"),
         defaultCategoryId: optional(form, "defaultCategoryId"),
       };
       if (id) await updateCard(viewer, id, input);

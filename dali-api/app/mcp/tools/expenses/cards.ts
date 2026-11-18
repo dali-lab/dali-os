@@ -27,7 +27,7 @@ type Args = Record<string, unknown>;
 export const LIST_EXPENSE_CARDS_DEF = {
   name: "list_expense_cards",
   description:
-    "List staff cards the caller can see: Core sees all, a card owner sees their cards, and a holder sees the cards they can file on. Each card has its nickname, last four digits, owner, holders and default category. Use the ids for cardId on manage_expense, list_card_charges and create_card_statement_upload.",
+    "List staff cards the caller can see: Core sees all, a card owner sees their cards, and a holder sees the cards they can file on. Each card has its nickname, last four digits, owner, holders, holder groups and default category. Use the ids for cardId on manage_expense, list_card_charges and create_card_statement_upload.",
   inputSchema: {
     type: "object" as const,
     properties: { includeArchived: { type: "boolean" } },
@@ -39,7 +39,7 @@ export const LIST_EXPENSE_CARDS_DEF = {
 export const MANAGE_EXPENSE_CARD_DEF = {
   name: "manage_expense_card",
   description:
-    "Core only. Add or change a staff card. Actions: 'create' (needs nickname, last4 as exactly four digits, and ownerId, who has to be a staff member; optional holderIds, who can file on the card, and defaultCategoryId); 'update' (needs cardId and any of the same fields); 'archive' (needs cardId; if expenses on the card are waiting for approval it changes nothing and returns needsConfirm with submittedCount, so repeat with confirm true to archive anyway). Returns the card.",
+    "Core only. Add or change a staff card. Actions: 'create' (needs nickname, last4 as exactly four digits, and ownerId, who has to be a staff member; optional holderIds and holderGroupIds, the current lab members and groups who can file on the card, and defaultCategoryId); 'update' (needs cardId and any of the same fields); 'archive' (needs cardId; if expenses on the card are waiting for approval it changes nothing and returns needsConfirm with submittedCount, so repeat with confirm true to archive anyway). Returns the card.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -49,6 +49,7 @@ export const MANAGE_EXPENSE_CARD_DEF = {
       last4: { type: "string", minLength: 4, maxLength: 4 },
       ownerId: { type: "string", minLength: 1 },
       holderIds: { type: "array", items: { type: "string", minLength: 1 }, maxItems: 100 },
+      holderGroupIds: { type: "array", items: { type: "string", minLength: 1 }, maxItems: 50 },
       defaultCategoryId: { type: "string", minLength: 1 },
       confirm: { type: "boolean", description: "Archive even if submitted expenses are waiting." },
     },
@@ -151,6 +152,7 @@ export async function runManageExpenseCard(ctx: McpCtx, args: Args) {
     ...(args.last4 !== undefined && { last4: args.last4 as string }),
     ...(args.ownerId !== undefined && { ownerId: args.ownerId as string }),
     ...(args.holderIds !== undefined && { holderIds: args.holderIds as string[] }),
+    ...(args.holderGroupIds !== undefined && { holderGroupIds: args.holderGroupIds as string[] }),
     ...(args.defaultCategoryId !== undefined && { defaultCategoryId: args.defaultCategoryId as string }),
   };
   return withViewer(ctx, async (v) => {

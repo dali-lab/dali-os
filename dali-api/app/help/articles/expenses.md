@@ -20,7 +20,7 @@ If anything is missing, the page lists what to fix before it can go. Warnings un
 
 ## Staff card or personal card
 
-**Paid with** lists the staff cards you may use, by nickname and last four digits, plus **Personal card**.
+**Paid with** lists the staff cards you may use, by nickname and last four digits, plus **Personal card**. You may use a card you own, a card Core added you to, or a card Core added one of your groups to. If a card you need is missing, ask Core to add you.
 
 - **Staff card**: the card's owner or any staff member approves it. Once approved, it is matched against the card's statement.
 - **Personal card**: you paid out of pocket. Any staff member approves it. After approval it shows as owed to you until you are paid back. Select **Got paid** when that happens, or staff mark it paid.
@@ -45,7 +45,7 @@ The **Approvals** tab is for card owners and staff. Pick an expense in the queue
 
 ## Cards and statements
 
-The **Cards** tab is for Core and card owners. Core adds, edits and archives cards, chooses who may file on each, and manages categories. Archiving a card with expenses waiting on approval asks you to confirm, and those expenses then go to staff.
+The **Cards** tab is for Core and card owners. Core adds, edits and archives cards and manages categories. Under **Who can file on it**, Core picks groups, people or both. Only current lab members and staff can be picked, and groups are limited to active lab groups, so alumni and education offering groups are not offered. When people join or leave a group, who can file on the card changes with it. Archiving a card with expenses waiting on approval asks you to confirm, and those expenses then go to staff.
 
 To match charges, export the card's transactions from the bank as a CSV and select **Upload statement**. Choose which columns hold the date, merchant and amount each time. Turn on **Amounts are negative for charges** if the bank lists charges as negative numbers. Uploading an overlapping period is safe: charges already imported are skipped.
 

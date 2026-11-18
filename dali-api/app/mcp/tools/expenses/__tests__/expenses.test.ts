@@ -267,8 +267,8 @@ describe("categories and cards", () => {
 
   it("manage_expense_card create, update, archive", async () => {
     svc.createCard.mockResolvedValue({ id: "c1" });
-    await call("manage_expense_card", { action: "create", nickname: "Lab", last4: "1234", ownerId: "u9", holderIds: ["u2"] });
-    expect(svc.createCard).toHaveBeenCalledWith(viewer, { nickname: "Lab", last4: "1234", ownerId: "u9", holderIds: ["u2"] });
+    await call("manage_expense_card", { action: "create", nickname: "Lab", last4: "1234", ownerId: "u9", holderIds: ["u2"], holderGroupIds: ["g1"] });
+    expect(svc.createCard).toHaveBeenCalledWith(viewer, { nickname: "Lab", last4: "1234", ownerId: "u9", holderIds: ["u2"], holderGroupIds: ["g1"] });
     svc.updateCard.mockResolvedValue({ id: "c1" });
     await call("manage_expense_card", { action: "update", cardId: "c1", nickname: "New" });
     expect(svc.updateCard).toHaveBeenCalledWith(viewer, "c1", { nickname: "New" });

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ExpenseViewer } from "../../lib/access";
 import { OWN, buildPatch, cardChoice, formBlockers, initialForm, permissionsFor } from "../card-form";
-import { cardSaveFields, categorySaveFields } from "../CardForms";
+import { cardSaveFields, categorySaveFields, initialCardForm } from "../CardForms";
 import { noReceiptFields, noReceiptMissing } from "../NoReceiptForm";
 import { importFields, mappingReady } from "../StatementUpload";
 import { view } from "./fixtures";
@@ -117,11 +117,20 @@ describe("no-receipt form helpers", () => {
 
 describe("card and statement helpers", () => {
   it("serializes card and category saves", () => {
-    expect(cardSaveFields("k1", { nickname: " P ", last4: "1234", ownerId: "o", holderIds: ["a"], defaultCategoryId: "" })).toEqual({
-      id: "k1", nickname: "P", last4: "1234", ownerId: "o", holderIds: '["a"]', defaultCategoryId: "",
+    expect(cardSaveFields("k1", { nickname: " P ", last4: "1234", ownerId: "o", holderIds: ["a"], holderGroupIds: ["g1"], defaultCategoryId: "" })).toEqual({
+      id: "k1", nickname: "P", last4: "1234", ownerId: "o", holderIds: '["a"]', holderGroupIds: '["g1"]', defaultCategoryId: "",
     });
-    expect(cardSaveFields(null, { nickname: "P", last4: "1", ownerId: "o", holderIds: [], defaultCategoryId: "" }).id).toBeUndefined();
+    expect(cardSaveFields(null, { nickname: "P", last4: "1", ownerId: "o", holderIds: [], holderGroupIds: [], defaultCategoryId: "" }).id).toBeUndefined();
     expect(categorySaveFields(null, { label: " T ", chartString: " X ", hints: "a, b" })).toEqual({ label: "T", chartString: "X", hints: "a, b" });
+  });
+  it("starts a card's holders from the people and groups that can still be picked", () => {
+    const card = {
+      id: "k1", nickname: "Visa", last4: "1234", ownerId: "o", ownerName: "Grace Hopper",
+      holderIds: ["ada", "alum"], holderGroupIds: ["g1", "archived"], defaultCategoryId: null, archived: false,
+    };
+    const form = initialCardForm(card, [{ id: "ada", name: "Ada Lovelace" }], [{ id: "g1", name: "Designers", memberCount: 3 }]);
+    expect(form).toEqual({ nickname: "Visa", last4: "1234", ownerId: "o", holderIds: ["ada"], holderGroupIds: ["g1"], defaultCategoryId: "" });
+    expect(initialCardForm(null, [], [])).toEqual({ nickname: "", last4: "", ownerId: "", holderIds: [], holderGroupIds: [], defaultCategoryId: "" });
   });
   it("needs three different columns from the header", () => {
     const headers = ["Date", "Description", "Amount"];

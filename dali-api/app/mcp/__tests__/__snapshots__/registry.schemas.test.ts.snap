@@ -10854,7 +10854,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
 }
 {
   "name": "list_expense_cards",
-  "description": "List staff cards the caller can see: Core sees all, a card owner sees their cards, and a holder sees the cards they can file on. Each card has its nickname, last four digits, owner, holders and default category. Use the ids for cardId on manage_expense, list_card_charges and create_card_statement_upload.",
+  "description": "List staff cards the caller can see: Core sees all, a card owner sees their cards, and a holder sees the cards they can file on. Each card has its nickname, last four digits, owner, holders, holder groups and default category. Use the ids for cardId on manage_expense, list_card_charges and create_card_statement_upload.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -10868,7 +10868,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
 }
 {
   "name": "manage_expense_card",
-  "description": "Core only. Add or change a staff card. Actions: 'create' (needs nickname, last4 as exactly four digits, and ownerId, who has to be a staff member; optional holderIds, who can file on the card, and defaultCategoryId); 'update' (needs cardId and any of the same fields); 'archive' (needs cardId; if expenses on the card are waiting for approval it changes nothing and returns needsConfirm with submittedCount, so repeat with confirm true to archive anyway). Returns the card.",
+  "description": "Core only. Add or change a staff card. Actions: 'create' (needs nickname, last4 as exactly four digits, and ownerId, who has to be a staff member; optional holderIds and holderGroupIds, the current lab members and groups who can file on the card, and defaultCategoryId); 'update' (needs cardId and any of the same fields); 'archive' (needs cardId; if expenses on the card are waiting for approval it changes nothing and returns needsConfirm with submittedCount, so repeat with confirm true to archive anyway). Returns the card.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -10904,6 +10904,14 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
           "minLength": 1
         },
         "maxItems": 100
+      },
+      "holderGroupIds": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1
+        },
+        "maxItems": 50
       },
       "defaultCategoryId": {
         "type": "string",

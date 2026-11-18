@@ -17,7 +17,7 @@ export async function getChargeForFiling(actor: ExpenseViewer, chargeId: string)
   const charge = await prisma.cardStatementCharge.findUnique({
     where: { id: chargeId },
     include: {
-      card: { select: { id: true, nickname: true, last4: true, ownerId: true, holderIds: true, archivedAt: true } },
+      card: { select: { id: true, nickname: true, last4: true, ownerId: true, holderIds: true, holderGroupIds: true, archivedAt: true } },
       expense: { select: { id: true } },
     },
   });

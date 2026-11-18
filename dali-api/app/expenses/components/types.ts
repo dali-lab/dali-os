@@ -64,6 +64,7 @@ export type CardOption = {
   ownerId: string;
   ownerName: string;
   holderIds: string[];
+  holderGroupIds: string[];
   defaultCategoryId: string | null;
   archived: boolean;
 };
@@ -77,6 +78,8 @@ export type CategoryOption = {
 };
 
 export type PersonRow = { id: string; name: string };
+
+export type GroupRow = { id: string; name: string; memberCount: number };
 
 export type ChargeRow = {
   id: string;
