@@ -6,7 +6,7 @@ paths: [/expenses]
 keywords: [expense, receipt, reimbursement, staff card, personal card, chart string, approval, statement, export]
 ---
 
-Expenses is where spending on DALI's behalf is filed and tracked. It replaces the old reimbursement steps: there is no need to message anyone first or pick a chart string. Find it under **Lab** in the sidebar, or press ⌘K and search for **Add receipt**.
+Expenses is where spending on DALI's behalf is filed and tracked. It replaces the old reimbursement steps: there is no need to message anyone first or pick a chart string. Find it under **Lab** in the sidebar, or press ⌘K and search for **New expense**.
 
 ## File a receipt
 

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import type { SettingsSectionId } from "~/calendar/lib/settings-section";
 import { CalendarDays, Clock3, GraduationCap, X, type LucideIcon } from "lucide-react";
 import { cn } from "~/lib/cn";
 import { Modal } from "~/components/Modal";
@@ -19,7 +20,7 @@ import type { LoaderData } from "~/calendar/lib/types";
 
 const TITLE_ID = "calendar-settings-title";
 
-type SectionId = "calendars" | "classes" | "hours";
+type SectionId = SettingsSectionId;
 
 const SECTIONS: { id: SectionId; label: string; icon: LucideIcon; blurb: string }[] = [
   {
@@ -47,13 +48,15 @@ export function CalendarSettingsModal({
   hiddenCals,
   toggleHiddenCal,
   onClose,
+  initialSection = "calendars",
 }: {
   data: LoaderData;
   hiddenCals: Set<string>;
   toggleHiddenCal: (id: string) => void;
   onClose: () => void;
+  initialSection?: SectionId;
 }) {
-  const [section, setSection] = useState<SectionId>("calendars");
+  const [section, setSection] = useState<SectionId>(initialSection);
   const { panel, cardPad } = useOsChrome();
   const active = SECTIONS.find((s) => s.id === section)!;
 

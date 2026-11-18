@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { paletteMatches } from "~/components/command-palette-match";
 import type { LucideIcon } from "lucide-react";
 import {
   Search,
@@ -84,6 +85,7 @@ type PaletteAction =
 interface PaletteItem {
   id: string;
   title: string;
+  keywords?: string[];
   subtitle?: string;
   icon: LucideIcon;
   /** Present for entity results; drives the avatar-vs-icon leading slot. */
@@ -248,7 +250,7 @@ export function CommandPalette({ open, onClose, focusMode, roles = NO_ROLES, fla
     // "Admin" section below, so here we emit only its hub.
     if (portalNav) {
       const q = query.trim().toLowerCase();
-      const match = (i: PaletteItem) => !q || i.title.toLowerCase().includes(q);
+      const match = (i: PaletteItem) => paletteMatches(i, q);
       return {
         nav: portalNav.map((i) => navItem(i.label, i.href, i.icon)).filter(match),
         core: [],
@@ -313,10 +315,23 @@ export function CommandPalette({ open, onClose, focusMode, roles = NO_ROLES, fla
         ? [
             {
               id: "cmd-add-receipt",
-              title: "Add receipt",
+              title: "New expense",
+              keywords: ["receipt", "reimburse"],
               subtitle: "Command",
               icon: Receipt,
               action: { kind: "navigate", url: "/expenses", label: "Expenses" },
+            } satisfies PaletteItem,
+          ]
+        : []),
+      ...(flags.paperwork && flags["refer-a-partner"] && !roles.isAlumni
+        ? [
+            {
+              id: "cmd-refer-partner",
+              title: "Refer a partner",
+              keywords: ["referral", "lead"],
+              subtitle: "Command",
+              icon: Handshake,
+              action: { kind: "navigate", url: "/refer", label: "Refer a partner" },
             } satisfies PaletteItem,
           ]
         : []),
@@ -381,7 +396,7 @@ export function CommandPalette({ open, onClose, focusMode, roles = NO_ROLES, fla
       : [];
 
     const q = query.trim().toLowerCase();
-    const match = (i: PaletteItem) => !q || i.title.toLowerCase().includes(q);
+    const match = (i: PaletteItem) => paletteMatches(i, q);
     return {
       nav: nav.filter(match),
       core: core.filter(match),

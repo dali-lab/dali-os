@@ -91,6 +91,8 @@ export type SubTab = {
   alert?: AdminAlertKey;
   // Pages under another section's path that this tab claims for its viewer.
   owns?: string;
+  // Pages with no rail row of their own that light this tab up.
+  claims?: string[];
 };
 
 export type NavArea = {
@@ -229,6 +231,13 @@ const REFER_NAV_ITEM: SubTab = { label: "Refer a partner", href: "/refer", icon:
 const CORE_TASKBOARD_NAV_ITEM: SubTab = { label: "Taskboard", href: "/core", icon: ListTodo };
 const CORE_MILESTONES_NAV_ITEM: SubTab = { label: "Milestones", href: "/core/milestones", icon: Flag };
 const EXPENSES_NAV_ITEM: SubTab = { label: "Expenses", href: "/expenses", icon: Receipt, gate: (r) => !r.isAlumni };
+const PAPERWORK_NAV_ITEM: SubTab = {
+  label: "Paperwork",
+  href: "/paperwork",
+  icon: FileText,
+  gate: (r) => !r.isAlumni,
+  claims: [EXPENSES_NAV_ITEM.href, REFER_NAV_ITEM.href],
+};
 
 const REGROUPED_AREAS: NavArea[] = [
   {
@@ -249,6 +258,7 @@ const REGROUPED_AREAS: NavArea[] = [
       EXPENSES_NAV_ITEM,
       REFER_NAV_ITEM,
       ONBOARDING_NAV_ITEM,
+      PAPERWORK_NAV_ITEM,
     ],
   },
   {
@@ -381,7 +391,9 @@ export function areasFor(flags: Partial<FeatureFlagMap> = {}): NavArea[] {
   if (flags.community) hidden.add("/community");
   if (!flags["onboarding-journeys"]) hidden.add(ONBOARDING_NAV_ITEM.href);
   if (!flags["refer-a-partner"]) hidden.add(REFER_NAV_ITEM.href);
-  if (!flags.expenses) hidden.add(EXPENSES_NAV_ITEM.href);
+  if (!flags.expenses || flags.paperwork) hidden.add(EXPENSES_NAV_ITEM.href);
+  if (flags.paperwork) hidden.add(REFER_NAV_ITEM.href);
+  else hidden.add(PAPERWORK_NAV_ITEM.href);
   if (!flags["core-taskboard"]) {
     hidden.add(CORE_TASKBOARD_NAV_ITEM.href);
     hidden.add(CORE_MILESTONES_NAV_ITEM.href);
@@ -434,7 +446,11 @@ const ALUMNI_AREAS: NavArea[] = [
 ];
 
 function ownedLen(pathname: string, t: SubTab): number {
-  return t.owns && pathname.startsWith(t.owns + "/") ? t.owns.length : -1;
+  let best = t.owns && pathname.startsWith(t.owns + "/") ? t.owns.length : -1;
+  for (const c of t.claims ?? []) {
+    if (pathname === c || pathname.startsWith(c + "/")) best = Math.max(best, c.length);
+  }
+  return best;
 }
 
 /** The sub-tab that claims a path from another section (an alumnus's Community owns /members/:id). */

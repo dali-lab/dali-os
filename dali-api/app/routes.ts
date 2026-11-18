@@ -23,6 +23,7 @@ export default [
     // roster. Lives under General; replaced the retired Core-only overview.
     route("attendance", "routes/attendance.tsx"),
     route("expenses", "expenses/routes/expenses.tsx"),
+    route("paperwork", "paperwork/routes/paperwork.tsx"),
     // Document signing: the member "documents to sign" inbox + per-agreement
     // fill/sign page. The app gate (layout loader) redirects here when a
     // required agreement is unsigned.
@@ -526,6 +527,7 @@ export default [
   // or admin session; the in-process 60s interval is the primary driver).
   route("api/jobs/:name", "admin/routes/api.jobs.$name.ts"),
   route("api/admin/attention", "admin/routes/api.admin.attention.ts"),
+  route("api/paperwork/count", "paperwork/routes/api.paperwork.count.ts"),
   route("api/feature-flags/:key", "admin/routes/api.feature-flags.$key.ts"),
   route("api/infra/action", "admin/routes/api.infra.action.ts"),
   route("api/infra/config", "admin/routes/api.infra.config.ts"),

@@ -209,6 +209,12 @@ export const FEATURE_FLAGS = [
     description:
       "An Expenses page under Lab where members drop receipts and track what they spent on staff cards or their own, staff and card owners approve, and card statements match to receipts. Ships off.",
   },
+  {
+    key: "paperwork",
+    label: "Paperwork",
+    description:
+      "A Paperwork page under Lab that gathers a member's occasional lab tasks: sent-back expenses and documents to sign, this term's staffing forms, classes and applications, expenses and partner referrals, and one-time setup. Replaces the separate Expenses and Refer a partner items in Lab. Ships off.",
+  },
 ] as const satisfies readonly FeatureFlagDef[];
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[number]["key"];

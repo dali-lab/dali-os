@@ -1,6 +1,8 @@
 import type { ReactNode } from "react";
+import { SlidersHorizontal } from "lucide-react";
 import { cn } from "~/lib/cn";
 import { Toggle } from "./Toggle";
+import { Popover } from "./floating/Popover";
 import { OS_SURFACE_CLASS, filterPillClass } from "./floating/styles";
 import { Z } from "~/components/ui/z";
 
@@ -51,6 +53,41 @@ export function FilterResetButton({ onClick }: { onClick: () => void }) {
 
 export function FilterSectionLabel({ children }: { children: ReactNode }) {
   return <span className="text-sm font-semibold text-os-muted">{children}</span>;
+}
+
+export function FiltersPopover({
+  count,
+  onReset,
+  align = "right",
+  children,
+}: {
+  count: number;
+  onReset: () => void;
+  align?: "left" | "right";
+  children: ReactNode;
+}) {
+  return (
+    <Popover
+      align={align}
+      ariaLabel="Filters"
+      panelClassName={filterPanelClass()}
+      trigger={
+        <button type="button" className={cn(customizeButtonClass(count > 0), "shrink-0")}>
+          <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden />
+          Filters
+          <FilterCountBadge count={count} />
+        </button>
+      }
+    >
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center justify-between">
+          <FilterSectionLabel>Filters</FilterSectionLabel>
+          {count > 0 && <FilterResetButton onClick={onReset} />}
+        </div>
+        {children}
+      </div>
+    </Popover>
+  );
 }
 
 /** Every row in a panel body labels itself the same way, so the panel reads
