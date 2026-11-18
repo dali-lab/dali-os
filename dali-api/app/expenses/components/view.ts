@@ -1,5 +1,6 @@
 import type { ExpenseDetail, ExpenseExtractionJson, listExpenses } from "../lib/expenses.server";
 import type { ExtractedReceipt } from "../lib/extract.server";
+import { expenseLineItems } from "../lib/line-items";
 import { cardLabel } from "./format";
 import type { ExpenseRow, ExpenseView } from "./types";
 
@@ -51,11 +52,7 @@ export function toExpenseView(d: ExpenseDetail): ExpenseView {
       ? { merchant: d.statementCharge.merchant, postedAt: day(d.statementCharge.postedAt) ?? "", amountCents: d.statementCharge.amountCents }
       : null,
     receipts: d.receipts.map((r) => ({ id: r.id, kind: r.kind, contentType: r.contentType, url: r.url })),
-    lineItems: d.receipts.flatMap((r) => ((r.extracted as Partial<ExtractedReceipt> | null)?.lineItems ?? []).map((l) => ({
-      description: l.description,
-      qty: l.qty ?? null,
-      amountCents: l.amountCents ?? null,
-    }))),
+    lineItems: expenseLineItems(d.receipts),
     checks: d.checks,
     suggestion: d.suggestion,
     extractionError: x.extractionError ?? null,
