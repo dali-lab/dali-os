@@ -63,7 +63,9 @@ jobs:
   build-macos:
     needs: decide
     if: ${{ needs.decide.outputs.release == 'true' }}
-    runs-on: macos-15 # Apple silicon
+    # Blacksmith's Apple silicon (M4) runner on the same macOS 15 image as GitHub's macos-15. GitHub
+    # counts each macOS minute as 10 against the org's included Actions minutes.
+    runs-on: blacksmith-6vcpu-macos-15
     outputs:
       mac_url: ${{ steps.upload.outputs.mac_url }}
     steps:
