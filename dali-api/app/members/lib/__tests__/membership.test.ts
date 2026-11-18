@@ -232,6 +232,7 @@ describe("createOrPromoteMember identity backfill", () => {
       data: {
         netId: "f001abc",
         major: "Math",
+        majors: ["Math"],
         phoneNumber: "555",
         dietaryRestrictions: "none",
         birthday: new Date("2001-02-03T00:00:00.000Z"),

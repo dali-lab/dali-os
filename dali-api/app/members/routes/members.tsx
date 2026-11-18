@@ -150,7 +150,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       daliMember: { select: { onboardedAt: true } },
       adminMembership: { select: { isStaff: true } },
       coreAssignments: { select: { leadTitle: true } },
-      major: true,
+      majors: true,
       hometown: true,
       currentLocation: true,
       // Every term's assignments: the Project filter matches anyone who was
@@ -199,7 +199,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         project: [...new Set(u.projectAssignments.map((a) => a.project.name))],
         classYear: u.classYear?.toString() ?? "",
         role: [...coreTitles, ...(isStaff ? ["Staff"] : [])],
-        major: u.major ?? "",
+        major: u.majors,
         basedIn: u.currentLocation ?? "",
         company: [...new Set(u.workExperiences.map((w) => w.company))],
         hometown: u.hometown ?? "",
@@ -333,7 +333,7 @@ export default function MembersList() {
               placeholder="2026"
             />
             <CreateField name="pronouns" label="Pronouns" />
-            <CreateField name="major" label="Major" />
+            <CreateField name="major" label="Majors" placeholder="Separate with commas" />
             <CreateField name="hometown" label="Hometown" />
             <CreateField name="linkedinUrl" label="LinkedIn URL" />
             <CreateField name="personalSite" label="Personal site" />

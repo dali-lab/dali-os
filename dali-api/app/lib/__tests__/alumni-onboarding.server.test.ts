@@ -12,6 +12,8 @@ import {
   loadOnboarding,
   openToPatch,
   saveAbout,
+  saveBasedIn,
+  saveStudy,
   saveWorkSlot,
 } from "../alumni-onboarding.server";
 
@@ -29,10 +31,15 @@ describe("alumniInviteFor", () => {
     expect(db.user.findUnique).not.toHaveBeenCalled();
   });
 
-  it("sends an alumnus who has not onboarded to the new flow, even with the game on", async () => {
+  it("offers both paths to an alumnus who has not onboarded when the game is on", async () => {
     db.user.findUnique.mockResolvedValue({ alumniOnboardedAt: null } as never);
-    expect(await alumniInviteFor("u1", true, flags(true, true))).toBe("onboarding");
+    expect(await alumniInviteFor("u1", true, flags(true, true))).toBe("choice");
     expect(db.pixelAvatar.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("offers only the stepped flow when the game is off", async () => {
+    db.user.findUnique.mockResolvedValue({ alumniOnboardedAt: null } as never);
+    expect(await alumniInviteFor("u1", true, flags(true, false))).toBe("onboarding");
   });
 
   it("stops inviting once they have finished, without falling back to the game", async () => {
@@ -158,9 +165,23 @@ describe("loadOnboarding", () => {
     firstName: "Ada",
     lastName: "Lovelace",
     classYear: 2024,
-    major: "Computer Science",
+    majors: ["Computer Science", "Studio Art"],
+    minors: ["Economics"],
     hometown: "Portland",
+    currentLocation: "Brooklyn, New York",
+    currentLocationGeonameId: 5110302,
+    currentLocationLat: 40.6,
     currentLocationCity: "New York",
+    currentLocationRegion: "New York",
+    currentLocationCountry: "United States",
+    daliEmail: "ada@dali.dartmouth.edu",
+    dartmouthEmail: null,
+    personalEmail: "ada@example.com",
+    preferredEmail: null,
+    linkedinUrl: null,
+    personalSite: "https://ada.example.com",
+    birthday: new Date(Date.UTC(2001, 5, 5)),
+    dietaryRestrictions: "Vegetarian",
     photoUrl: null,
     funFact: null,
     outsideOfWork: null,
@@ -203,6 +224,18 @@ describe("loadOnboarding", () => {
     });
   });
 
+  it("loads the study lists, based in, links and event details", async () => {
+    expect(await loadOnboarding("u1")).toMatchObject({
+      majors: ["Computer Science", "Studio Art"],
+      minors: ["Economics"],
+      basedIn: { currentLocation: "Brooklyn, New York", currentLocationGeonameId: 5110302 },
+      linkedinUrl: "",
+      personalSite: "https://ada.example.com",
+      birthday: "2001-06-05",
+      dietaryRestrictions: "Vegetarian",
+    });
+  });
+
   it("reads resume reviews as on when either of the two columns is on", async () => {
     expect((await loadOnboarding("u1")).openTo).toEqual({
       coffeeChats: true,
@@ -228,4 +261,39 @@ describe("loadOnboarding", () => {
     expect(data.now).toBeNull();
     expect(data.nameTag.subtitle).toBeNull();
   });
+});
+
+describe("profile saves", () => {
+  it("saves the class year with the majors and minors lists", async () => {
+    await saveStudy("u1", { classYear: "2024", majors: ["CS"], minors: [] });
+    expect(updateProfileFields).toHaveBeenCalledWith(
+      "u1",
+      { classYear: "2024", majors: ["CS"], minors: [] },
+      { allowNetId: false },
+    );
+  });
+
+  it("passes the picked city through to the shared location save", async () => {
+    await saveBasedIn("u1", { currentLocation: "Brooklyn, New York", currentLocationGeonameId: "5110302" });
+    expect(updateProfileFields).toHaveBeenCalledWith(
+      "u1",
+      { currentLocation: "Brooklyn, New York", currentLocationGeonameId: "5110302" },
+      { allowNetId: false },
+    );
+  });
+
+  it("saves links, birthday and dietary with the about step", async () => {
+    const about = {
+      funFact: "",
+      outsideOfWork: "",
+      askMeAbout: [],
+      linkedinUrl: "https://linkedin.com/in/ada",
+      personalSite: "",
+      birthday: "2001-06-05",
+      dietaryRestrictions: "Vegetarian",
+    };
+    await saveAbout("u1", about);
+    expect(updateProfileFields).toHaveBeenCalledWith("u1", about, { allowNetId: false });
+  });
+
 });

@@ -64,6 +64,7 @@ import { AchievementsBlock } from "./AchievementsBlock";
 import { ComplianceBlock } from "./ComplianceBlock";
 import { buttonClasses } from "~/components/ui/Button";
 import { DateField } from "~/components/ui/DateField";
+import { Radio } from "~/components/ui/Radio";
 import { useConfirmSubmit, useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
 import { useFeatureFlag } from "~/components/FeatureFlags";
@@ -531,7 +532,8 @@ function PersonalHiddenFields({
     ["firstName", member.firstName],
     ["lastName", member.lastName],
     ["pronouns", member.pronouns ?? ""],
-    ["major", member.major ?? ""],
+    ["majors", member.majors.join(", ")],
+    ["minors", member.minors.join(", ")],
     ["classYear", member.classYear?.toString() ?? ""],
     ["hometown", member.hometown ?? ""],
     ["currentLocation", member.currentLocation ?? ""],
@@ -539,6 +541,7 @@ function PersonalHiddenFields({
     ["dietaryRestrictions", member.dietaryRestrictions ?? ""],
     ["phoneNumber", member.phoneNumber ?? ""],
     ["personalEmail", member.personalEmail ?? ""],
+    ["preferredEmail", member.preferredEmail ?? ""],
     ["githubUsername", member.githubUsername ?? ""],
     ["linkedinUrl", member.linkedinUrl ?? ""],
     ["personalSite", member.personalSite ?? ""],
@@ -563,7 +566,8 @@ const ABOUT_FIELDS = new Set([
   "pronouns",
   "handle",
   "netId",
-  "major",
+  "majors",
+  "minors",
   "classYear",
   "hometown",
   "currentLocation",
@@ -648,11 +652,21 @@ function AboutCard({
                   className="w-full"
                 />
               </DetailEditRow>
-              <DetailEditRow icon={<GraduationCap className={ic} />} label="Major">
+              <DetailEditRow icon={<GraduationCap className={ic} />} label="Majors">
                 <input
-                  name="major"
+                  name="majors"
                   type="text"
-                  defaultValue={member.major ?? ""}
+                  placeholder="Separate with commas"
+                  defaultValue={member.majors.join(", ")}
+                  className="w-full"
+                />
+              </DetailEditRow>
+              <DetailEditRow icon={<GraduationCap className={ic} />} label="Minors">
+                <input
+                  name="minors"
+                  type="text"
+                  placeholder="Separate with commas"
+                  defaultValue={member.minors.join(", ")}
                   className="w-full"
                 />
               </DetailEditRow>
@@ -710,8 +724,11 @@ function AboutCard({
               <DetailRow icon={<Fingerprint className={ic} />} label="NetID">
                 {member.netId ?? dash}
               </DetailRow>
-              <DetailRow icon={<GraduationCap className={ic} />} label="Major">
-                {member.major ?? dash}
+              <DetailRow icon={<GraduationCap className={ic} />} label="Majors">
+                {member.majors.join(", ") || dash}
+              </DetailRow>
+              <DetailRow icon={<GraduationCap className={ic} />} label="Minors">
+                {member.minors.join(", ") || dash}
               </DetailRow>
               <DetailRow
                 icon={<GraduationCap className={ic} />}
@@ -848,6 +865,7 @@ function AlumniDetailsCard({
 const CONTACT_FIELDS = new Set([
   "phoneNumber",
   "personalEmail",
+  "preferredEmail",
   "githubUsername",
   "linkedinUrl",
   "personalSite",
@@ -913,6 +931,7 @@ function ContactCard({
                   daliEmail={member.daliEmail}
                   dartmouthEmail={member.dartmouthEmail}
                   personalEmail={member.personalEmail}
+                  preferredEmail={member.preferredEmail}
                 />
               </DetailEditRow>
               <DetailEditRow icon={<Phone className={ic} />} label="Phone">
@@ -972,8 +991,13 @@ function ContactCard({
                 ) : (
                   <span className="flex flex-col items-end gap-0.5">
                     {emails.map((e) => (
-                      <span key={e} className="break-all">
+                      <span key={e} className="flex items-center gap-1.5 break-all">
                         {e}
+                        {member.preferredEmail?.toLowerCase() === e.toLowerCase() && (
+                          <span className="shrink-0 inline-flex items-center rounded-full bg-os-accent/15 px-2 py-px text-[11px] font-semibold text-os-accent">
+                            Primary
+                          </span>
+                        )}
                       </span>
                     ))}
                   </span>
@@ -2053,14 +2077,34 @@ function EmailListEdit({
   daliEmail,
   dartmouthEmail,
   personalEmail,
+  preferredEmail,
 }: {
   daliEmail: string | null;
   dartmouthEmail: string | null;
   personalEmail: string | null;
+  preferredEmail: string | null;
 }) {
+  const locked = [daliEmail, dartmouthEmail].filter(Boolean) as string[];
   const [entries, setEntries] = useState<string[]>(
     personalEmail ? [personalEmail] : [],
   );
+  // The primary pick tracks a row ("locked:<i>" / "entry:<i>"), not an address,
+  // so it follows the text while a personal email is being typed.
+  const [primary, setPrimary] = useState<string>(() => {
+    const wanted = preferredEmail?.toLowerCase();
+    if (!wanted) return "";
+    const li = locked.findIndex((e) => e.toLowerCase() === wanted);
+    if (li >= 0) return `locked:${li}`;
+    const ei = (personalEmail ? [personalEmail] : []).findIndex(
+      (e) => e.toLowerCase() === wanted,
+    );
+    return ei >= 0 ? `entry:${ei}` : "";
+  });
+  const primaryValue = primary.startsWith("locked:")
+    ? (locked[Number(primary.slice(7))] ?? "")
+    : primary.startsWith("entry:")
+      ? (entries[Number(primary.slice(6))] ?? "")
+      : "";
 
   function add() {
     setEntries((prev) => [...prev, ""]);
@@ -2068,27 +2112,45 @@ function EmailListEdit({
 
   function remove(i: number) {
     setEntries((prev) => prev.filter((_, idx) => idx !== i));
+    setPrimary((p) => {
+      if (!p.startsWith("entry:")) return p;
+      const sel = Number(p.slice(6));
+      if (sel === i) return "";
+      return sel > i ? `entry:${sel - 1}` : p;
+    });
   }
 
   function update(i: number, val: string) {
     setEntries((prev) => prev.map((e, idx) => (idx === i ? val : e)));
   }
 
-  const locked = [daliEmail, dartmouthEmail].filter(Boolean) as string[];
+  const primaryRadio = (key: string, email: string) => (
+    <Tooltip content="Primary email">
+      <Radio
+        aria-label={`Make ${email || "this email"} primary`}
+        checked={primary === key}
+        onChange={() => setPrimary(key)}
+        className="shrink-0"
+      />
+    </Tooltip>
+  );
 
   return (
     <div className="flex flex-col gap-1.5">
-      {locked.map((email) => (
+      <input type="hidden" name="preferredEmail" value={primaryValue} />
+      {locked.map((email, i) => (
         <div
           key={email}
           className="flex items-center gap-2 rounded-os-item bg-os-well px-3 py-1.5 text-sm text-os-grey"
         >
+          {primaryRadio(`locked:${i}`, email)}
           <Lock className="w-3 h-3 shrink-0" />
           <span className="truncate">{email}</span>
         </div>
       ))}
       {entries.map((email, i) => (
         <div key={i} className="flex items-center gap-1.5">
+          {primaryRadio(`entry:${i}`, email)}
           <input
             name="personalEmail"
             type="email"
@@ -2114,6 +2176,7 @@ function EmailListEdit({
         <Plus className="w-3.5 h-3.5" />
         Add email
       </button>
+      <p className="text-[11px] text-os-muted">The marked address is the one DALI uses to reach you.</p>
     </div>
   );
 }

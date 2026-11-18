@@ -22,11 +22,17 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!roles.isLabMemberOrAlum) return redirect("/");
   if (!(await isFeatureEnabled("alumni-game", userId, roles, request))) return redirect("/");
 
-  const avatar = await prisma.pixelAvatar.findUnique({
-    where: { userId },
-    select: { skinTone: true, eyeColor: true, hairColor: true, hairstyle: true },
-  });
-  return { avatar: avatar && isAvatarConfig(avatar) ? avatar : null };
+  const [avatar, formOn] = await Promise.all([
+    prisma.pixelAvatar.findUnique({
+      where: { userId },
+      select: { skinTone: true, eyeColor: true, hairColor: true, hairstyle: true },
+    }),
+    isFeatureEnabled("alumni-onboarding", userId, roles, request),
+  ]);
+  return {
+    avatar: avatar && isAvatarConfig(avatar) ? avatar : null,
+    formPath: formOn ? "/alumni/onboarding" : "/profile",
+  };
 }
 
 function PixelArrow({ color, delay }: { color: string; delay: number }) {
@@ -51,7 +57,7 @@ function PixelArrow({ color, delay }: { color: string; delay: number }) {
 }
 
 export default function AlumniWelcome() {
-  const { avatar } = useLoaderData<typeof loader>();
+  const { avatar, formPath } = useLoaderData<typeof loader>();
   const [step, setStep] = useState<"create" | "choice">(avatar ? "choice" : "create");
   const [saved, setSaved] = useState<AvatarConfig | null>(avatar);
   const [saving, setSaving] = useState(false);
@@ -84,6 +90,9 @@ export default function AlumniWelcome() {
     <main className="ag-page">
       <DaliTiles corner="tr" />
       <DaliTiles corner="bl" />
+      <Link to="/" className="ag-exit">
+        Finish later <span aria-hidden>✕</span>
+      </Link>
       {step === "create" ? (
         <>
           <h1>Make your pixel self</h1>
@@ -109,9 +118,9 @@ export default function AlumniWelcome() {
                 <em className="ag-door-time">~5 min</em>
               </Link>
             </div>
-            <Link to="/profile" className="ag-door ag-door--muted">
+            <Link to={formPath} className="ag-door ag-door--muted">
               <strong>Fill in my profile</strong>
-              <span>The classic way, on your profile page</span>
+              <span>The classic way, three short steps</span>
               <em className="ag-door-time">&lt;2 min</em>
             </Link>
           </div>

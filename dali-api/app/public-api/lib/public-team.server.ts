@@ -40,7 +40,7 @@ const USER_PUBLIC_SELECT = {
   firstName: true,
   lastName: true,
   classYear: true,
-  major: true,
+  majors: true,
   photoUrl: true,
   linkedinUrl: true,
   projectAssignments: {
@@ -113,7 +113,7 @@ export async function listPublicTeam(): Promise<PublicTeamMember[]> {
       // DALI OS has only the assignment record, so the two collapse.
       hiredRoles: roles,
       year: u.classYear ? String(u.classYear) : "",
-      majorMinor: u.major ?? "",
+      majorMinor: u.majors.join(", "),
       currentRole,
       termsInDali,
       coreRoleNames,

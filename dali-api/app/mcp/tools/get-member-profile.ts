@@ -2,7 +2,7 @@
 // domain eligibility, current-term roles, and profile fields. Gating:
 //
 //   Any authenticated member: all fields the web /members/:id shows publicly —
-//     name, daliEmail, dartmouthEmail, pronouns, classYear, major, hometown,
+//     name, daliEmail, dartmouthEmail, pronouns, classYear, majors, minors, hometown,
 //     linkedinUrl, githubUsername, personalSite, handle, photoUrl (resolved),
 //     tier, domains, currentTermRoles, projectAssignments (current term),
 //     achievements.
@@ -70,7 +70,8 @@ export async function runGetMemberProfile(callerId: string, input: Input) {
       classYear: true,
       bioDocId: true,
       pronouns: true,
-      major: true,
+      majors: true,
+      minors: true,
       hometown: true,
       linkedinUrl: true,
       githubUsername: true,
@@ -183,7 +184,8 @@ export async function runGetMemberProfile(callerId: string, input: Input) {
     dartmouthEmail: user.dartmouthEmail,
     pronouns: user.pronouns,
     classYear: user.classYear,
-    major: user.major,
+    majors: user.majors,
+    minors: user.minors,
     hometown: user.hometown,
     linkedinUrl: user.linkedinUrl,
     githubUsername: user.githubUsername,

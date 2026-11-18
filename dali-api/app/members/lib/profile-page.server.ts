@@ -11,6 +11,7 @@ import {
 } from "./profile-update.server";
 import { redirect } from "react-router";
 import { prisma } from "~/lib/db.server";
+import { splitList } from "~/members/lib/list-input";
 import { requireAuth, redirectNonMemberToPortal, isImpersonating } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { resolvePhotoUrl } from "~/lib/photo";
@@ -28,7 +29,7 @@ import {
   type Achievement,
 } from "~/members/lib/achievements.server";
 import { saveAbout, openToPatch } from "~/lib/alumni-onboarding.server";
-import { parseAskMeAbout, type OpenToChoices } from "~/lib/alumni-onboarding";
+import { parseJsonList, type OpenToChoices } from "~/lib/alumni-onboarding";
 import { groupAssignmentsByTerm, type TermGroup } from "./project-history";
 import { listMemberStaffingForms, type MemberStaffingForm } from "~/projects/lib/member-staffing.server";
 import { listMySignedDocuments } from "~/signing/lib/state.server";
@@ -80,12 +81,15 @@ export type ProfileMember = {
   daliEmail: string | null;
   dartmouthEmail: string | null;
   personalEmail: string | null;
+  /** The address this member prefers to be reached at ("Primary"). */
+  preferredEmail: string | null;
   pronouns: string | null;
   classYear: number | null;
   /** Grad/professional school label ("Thayer" | "Guarini" | "Geisel" | "Tuck")
    *  for enrolled grad students; null for undergrads and employees. */
   gradProgram: string | null;
-  major: string | null;
+  majors: string[];
+  minors: string[];
   hometown: string | null;
   /** Where they live now ("Based in"); pins them on the Community map. */
   currentLocation: string | null;
@@ -264,6 +268,7 @@ const PROFILE_ERRORS: Record<ProfileField, string> = {
   unique:
     "That NetID is already on another account — contact ops to merge or correct the duplicate.",
   askMeAbout: "Pick up to 10 topics, 40 characters each.",
+  study: "Add up to 4 majors or minors, 60 characters each.",
   textLength: "Keep it under 300 characters.",
 };
 
@@ -271,7 +276,6 @@ const TEXT_FIELDS = [
   "firstName",
   "lastName",
   "pronouns",
-  "major",
   "hometown",
   "currentLocation",
   "linkedinUrl",
@@ -283,6 +287,7 @@ const TEXT_FIELDS = [
   "netId",
   "handle",
   "personalEmail",
+  "preferredEmail",
 ] as const;
 
 async function loadProjectAssignments(
@@ -504,10 +509,12 @@ export async function loadProfilePage({
       daliEmail: true,
       dartmouthEmail: true,
       personalEmail: true,
+      preferredEmail: true,
       pronouns: true,
       classYear: true,
       dartmouthDepartmentClass: true,
-      major: true,
+      majors: true,
+      minors: true,
       hometown: true,
       currentLocation: true,
       currentLocationCity: true,
@@ -908,7 +915,7 @@ export async function runProfileAction({
       await saveAbout(targetId, {
         funFact: String(form.get("funFact") ?? ""),
         outsideOfWork: String(form.get("outsideOfWork") ?? ""),
-        askMeAbout: parseAskMeAbout(String(form.get("askMeAbout") ?? "")),
+        askMeAbout: parseJsonList(String(form.get("askMeAbout") ?? "")),
       });
       const on = (key: string) => form.get(key) === "on";
       await updateProfileFields(
@@ -946,6 +953,8 @@ export async function runProfileAction({
       targetId,
       {
         ...Object.fromEntries(TEXT_FIELDS.map((f) => [f, text(f)])),
+        majors: splitList(text("majors")),
+        minors: splitList(text("minors")),
         classYear: text("classYear"),
         birthday: text("birthday"),
         currentLocationGeonameId: text("currentLocationGeonameId"),

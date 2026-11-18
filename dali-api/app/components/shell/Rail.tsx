@@ -421,7 +421,8 @@ export function Rail({
           <>
             {!isAlumni && <RailDivider />}
             <div className="flex min-h-0 flex-col gap-2">
-              <div ref={areaMenuRef} className={cn('shrink-0', compact && 'flex justify-center')}>
+              {/* Alumni get one flat list, no section header. */}
+              <div ref={areaMenuRef} className={cn('shrink-0', compact && 'flex justify-center', isAlumni && 'hidden')}>
                 {singleArea ? (
                   compact ? (
                     <Tooltip content={activeArea.label} placement="right">

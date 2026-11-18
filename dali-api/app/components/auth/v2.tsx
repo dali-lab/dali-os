@@ -21,6 +21,7 @@ export function AuthShellV2({
   notice,
   brand,
   header,
+  exit,
   wide,
   hideLegal,
   children,
@@ -30,6 +31,8 @@ export function AuthShellV2({
   brand?: AuthShellBrand;
   /** Replaces the plain title heading above the form. */
   header?: ReactNode;
+  /** Pinned to the form column's top-right corner, e.g. a way out of a multi-step flow. */
+  exit?: ReactNode;
   wide?: boolean;
   hideLegal?: boolean;
   /** Changing this re-runs the form column's entrance, so steps read as advancing. */
@@ -69,7 +72,8 @@ export function AuthShellV2({
         )}
       </aside>
 
-      <main className="flex min-h-screen w-full flex-col items-center justify-center px-6 py-12 md:w-1/2 md:px-12 lg:px-16">
+      <main className="relative flex min-h-screen w-full flex-col items-center justify-center px-6 py-12 md:w-1/2 md:px-12 lg:px-16">
+        {exit ? <div className="absolute right-4 top-4 md:right-6 md:top-6">{exit}</div> : null}
         <div className={cn("w-full", wide ? "max-w-[460px]" : "max-w-sm")}>
           <span className="mb-8 block font-os-logo text-2xl font-semibold text-os-accent md:hidden">dali.os</span>
 

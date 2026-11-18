@@ -2,7 +2,7 @@ import { prisma } from "~/lib/db.server";
 import { BadRequestError } from "~/lib/http-error";
 import { LAB_MEMBER_WHERE } from "~/lib/prisma-shapes";
 import { resolvePhotoUrl } from "~/lib/photo";
-import { addQuestWorkExperience } from "~/lib/alumni-game.server";
+import { addQuestWorkExperience, markAlumniOnboarded } from "~/lib/alumni-game.server";
 import { updateProfileFields } from "~/members/lib/profile-update.server";
 import {
   blockIdFor,
@@ -11,23 +11,23 @@ import {
   pluralize,
   splitWork,
   summarizeDali,
+  type AlumniInvite,
   type OpenToChoices,
 } from "~/lib/alumni-onboarding";
-
-export type AlumniInvite = "onboarding" | "game" | null;
 
 export async function alumniInviteFor(
   userId: string,
   isAlumni: boolean,
   flags: { "alumni-onboarding": boolean; "alumni-game": boolean },
-): Promise<AlumniInvite> {
+): Promise<AlumniInvite | null> {
   if (!isAlumni) return null;
   if (flags["alumni-onboarding"]) {
     const row = await prisma.user.findUnique({
       where: { id: userId },
       select: { alumniOnboardedAt: true },
     });
-    return row && row.alumniOnboardedAt === null ? "onboarding" : null;
+    if (!row || row.alumniOnboardedAt !== null) return null;
+    return flags["alumni-game"] ? "choice" : "onboarding";
   }
   if (flags["alumni-game"]) {
     const avatar = await prisma.pixelAvatar.findUnique({ where: { userId }, select: { userId: true } });
@@ -42,8 +42,21 @@ export type OnboardingData = {
   firstName: string;
   fullName: string;
   classYear: number | null;
-  major: string | null;
+  majors: string[];
+  minors: string[];
   hometown: string | null;
+  basedIn: {
+    currentLocation: string | null;
+    currentLocationGeonameId: number | null;
+    currentLocationLat: number | null;
+    currentLocationCity: string | null;
+    currentLocationRegion: string | null;
+    currentLocationCountry: string | null;
+  };
+  linkedinUrl: string;
+  personalSite: string;
+  birthday: string;
+  dietaryRestrictions: string;
   dali: { projectCount: number; termCount: number; projectNames: string[]; rolesLine: string };
   now: WorkSlot | null;
   before: WorkSlot | null;
@@ -77,9 +90,19 @@ export async function loadOnboarding(userId: string): Promise<OnboardingData> {
       firstName: true,
       lastName: true,
       classYear: true,
-      major: true,
+      majors: true,
+      minors: true,
       hometown: true,
+      currentLocation: true,
+      currentLocationGeonameId: true,
+      currentLocationLat: true,
       currentLocationCity: true,
+      currentLocationRegion: true,
+      currentLocationCountry: true,
+      linkedinUrl: true,
+      personalSite: true,
+      birthday: true,
+      dietaryRestrictions: true,
       photoUrl: true,
       funFact: true,
       outsideOfWork: true,
@@ -132,8 +155,21 @@ export async function loadOnboarding(userId: string): Promise<OnboardingData> {
     firstName: user.firstName,
     fullName,
     classYear: user.classYear,
-    major: user.major,
+    majors: user.majors,
+    minors: user.minors,
     hometown: user.hometown,
+    basedIn: {
+      currentLocation: user.currentLocation,
+      currentLocationGeonameId: user.currentLocationGeonameId,
+      currentLocationLat: user.currentLocationLat,
+      currentLocationCity: user.currentLocationCity,
+      currentLocationRegion: user.currentLocationRegion,
+      currentLocationCountry: user.currentLocationCountry,
+    },
+    linkedinUrl: user.linkedinUrl ?? "",
+    personalSite: user.personalSite ?? "",
+    birthday: user.birthday ? user.birthday.toISOString().slice(0, 10) : "",
+    dietaryRestrictions: user.dietaryRestrictions ?? "",
     dali: {
       projectCount: dali.projectCount,
       termCount: dali.termCount,
@@ -189,22 +225,38 @@ export function openToPatch(choices: OpenToChoices) {
 
 export async function finishOnboarding(userId: string, choices: OpenToChoices) {
   await updateProfileFields(userId, { openTo: openToPatch(choices) }, { allowNetId: false });
-  await prisma.user.updateMany({
-    where: { id: userId, alumniOnboardedAt: null },
-    data: { alumniOnboardedAt: new Date() },
-  });
+  await markAlumniOnboarded(userId);
 }
 
 export async function saveAbout(
   userId: string,
-  about: { funFact: string; outsideOfWork: string; askMeAbout: string[] },
+  about: {
+    funFact: string;
+    outsideOfWork: string;
+    askMeAbout: string[];
+    linkedinUrl?: string;
+    personalSite?: string;
+    birthday?: string;
+    dietaryRestrictions?: string;
+  },
 ) {
   await updateProfileFields(userId, about, { allowNetId: false });
 }
 
-export async function saveClassAndMajor(userId: string, input: { classYear: string; major: string }) {
+export async function saveStudy(
+  userId: string,
+  input: { classYear: string; majors: string[]; minors: string[] },
+) {
   await updateProfileFields(userId, input, { allowNetId: false });
 }
+
+export async function saveBasedIn(
+  userId: string,
+  input: { currentLocation: string; currentLocationGeonameId: string },
+) {
+  await updateProfileFields(userId, input, { allowNetId: false });
+}
+
 
 export async function saveHometown(userId: string, hometown: string) {
   await updateProfileFields(userId, { hometown }, { allowNetId: false });

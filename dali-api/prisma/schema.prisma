@@ -49,6 +49,9 @@ model User {
   // Personal (non-Dartmouth) email. Used by alumni post-grad after
   // @dali.dartmouth.edu revocation and as the magic-link target for partners.
   personalEmail  String? @unique
+  // The address this person prefers to be reached at ("Primary" on the
+  // profile). One of the emails above; display/contact only, never auth.
+  preferredEmail String?
   // Slack user id (e.g. "U0123ABCD"), populated by a daliEmail → Slack
   // lookup (see slack-client.lookupSlackUserByEmail in the reminders
   // follow-up). Nullable: a user with no resolved Slack id silently skips
@@ -135,7 +138,9 @@ model User {
   photoUrl            String?
   // Bio stored as a collab doc reference for rich formatting + @mentions.
   bioDocId            String?
+  // Legacy single major, kept in sync from majors until a follow-up drops it.
   major               String?
+  majors              String[]  @default([])
   hometown            String?
   // Where the person lives now ("Based in" on the profile). Free text; the
   // coordinates are geocoded from it on save (app/lib/geocode.server.ts) and
@@ -207,7 +212,7 @@ model User {
   dietaryRestrictions String?
   // Alumni onboarding extras: minors alongside `major`, and an "ask me about"
   // conversation-starter for the profile.
-  minors              String?
+  minors              String[]  @default([])
   funFact             String?
 
   // Manual onboarding step tracking: Figma can't be invited via API, so an admin

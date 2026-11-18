@@ -9,7 +9,7 @@ import {
 export type QuestState = { profile: QuestProfile; ctx: QuestionContext };
 
 export async function loadQuestState(userId: string): Promise<QuestState> {
-  const [user, avatar, workCount] = await Promise.all([
+  const [user, avatar, workCount, historyLines] = await Promise.all([
     prisma.user.findUniqueOrThrow({
       where: { id: userId },
       select: {
@@ -18,12 +18,16 @@ export async function loadQuestState(userId: string): Promise<QuestState> {
         daliEmail: true,
         dartmouthEmail: true,
         personalEmail: true,
+        preferredEmail: true,
         classYear: true,
         currentLocation: true,
         hometown: true,
-        major: true,
+        birthday: true,
+        majors: true,
         minors: true,
+        askMeAbout: true,
         funFact: true,
+        outsideOfWork: true,
         dietaryRestrictions: true,
         linkedinUrl: true,
         personalSite: true,
@@ -34,16 +38,65 @@ export async function loadQuestState(userId: string): Promise<QuestState> {
       select: { confirmedFields: true },
     }),
     prisma.workExperience.count({ where: { userId } }),
+    loadDaliHistoryLines(userId),
   ]);
   const confirmed = avatar?.confirmedFields ?? [];
-  const profile = toQuestProfile({ user, confirmed, hasWork: workCount > 0 });
+  const profile = toQuestProfile({
+    user: {
+      ...user,
+      birthday: user.birthday ? user.birthday.toISOString().slice(0, 10) : null,
+    },
+    confirmed,
+    workCount,
+  });
   const ctx: QuestionContext = {
     fullName: `${user.firstName} ${user.lastName}`.trim(),
     emails: [user.personalEmail, user.daliEmail, user.dartmouthEmail].filter(
       (e): e is string => typeof e === "string" && e !== "",
     ),
+    historyLines,
   };
   return { profile, ctx };
+}
+
+export async function loadDaliHistoryLines(userId: string): Promise<string[]> {
+  const [assignments, coreRows, leadRows] = await Promise.all([
+    prisma.projectAssignment.findMany({
+      where: { userId },
+      select: {
+        level: true,
+        project: { select: { name: true } },
+        domain: { select: { name: true } },
+        term: { select: { code: true, sortKey: true } },
+      },
+    }),
+    prisma.coreAssignment.findMany({
+      where: { userId },
+      select: { leadTitle: true, term: { select: { code: true, sortKey: true } } },
+    }),
+    prisma.domainLeadAssignment.findMany({
+      where: { userId },
+      select: {
+        domain: { select: { displayName: true } },
+        term: { select: { code: true, sortKey: true } },
+      },
+    }),
+  ]);
+  const rows = [
+    ...assignments.map((a) => ({
+      sortKey: a.term.sortKey,
+      line: `${a.term.code}: ${a.project.name} (${a.domain.name} ${a.level})`,
+    })),
+    ...coreRows.map((c) => ({
+      sortKey: c.term.sortKey,
+      line: `${c.term.code}: ${c.leadTitle ? `Core, ${c.leadTitle}` : "Core"}`,
+    })),
+    ...leadRows.map((d) => ({
+      sortKey: d.term.sortKey,
+      line: `${d.term.code}: ${d.domain.displayName} Lead`,
+    })),
+  ];
+  return rows.sort((a, b) => a.sortKey - b.sortKey).map((r) => r.line);
 }
 
 export async function loadQuestProfile(userId: string): Promise<QuestProfile> {
@@ -54,6 +107,27 @@ export async function confirmQuestField(userId: string, key: string) {
   await prisma.pixelAvatar.updateMany({
     where: { userId, NOT: { confirmedFields: { has: key } } },
     data: { confirmedFields: { push: key } },
+  });
+}
+
+// Records the address the alum wants to be reached at. An address that isn't
+// one of the institutional ones also lands in personalEmail so the rest of the
+// app (magic links, contact lists) picks it up.
+export async function setPreferredEmail(userId: string, email: string) {
+  const user = await prisma.user.findUniqueOrThrow({
+    where: { id: userId },
+    select: { daliEmail: true, dartmouthEmail: true },
+  });
+  const normalized = email.trim().toLowerCase();
+  const institutional = [user.daliEmail, user.dartmouthEmail]
+    .filter((e): e is string => typeof e === "string")
+    .map((e) => e.toLowerCase());
+  await prisma.user.update({
+    where: { id: userId },
+    data: {
+      preferredEmail: normalized,
+      ...(institutional.includes(normalized) ? {} : { personalEmail: normalized }),
+    },
   });
 }
 
@@ -73,30 +147,27 @@ export async function addQuestWorkExperience(
   });
 }
 
-export async function setOpenTo(
-  userId: string,
-  openTo: { coffeeChats: boolean; resumeReviews: boolean; portfolioReviews: boolean },
-) {
-  await prisma.user.update({
-    where: { id: userId },
-    data: {
-      openToCoffeeChats: openTo.coffeeChats,
-      openToResumeReviews: openTo.resumeReviews,
-      openToPortfolioReviews: openTo.portfolioReviews,
-    },
+export async function markAlumniOnboarded(userId: string, at = new Date()) {
+  await prisma.user.updateMany({
+    where: { id: userId, alumniOnboardedAt: null },
+    data: { alumniOnboardedAt: at },
   });
 }
 
-// Stamps questCompletedAt the first time the profile reaches 100%. Returns the
-// fresh state + percent for the phone UI.
+// Stamps questCompletedAt the first time the profile reaches 100%, and marks
+// alumni onboarding done so the first-login invite stops showing.
 export async function questProgress(userId: string) {
   const { profile, ctx } = await loadQuestState(userId);
   const percent = questPercent(profile);
   if (percent >= 100) {
-    await prisma.pixelAvatar.updateMany({
-      where: { userId, questCompletedAt: null },
-      data: { questCompletedAt: new Date() },
-    });
+    const now = new Date();
+    await Promise.all([
+      prisma.pixelAvatar.updateMany({
+        where: { userId, questCompletedAt: null },
+        data: { questCompletedAt: now },
+      }),
+      markAlumniOnboarded(userId, now),
+    ]);
   }
   return { profile, ctx, percent };
 }

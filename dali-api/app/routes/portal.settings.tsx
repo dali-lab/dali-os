@@ -1,6 +1,7 @@
 import { Form, useLoaderData, useNavigation } from "react-router";
 import type { Route } from "./+types/portal.settings";
 import { prisma } from "~/lib/db.server";
+import { splitList } from "~/members/lib/list-input";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isValidTimezone } from "~/lib/timezone";
@@ -34,7 +35,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       pronouns: true,
       phoneNumber: true,
       classYear: true,
-      major: true,
+      majors: true,
       timeZone: true,
       photoUrl: true,
     },
@@ -77,6 +78,7 @@ export async function action({ request }: Route.ActionArgs) {
   }
   const tzRaw = (form.get("timeZone") as string | null)?.trim() || null;
   const timeZone = tzRaw && isValidTimezone(tzRaw) ? tzRaw : null;
+  const majors = splitList((form.get("major") as string | null) ?? "");
   await prisma.user.update({
     where: { id: auth.user.sub },
     data: {
@@ -85,7 +87,8 @@ export async function action({ request }: Route.ActionArgs) {
       pronouns: (form.get("pronouns") as string | null)?.trim() || null,
       phoneNumber: (form.get("phoneNumber") as string | null)?.trim() || null,
       classYear,
-      major: (form.get("major") as string | null)?.trim() || null,
+      majors,
+      major: majors.length > 0 ? majors.join(", ") : null,
       timeZone,
       photoUrl: (form.get("photoUrl") as string | null)?.trim() || null,
     },
@@ -201,7 +204,7 @@ export default function PortalSettings({ actionData }: Route.ComponentProps) {
                 id="major"
                 name="major"
                 placeholder="e.g. Computer Science"
-                defaultValue={me.major ?? ""}
+                defaultValue={me.majors.join(", ")}
                 className={inputClass}
               />
             </div>

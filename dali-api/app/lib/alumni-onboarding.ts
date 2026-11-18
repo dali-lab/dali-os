@@ -1,5 +1,7 @@
 import { AUTH_TILES, type AuthTile } from "~/components/auth/auth-tiles";
 
+export type AlumniInvite = "choice" | "onboarding" | "game";
+
 export const ONBOARDING_STEPS = 3;
 export const WALL_SIZE = 18;
 export const WALL_FILLED_BY_STEP = [8, 13, 18] as const;
@@ -115,7 +117,7 @@ export function classTag(fullName: string, classYear: number | null): string {
   return classYear ? `${fullName} '${String(classYear).slice(-2)}` : fullName;
 }
 
-export function parseAskMeAbout(raw: string): string[] {
+export function parseJsonList(raw: string): string[] {
   try {
     const parsed: unknown = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed.filter((t): t is string => typeof t === "string") : [];

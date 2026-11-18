@@ -45,6 +45,17 @@ describe("validation", () => {
     });
   });
 
+  it("lowercases the preferred email, rejects malformed, clears on empty", async () => {
+    await updateProfileFields("u1", { preferredEmail: " Ada@Example.EDU " }, opts);
+    expect(written()).toEqual({ preferredEmail: "ada@example.edu" });
+    await expect(
+      updateProfileFields("u1", { preferredEmail: "ada.example.edu" }, opts),
+    ).rejects.toMatchObject({ status: 400 });
+    db.user.update.mockClear();
+    await updateProfileFields("u1", { preferredEmail: "" }, opts);
+    expect(written()).toEqual({ preferredEmail: null });
+  });
+
   it("accepts class years 1900 to 2100 as numbers or strings", async () => {
     for (const bad of ["1899", 2101, "20x8", 2020.5]) {
       await expect(updateProfileFields("u1", { classYear: bad }, opts)).rejects.toMatchObject({
@@ -71,8 +82,8 @@ describe("validation", () => {
 
 describe("patch semantics", () => {
   it("leaves undefined fields alone and clears empty strings", async () => {
-    await updateProfileFields("u1", { major: "", hometown: " Hanover " }, opts);
-    expect(written()).toEqual({ major: null, hometown: "Hanover" });
+    await updateProfileFields("u1", { pronouns: "", hometown: " Hanover " }, opts);
+    expect(written()).toEqual({ pronouns: null, hometown: "Hanover" });
   });
 
   it("skips the write for an empty patch", async () => {
@@ -92,15 +103,15 @@ describe("patch semantics", () => {
     await updateProfileFields("u1", { netId: "F00ADA" }, opts);
     expect(written()).toEqual({ netId: "f00ada" });
     db.user.update.mockClear();
-    const out = await updateProfileFields("u1", { netId: "F00ADA", major: "Math" }, { allowNetId: false });
-    expect(written()).toEqual({ major: "Math" });
-    expect(out.updated).toEqual({ major: "Math" });
+    const out = await updateProfileFields("u1", { netId: "F00ADA", hometown: "Hanover" }, { allowNetId: false });
+    expect(written()).toEqual({ hometown: "Hanover" });
+    expect(out.updated).toEqual({ hometown: "Hanover" });
   });
 });
 
 describe("location pin", () => {
   it("does not look up or geocode when currentLocation is not in the patch", async () => {
-    await updateProfileFields("u1", { major: "Math" }, opts);
+    await updateProfileFields("u1", { hometown: "Hanover" }, opts);
     expect(db.user.findUnique).not.toHaveBeenCalled();
     expect(geocodePlace).not.toHaveBeenCalled();
   });
@@ -250,9 +261,39 @@ describe("unique violations", () => {
 
   it("reports other unique violations generically and rethrows everything else", async () => {
     db.user.update.mockRejectedValue({ code: "P2002", meta: {} });
-    await expect(updateProfileFields("u1", { major: "x" }, opts)).rejects.toMatchObject({ field: "unique" });
+    await expect(updateProfileFields("u1", { hometown: "x" }, opts)).rejects.toMatchObject({ field: "unique" });
     db.user.update.mockRejectedValue(new Error("db down"));
-    await expect(updateProfileFields("u1", { major: "x" }, opts)).rejects.toThrow("db down");
+    await expect(updateProfileFields("u1", { hometown: "x" }, opts)).rejects.toThrow("db down");
+  });
+});
+
+describe("majors and minors", () => {
+  it("saves trimmed, deduplicated lists and keeps the legacy major in sync", async () => {
+    await updateProfileFields(
+      "u1",
+      { majors: [" Computer Science ", "computer science", "Studio Art", ""], minors: ["Economics"] },
+      opts,
+    );
+    expect(written()).toEqual({
+      majors: ["Computer Science", "Studio Art"],
+      major: "Computer Science, Studio Art",
+      minors: ["Economics"],
+    });
+  });
+
+  it("clears the legacy major when the list is emptied", async () => {
+    await updateProfileFields("u1", { majors: [] }, opts);
+    expect(written()).toEqual({ majors: [], major: null });
+  });
+
+  it("rejects more than four entries or an entry over 60 characters", async () => {
+    await expect(updateProfileFields("u1", { majors: ["a", "b", "c", "d", "e"] }, opts)).rejects.toMatchObject({
+      field: "study",
+    });
+    await expect(updateProfileFields("u1", { minors: ["x".repeat(61)] }, opts)).rejects.toMatchObject({
+      field: "study",
+    });
+    expect(db.user.update).not.toHaveBeenCalled();
   });
 });
 

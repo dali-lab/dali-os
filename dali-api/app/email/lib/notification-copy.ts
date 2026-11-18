@@ -415,6 +415,15 @@ export const NOTIFICATION_COPY = {
   },
 
   // ── People ───────────────────────────────────────────────────────────────
+  "alumni.history_correction": {
+    eventType: "alumni.history_correction",
+    label: "Alumni history correction",
+    description: "Sent to Core when an alum reports that their DALI projects or roles are wrong or missing.",
+    variables: ["itemTitle", "itemDetail"],
+    subject: "{{itemTitle}}",
+    body: "{{itemDetail}}",
+    linkLabel: "Open their profile",
+  },
   // Deliberately carries no personName: the invite is anonymous until accepted.
   "coffee_chat.invite": {
     eventType: "coffee_chat.invite",
@@ -1001,6 +1010,7 @@ export const NOTIFICATION_SAMPLES: Record<TemplateVariableName, string> = {
   daliEmail: "alex.chen.28@dali.dartmouth.edu",
   // Built indirectly so secret scanners don't read the sample as a real one.
   tempPassword: ["kite", "Mango", "42", "river"].join("-"),
+  inviteLink: "https://os.dali.dartmouth.edu/alumni/invite/example",
 };
 
 export function notificationSample(

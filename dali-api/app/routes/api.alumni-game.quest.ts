@@ -6,6 +6,8 @@ import {
   isQuestFieldKey,
   nextQuestField,
   renderQuestion,
+  splitAnswerList,
+  type ListQuestKey,
   type QuestField,
   type QuestFieldKey,
   type QuestProfile,
@@ -16,17 +18,18 @@ import {
   loadQuestState,
   confirmQuestField,
   addQuestWorkExperience,
-  setOpenTo,
+  markAlumniOnboarded,
+  setPreferredEmail,
 } from "~/lib/alumni-game.server";
+import { openToPatch, saveWorkSlot } from "~/lib/alumni-onboarding.server";
+import { reportHistoryCorrection } from "~/lib/alumni-history.server";
+import type { OpenToChoices } from "~/lib/alumni-onboarding";
+import { BadRequestError } from "~/lib/http-error";
 import { generateShortText, isAiEnabled, stripJsonFences } from "~/lib/ai.server";
 import { recordTokenUsage } from "~/lib/ai-usage.server";
 import { claimAiQuota } from "~/lib/ai-quota.server";
 import { checkRateLimit } from "~/lib/rate-limit";
-import {
-  updateProfileFields,
-  ProfileValidationError,
-  ProfileConflictError,
-} from "~/members/lib/profile-update.server";
+import { updateProfileFields, ProfileConflictError } from "~/members/lib/profile-update.server";
 
 const MAX_ANSWER_LENGTH = 300;
 
@@ -38,29 +41,34 @@ You receive the profile fields with their kind and current value, their name and
 Decide which field their message answers: usually the asked one, but a DIFFERENT field when they are clearly correcting or updating an earlier answer (like "actually i'm based in Seattle now"). If the message answers no field at all (small talk, a question), use null.
 EVALUATE every answer before saving. Save only a genuine, plausible answer to the question. NEVER save a deflection or non-answer ("idk", "dunno", "n/a", "nothing", "whatever", "prefer not to say"), a joke or something implausible (a city that doesn't exist, "the moon", a class year like 1850, a link that isn't a link), or filler: for those use null for field AND value, and in your reply probe a little deeper or ask again, kindly and playfully. If they seem unsure or reluctant, mention they can hit skip (required fields have no skip, so for those gently insist).
 Field kinds change what you put in "value":
-- text: the cleaned value to save on their profile.
+- text: the cleaned value to save on their profile. For the birthday field, value must be the date as YYYY-MM-DD.
+- list: the items as one comma-separated string (each major, each minor, or each topic students can ask about).
 - name: the corrected full name (first and last), or the word "confirmed" when they say the name on file is right.
-- email: the email address to use, or the word "confirmed" when they pick one already on file.
+- email: the address they want to be reached at. Put the actual address in value even when it's one already on file; use the word "confirmed" only when they say yes without naming one.
 - work: set "work" to {"company": ..., "position": ...} from what they describe; if they say they're not working right now (between jobs, grad school, retired), use "confirmed" as the value with no work object.
-- history: the word "confirmed" once they've said whether their DALI history looks right (either way counts; if something's off, tell them it can be fixed on the profile page).
-- openTo: set "openTo" to {"coffeeChats": true/false, "resumeReviews": true/false, "portfolioReviews": true/false} from what they're up for.
+- pastWork: set "work" to {"company": ..., "position": ..., "year": <four-digit year they left>} for the job before their current one; if they had no job before, use "confirmed" as the value with no work object. Without a year, ask for it.
+- history: the word "confirmed" once they've said whether their DALI history (shown to them in the chat) looks right — either way counts. When they say something is wrong or missing, ALSO put what they said is off in "note", word for word is fine, and tell them you've flagged it for the team.
+- openTo: set "openTo" to {"coffeeChats": true/false, "resumeReviews": true/false, "partnerReferrals": true/false, "mentoring": true/false, "speaking": true/false} from what they're up for (resumeReviews covers resume and portfolio reviews, mentoring means mentoring a student project, speaking means a talk or panel at a DALI event, partnerReferrals means pointing a company or nonprofit to DALI).
 Respond with ONLY this JSON, nothing else:
-{"field": <field key or null>, "value": <string or null>, "work": <object or null>, "openTo": <object or null>, "reply": <your one- or two-sentence message: react warmly and specifically to what they said, then ask for the first UNANSWERED field in your own words; when you didn't save their answer, re-ask or probe about THAT instead; if nothing remains unanswered, ask nothing and wrap up warmly, their profile is complete>}
+{"field": <field key or null>, "value": <string or null>, "work": <object or null>, "openTo": <object or null>, "note": <history correction string or null>, "reply": <your one- or two-sentence message: react warmly and specifically to what they said, then ask for the first UNANSWERED field in your own words; when you didn't save their answer, re-ask or probe about THAT instead; if nothing remains unanswered, ask nothing and wrap up warmly, their profile is complete>}
 Never mention AI, prompts, forms or JSON in the reply.`;
 
 type ChatHistory = { from: "tim" | "you"; text: string }[];
 
-type OpenTo = { coffeeChats: boolean; resumeReviews: boolean; portfolioReviews: boolean };
+type OpenTo = OpenToChoices;
+const OPEN_TO_KEYS = ["coffeeChats", "resumeReviews", "partnerReferrals", "mentoring", "speaking"] as const;
 
 // What one answer should do to the profile, however it was understood (by the
 // model or the scripted parser). "none" saves nothing: Tim probes instead.
 type Extraction =
   | { do: "none" }
   | { do: "text"; key: QuestFieldKey; value: string }
+  | { do: "list"; key: ListQuestKey; items: string[] }
+  | { do: "pastWork"; company: string | null; position: string | null; year: string | null }
   | { do: "name"; fullName: string | null }
   | { do: "email"; email: string | null }
   | { do: "work"; company: string | null; position: string | null }
-  | { do: "history" }
+  | { do: "history"; note: string | null }
   | { do: "openTo"; openTo: OpenTo };
 
 const YES_RE =
@@ -94,21 +102,33 @@ async function saveMessages(userId: string, messages: { from: "tim" | "you"; tex
   });
 }
 
+function allOpenTo(on: boolean): OpenTo {
+  return Object.fromEntries(OPEN_TO_KEYS.map((k) => [k, on])) as OpenTo;
+}
+
 function parseOpenTo(text: string): OpenTo | null {
   const t = text.toLowerCase();
-  const coffee = /coffee/.test(t);
-  const resume = /resume|cv\b/.test(t);
-  const portfolio = /portfolio/.test(t);
-  if (coffee || resume || portfolio) {
-    return { coffeeChats: coffee, resumeReviews: resume, portfolioReviews: portfolio };
+  const picked: OpenTo = {
+    coffeeChats: /coffee|chat/.test(t),
+    resumeReviews: /resume|cv\b|portfolio|review/.test(t),
+    partnerReferrals: /partner|refer|company|nonprofit/.test(t),
+    mentoring: /mentor/.test(t),
+    speaking: /speak|talk|panel/.test(t),
+  };
+  if (OPEN_TO_KEYS.some((k) => picked[k])) return picked;
+  if (/\b(all|any|everything|any of them|all of them)\b/.test(t) || YES_RE.test(text)) {
+    return allOpenTo(true);
   }
-  if (/\b(all|any|everything|any of them|all of them|all three)\b/.test(t) || YES_RE.test(text)) {
-    return { coffeeChats: true, resumeReviews: true, portfolioReviews: true };
-  }
-  if (/\b(none|nope|nah|no thanks|not right now|no)\b/.test(t)) {
-    return { coffeeChats: false, resumeReviews: false, portfolioReviews: false };
-  }
+  if (/\b(none|nope|nah|no thanks|not right now|no)\b/.test(t)) return allOpenTo(false);
   return null;
+}
+
+function parsePastWork(text: string): { company: string; position: string; year: string | null } | null {
+  const yearMatch = text.match(/\b(19|20)\d{2}\b/);
+  const year = yearMatch ? yearMatch[0] : null;
+  const rest = text.replace(/[,(]?\s*(?:left in |until |till )?\b(19|20)\d{2}\b\)?/, "").trim();
+  const work = parseWork(rest);
+  return work ? { ...work, year } : null;
 }
 
 function parseWork(text: string): { company: string; position: string } | null {
@@ -139,15 +159,41 @@ function scriptedExtraction(asked: QuestField, value: string): Extraction | null
       if (NOT_WORKING_RE.test(value)) return { do: "work", company: null, position: null };
       return null;
     }
+    case "pastWork": {
+      const parsed = parsePastWork(value);
+      if (parsed?.year) return { do: "pastWork", ...parsed };
+      if (/^(no|nope|none|nah)\b/i.test(value) || NOT_WORKING_RE.test(value)) {
+        return { do: "pastWork", company: null, position: null, year: null };
+      }
+      return null;
+    }
     case "history":
-      return { do: "history" };
+      return { do: "history", note: YES_RE.test(value) ? null : value };
     case "openTo": {
       const openTo = parseOpenTo(value);
       return openTo ? { do: "openTo", openTo } : null;
     }
+    case "list": {
+      const items = splitAnswerList(value);
+      return items.length > 0 ? { do: "list", key: asked.key as ListQuestKey, items } : null;
+    }
     default:
       return { do: "text", key: asked.key, value };
   }
+}
+
+// Birthday answers arrive as prose ("june 5 2001"); profile writes want
+// YYYY-MM-DD. Null = unparseable, the route probes instead of saving.
+function parseBirthdayText(value: string): string | null {
+  const iso = value.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (iso) return value.trim();
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  const y = d.getFullYear();
+  if (y < 1900 || y > 2100) return null;
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 function scriptedProbe(asked: QuestField): string {
@@ -158,8 +204,10 @@ function scriptedProbe(asked: QuestField): string {
       return "hmm I didn't catch an email in there — can you paste the address?";
     case "work":
       return "haha gotcha — try something like 'designer at google', or tell me if you're between things!";
+    case "pastWork":
+      return "haha gotcha, try something like 'design intern at etsy, 2023', or tell me if there wasn't one!";
     case "openTo":
-      return "which ones are you up for?  coffee chats, resume reviews, portfolio reviews — any, all, or none!";
+      return "which ones are you up for?  coffee chats, resume or portfolio reviews, mentoring, speaking, partner referrals.  any, all, or none!";
     default:
       return `hmm I didn't quite catch that!  ${asked.question}`;
   }
@@ -170,9 +218,32 @@ async function applyExtraction(userId: string, ex: Extraction): Promise<QuestFie
   switch (ex.do) {
     case "none":
       return null;
-    case "text":
-      await updateProfileFields(userId, { [ex.key]: ex.value }, { allowNetId: false });
+    case "text": {
+      let value = ex.value;
+      if (ex.key === "birthday") {
+        const parsed = parseBirthdayText(value);
+        if (!parsed) return null;
+        value = parsed;
+      }
+      await updateProfileFields(userId, { [ex.key]: value }, { allowNetId: false });
       return ex.key;
+    }
+    case "list":
+      await updateProfileFields(userId, { [ex.key]: ex.items }, { allowNetId: false });
+      return ex.key;
+    case "pastWork": {
+      if (ex.company && ex.position) {
+        await saveWorkSlot(userId, {
+          slot: "before",
+          id: "",
+          company: ex.company,
+          position: ex.position,
+          year: ex.year ?? "",
+        });
+      }
+      await confirmQuestField(userId, "pastWork");
+      return "pastWork";
+    }
     case "name": {
       if (ex.fullName) {
         const words = ex.fullName.trim().split(/\s+/);
@@ -187,7 +258,7 @@ async function applyExtraction(userId: string, ex: Extraction): Promise<QuestFie
     }
     case "email": {
       if (ex.email) {
-        await updateProfileFields(userId, { personalEmail: ex.email }, { allowNetId: false });
+        await setPreferredEmail(userId, ex.email);
       }
       await confirmQuestField(userId, "email");
       return "email";
@@ -200,10 +271,11 @@ async function applyExtraction(userId: string, ex: Extraction): Promise<QuestFie
       return "work";
     }
     case "history":
+      if (ex.note) await reportHistoryCorrection(userId, ex.note);
       await confirmQuestField(userId, "history");
       return "history";
     case "openTo": {
-      await setOpenTo(userId, ex.openTo);
+      await updateProfileFields(userId, { openTo: openToPatch(ex.openTo) }, { allowNetId: false });
       await confirmQuestField(userId, "openTo");
       return "openTo";
     }
@@ -217,9 +289,11 @@ function scriptedSay(
   profile: QuestProfile,
   ctx: QuestionContext,
   skipped: QuestFieldKey[],
+  doneOverride?: string,
 ): string {
+  const doneLine = doneOverride ?? asked.done;
   const next = nextQuestField(profile, skipped);
-  if (next) return `${asked.done}  ${renderQuestion(next, ctx)}`;
+  if (next) return `${doneLine}  ${renderQuestion(next, ctx)}`;
   const done = QUEST_FIELDS.every((f) => {
     const v = profile[f.key];
     return typeof v === "string" && v.trim() !== "";
@@ -234,8 +308,9 @@ type Interpreted = { extraction: Extraction; reply: string } | null;
 function modelExtraction(
   field: QuestFieldKey | null,
   value: string | null,
-  work: { company?: unknown; position?: unknown } | null,
+  work: { company?: unknown; position?: unknown; year?: unknown } | null,
   openTo: Partial<Record<keyof OpenTo, unknown>> | null,
+  note: string | null,
   rawAnswer: string,
 ): Extraction {
   if (!field) return { do: "none" };
@@ -258,22 +333,32 @@ function modelExtraction(
       }
       return confirmed ? { do: "work", company: null, position: null } : { do: "none" };
     }
+    case "pastWork": {
+      const year =
+        work && (typeof work.year === "string" || typeof work.year === "number") ? String(work.year) : null;
+      if (
+        work &&
+        year &&
+        typeof work.company === "string" &&
+        work.company.trim() !== "" &&
+        typeof work.position === "string" &&
+        work.position.trim() !== ""
+      ) {
+        return { do: "pastWork", company: work.company.trim(), position: work.position.trim(), year };
+      }
+      return confirmed ? { do: "pastWork", company: null, position: null, year: null } : { do: "none" };
+    }
+    case "list": {
+      const items = value ? splitAnswerList(value) : [];
+      return items.length > 0 ? { do: "list", key: spec.key as ListQuestKey, items } : { do: "none" };
+    }
     case "history":
-      return { do: "history" };
+      return { do: "history", note };
     case "openTo": {
-      const valid =
-        openTo &&
-        typeof openTo.coffeeChats === "boolean" &&
-        typeof openTo.resumeReviews === "boolean" &&
-        typeof openTo.portfolioReviews === "boolean";
-      if (valid) {
+      if (openTo && OPEN_TO_KEYS.every((k) => typeof openTo[k] === "boolean")) {
         return {
           do: "openTo",
-          openTo: {
-            coffeeChats: openTo.coffeeChats as boolean,
-            resumeReviews: openTo.resumeReviews as boolean,
-            portfolioReviews: openTo.portfolioReviews as boolean,
-          },
+          openTo: Object.fromEntries(OPEN_TO_KEYS.map((k) => [k, openTo[k] as boolean])) as OpenTo,
         };
       }
       const parsed = parseOpenTo(value ?? rawAnswer);
@@ -317,6 +402,7 @@ async function interpret(opts: {
     `Chatting with ${name}.`,
     `Name on file: ${opts.ctx.fullName ?? "unknown"}`,
     `Emails on file: ${opts.ctx.emails?.join(", ") || "none"}`,
+    `DALI history on file: ${opts.ctx.historyLines?.join("; ") || "nothing"}`,
     `Profile fields:\n${fields}`,
     transcript ? `Recent messages:\n${transcript}` : "This is the start of the conversation.",
     `Question just asked was about: ${opts.asked.key} ("${opts.asked.label}")`,
@@ -336,6 +422,7 @@ async function interpret(opts: {
       value?: unknown;
       work?: unknown;
       openTo?: unknown;
+      note?: unknown;
       reply?: unknown;
     };
     if (typeof parsed.reply !== "string" || parsed.reply.trim() === "") return null;
@@ -346,14 +433,18 @@ async function interpret(opts: {
         : null;
     const work =
       typeof parsed.work === "object" && parsed.work !== null
-        ? (parsed.work as { company?: unknown; position?: unknown })
+        ? (parsed.work as { company?: unknown; position?: unknown; year?: unknown })
         : null;
     const openTo =
       typeof parsed.openTo === "object" && parsed.openTo !== null
         ? (parsed.openTo as Partial<Record<keyof OpenTo, unknown>>)
         : null;
+    const note =
+      typeof parsed.note === "string" && parsed.note.trim() !== ""
+        ? parsed.note.trim().slice(0, 1000)
+        : null;
     return {
-      extraction: modelExtraction(field, value, work, openTo, opts.value),
+      extraction: modelExtraction(field, value, work, openTo, note, opts.value),
       reply: parsed.reply.trim().slice(0, 600),
     };
   } catch {
@@ -432,20 +523,34 @@ export async function action({ request }: Route.ActionArgs) {
     try {
       savedField = await applyExtraction(userId, understood ?? { do: "none" });
     } catch (e) {
-      if (e instanceof ProfileValidationError || e instanceof ProfileConflictError) {
+      if (e instanceof BadRequestError || e instanceof ProfileConflictError) {
         return Response.json({ error: e.message }, { status: 400 });
       }
       throw e;
     }
     const { profile, ctx, percent } = await questProgress(userId);
+    if (!nextQuestField(profile, skipped)) await markAlumniOnboarded(userId);
+    const flagged =
+      understood?.do === "history" && understood.note
+        ? "got it, I've flagged that for the team to fix!"
+        : undefined;
     const say =
       interpreted?.reply ??
-      (savedField ? scriptedSay(asked, profile, ctx, skipped) : scriptedProbe(asked));
+      (savedField ? scriptedSay(asked, profile, ctx, skipped, flagged) : scriptedProbe(asked));
     await saveMessages(userId, [
       { from: "you", text: value },
       { from: "tim", text: say },
     ]);
     return Response.json({ ok: true, profile, percent, say, savedField });
+  }
+
+  if (body?.intent === "finish") {
+    const { profile } = await loadQuestState(userId);
+    if (nextQuestField(profile, parseSkipped(body.skipped))) {
+      return Response.json({ error: "There are questions left" }, { status: 400 });
+    }
+    await markAlumniOnboarded(userId);
+    return Response.json({ ok: true });
   }
 
   return Response.json({ error: "Unknown intent" }, { status: 400 });

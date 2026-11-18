@@ -5,6 +5,7 @@ import {
   questPercent,
   renderQuestion,
   type QuestFieldKey,
+  type QuestionContext,
   type QuestProfile,
 } from "./quest";
 
@@ -34,6 +35,7 @@ async function postQuest(body: Record<string, unknown>): Promise<QuestResponse> 
 
 export function QuestPhone({
   profile: initialProfile,
+  ctx,
   accepted,
   messages,
   appendMessages,
@@ -42,6 +44,7 @@ export function QuestPhone({
   onClose,
 }: {
   profile: QuestProfile;
+  ctx?: QuestionContext;
   accepted: boolean;
   messages: ChatMessage[];
   appendMessages: (ms: ChatMessage[]) => void;
@@ -65,7 +68,7 @@ export function QuestPhone({
     setAsking(next?.key ?? null);
     if (silent) return;
     if (next) {
-      tim(renderQuestion(next));
+      tim(renderQuestion(next, ctx));
     } else if (questPercent(p) >= 100) {
       tim("that's a complete profile!  you're officially settled in, welcome back to the lab!!");
     } else {
@@ -146,6 +149,7 @@ export function QuestPhone({
     appendMessages([{ from: "you", text: "Skip that one" }]);
     tim("no worries!");
     askNext(profile, nextSkipped);
+    if (!nextQuestField(profile, nextSkipped)) void postQuest({ intent: "finish", skipped: nextSkipped });
   }
 
   return (
@@ -175,6 +179,14 @@ export function QuestPhone({
               </p>
             ) : null}
           </div>
+          {!asking ? (
+            <div className="ag-phone-done">
+              <a href="/profile" className="ag-phone-view-profile">
+                View my profile
+              </a>
+              <p>Everything Tim saved is on your profile page.</p>
+            </div>
+          ) : null}
           {asking ? (
             <form
               className="ag-phone-input"

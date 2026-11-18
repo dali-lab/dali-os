@@ -8,10 +8,11 @@
 // edits) that map 1:1 to User columns. Unknown keys are ignored; blank answers
 // are skipped (left unchanged on the user) rather than nulling existing data.
 
+import { splitList } from "~/members/lib/list-input";
+
 // Question key -> User string field. The onboarding form must use these keys.
 const STRING_FIELDS: Record<string, string> = {
   "profile.pronouns": "pronouns",
-  "profile.major": "major",
   "profile.hometown": "hometown",
   "profile.photoUrl": "photoUrl",
   "profile.githubUsername": "githubUsername",
@@ -27,12 +28,14 @@ const STRING_FIELDS: Record<string, string> = {
   "profile.dietaryRestrictions": "dietaryRestrictions",
 };
 
+const MAJOR_KEY = "profile.major";
 const CLASS_YEAR_KEY = "profile.classYear";
 const BIRTHDAY_KEY = "profile.birthday";
 
 export type ProfileUpdate = {
   pronouns?: string;
   major?: string;
+  majors?: string[];
   hometown?: string;
   photoUrl?: string;
   githubUsername?: string;
@@ -65,6 +68,12 @@ export function interpretProfileForm(
   for (const [key, field] of Object.entries(STRING_FIELDS)) {
     const value = asTrimmed(answers[key]);
     if (value !== "") (update as Record<string, unknown>)[field] = value;
+  }
+
+  const majorRaw = asTrimmed(answers[MAJOR_KEY]);
+  if (majorRaw !== "") {
+    update.majors = splitList(majorRaw);
+    update.major = update.majors.join(", ");
   }
 
   const classYearRaw = asTrimmed(answers[CLASS_YEAR_KEY]);

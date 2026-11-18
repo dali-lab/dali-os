@@ -5,7 +5,7 @@ import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db.server";
 import { readOnlyRoles } from "~/lib/read-only-roles.server";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
-import { loadQuestProfile } from "~/lib/alumni-game.server";
+import { loadQuestState } from "~/lib/alumni-game.server";
 import { isAvatarConfig } from "~/components/alumni-game/pixel-avatar";
 import { LabSceneView } from "~/components/alumni-game/LabSceneView";
 
@@ -38,8 +38,8 @@ export async function loader({ request }: Route.LoaderArgs) {
   };
   if (!isAvatarConfig(avatar)) return redirect("/alumni/welcome");
 
-  const [profile, chatLog] = await Promise.all([
-    loadQuestProfile(userId),
+  const [{ profile, ctx }, chatLog] = await Promise.all([
+    loadQuestState(userId),
     prisma.alumniChatMessage.findMany({
       where: { userId },
       orderBy: { createdAt: "asc" },
@@ -51,18 +51,21 @@ export async function loader({ request }: Route.LoaderArgs) {
     avatar,
     playerName: auth.user.firstName ?? "",
     profile,
+    questCtx: ctx,
     questAccepted: row.questAcceptedAt !== null,
     chatLog: chatLog.map((m) => ({ from: m.from as "tim" | "you", text: m.text })),
   };
 }
 
 export default function AlumniLab() {
-  const { avatar, playerName, profile, questAccepted, chatLog } = useLoaderData<typeof loader>();
+  const { avatar, playerName, profile, questCtx, questAccepted, chatLog } =
+    useLoaderData<typeof loader>();
   return (
     <LabSceneView
       avatar={avatar}
       playerName={playerName}
       profile={profile}
+      questCtx={questCtx}
       questAccepted={questAccepted}
       chatLog={chatLog}
     />

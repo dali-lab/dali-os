@@ -213,6 +213,7 @@ describe("create_member", () => {
         email: "ada@example.com",
         personalEmail: "ada@example.com",
         major: "Math",
+        majors: ["Math"],
         classYear: 2027,
         daliMember: { create: {} },
       },

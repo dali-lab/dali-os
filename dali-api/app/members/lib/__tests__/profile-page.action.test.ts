@@ -90,6 +90,22 @@ describe("who may edit a profile", () => {
 });
 
 describe("profile field save", () => {
+  it("saves comma-separated majors and minors as lists", async () => {
+    await run(profile({ majors: "Computer Science, Studio Art", minors: "Economics" }));
+    expect(written()).toMatchObject({
+      majors: ["Computer Science", "Studio Art"],
+      major: "Computer Science, Studio Art",
+      minors: ["Economics"],
+    });
+  });
+
+  it("rejects a fifth major with the study message", async () => {
+    expect(await run(profile({ majors: "a, b, c, d, e" }))).toEqual({
+      error: "Add up to 4 majors or minors, 60 characters each.",
+    });
+    expect(db.user.update).not.toHaveBeenCalled();
+  });
+
   it("requires a first and last name", async () => {
     expect(await run({ firstName: " ", lastName: "Lovelace" })).toEqual({ error: "First and last name are required." });
     expect(await run({ firstName: "Ada", lastName: "" })).toEqual({ error: "First and last name are required." });

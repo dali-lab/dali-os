@@ -7,6 +7,7 @@ import {
   isQuestFieldKey,
   renderQuestion,
   toQuestProfile,
+  splitAnswerList,
   type QuestProfile,
 } from "../quest";
 
@@ -17,12 +18,16 @@ const baseUser = {
   firstName: "Ada",
   lastName: "Lovelace",
   personalEmail: null,
+  preferredEmail: null,
   classYear: null,
   currentLocation: null,
   hometown: null,
-  major: null,
-  minors: null,
+  birthday: null,
+  majors: [] as string[],
+  minors: [] as string[],
+  askMeAbout: [] as string[],
   funFact: null,
+  outsideOfWork: null,
   dietaryRestrictions: null,
   linkedinUrl: null,
   personalSite: null,
@@ -53,10 +58,14 @@ describe("quest fields", () => {
       "currentLocation",
       "work",
       "history",
+      "pastWork",
       "funFact",
-      "major",
+      "askMeAbout",
+      "outsideOfWork",
+      "majors",
       "minors",
       "hometown",
+      "birthday",
       "dietaryRestrictions",
       "linkedinUrl",
       "personalSite",
@@ -91,6 +100,24 @@ describe("renderQuestion", () => {
     const email = QUEST_FIELDS.find((f) => f.key === "email")!;
     expect(renderQuestion(email)).not.toContain("{emails}");
   });
+
+  it("lists the stored DALI history in the history question", () => {
+    const history = QUEST_FIELDS.find((f) => f.key === "history")!;
+    const rendered = renderQuestion(history, {
+      historyLines: ["21F: Gund Gallery (Design P1)", "22W: Core, Operations"],
+    });
+    expect(rendered).toContain("• 21F: Gund Gallery (Design P1)");
+    expect(rendered).toContain("• 22W: Core, Operations");
+    expect(rendered).not.toContain("{history}");
+    expect(renderQuestion(history)).toContain("nothing on file yet");
+  });
+});
+
+describe("splitAnswerList", () => {
+  it("splits on commas, semicolons and new lines and drops blanks", () => {
+    expect(splitAnswerList(" Economics; Studio Art ,\nMath, ")).toEqual(["Economics", "Studio Art", "Math"]);
+    expect(splitAnswerList("  ")).toEqual([]);
+  });
 });
 
 describe("questPercent", () => {
@@ -102,9 +129,9 @@ describe("questPercent", () => {
 
   it("ignores whitespace-only values", () => {
     const p = empty();
-    p.major = "   ";
+    p.majors = "   ";
     expect(filledCount(p)).toBe(0);
-    p.major = "CS";
+    p.majors = "CS";
     expect(filledCount(p)).toBe(1);
     expect(questPercent(p)).toBe(Math.round(100 / QUEST_FIELDS.length));
   });
@@ -134,16 +161,16 @@ describe("toQuestProfile", () => {
     const profile = toQuestProfile({
       user: { ...baseUser, classYear: 2019, hometown: "Austin" },
       confirmed: [],
-      hasWork: false,
+      workCount: 0,
     });
     expect(profile.classYear).toBe("2019");
     expect(profile.hometown).toBe("Austin");
-    expect(profile.major).toBeNull();
+    expect(profile.majors).toBeNull();
     expect(profile.linkedinUrl).toBeNull();
   });
 
   it("fills confirm-kind fields only once their key is confirmed", () => {
-    const before = toQuestProfile({ user: baseUser, confirmed: [], hasWork: false });
+    const before = toQuestProfile({ user: baseUser, confirmed: [], workCount: 0 });
     expect(before.name).toBeNull();
     expect(before.email).toBeNull();
     expect(before.history).toBeNull();
@@ -151,7 +178,7 @@ describe("toQuestProfile", () => {
     const after = toQuestProfile({
       user: { ...baseUser, personalEmail: "ada@x.com" },
       confirmed: ["name", "email", "history", "openTo"],
-      hasWork: false,
+      workCount: 0,
     });
     expect(after.name).toBe("Ada Lovelace");
     expect(after.email).toBe("ada@x.com");
@@ -159,17 +186,58 @@ describe("toQuestProfile", () => {
     expect(after.openTo).toBe("confirmed");
   });
 
+  it("shows the preferred email over the personal one once confirmed", () => {
+    const profile = toQuestProfile({
+      user: {
+        ...baseUser,
+        personalEmail: "ada@x.com",
+        preferredEmail: "ada@dartmouth.edu",
+      },
+      confirmed: ["email"],
+      workCount: 0,
+    });
+    expect(profile.email).toBe("ada@dartmouth.edu");
+  });
+
+  it("passes birthday through as a text field", () => {
+    const profile = toQuestProfile({
+      user: { ...baseUser, birthday: "2001-06-05" },
+      confirmed: [],
+      workCount: 0,
+    });
+    expect(profile.birthday).toBe("2001-06-05");
+  });
+
   it("counts work filled from a confirmation or an existing work experience row", () => {
-    expect(toQuestProfile({ user: baseUser, confirmed: [], hasWork: true }).work).toBe("on file");
-    expect(toQuestProfile({ user: baseUser, confirmed: ["work"], hasWork: false }).work).toBe(
+    expect(toQuestProfile({ user: baseUser, confirmed: [], workCount: 1 }).work).toBe("on file");
+    expect(toQuestProfile({ user: baseUser, confirmed: ["work"], workCount: 0 }).work).toBe(
       "on file",
     );
-    expect(toQuestProfile({ user: baseUser, confirmed: [], hasWork: false }).work).toBeNull();
+    expect(toQuestProfile({ user: baseUser, confirmed: [], workCount: 0 }).work).toBeNull();
+  });
+
+  it("counts the job before that from a confirmation or a second work row", () => {
+    expect(toQuestProfile({ user: baseUser, confirmed: [], workCount: 1 }).pastWork).toBeNull();
+    expect(toQuestProfile({ user: baseUser, confirmed: [], workCount: 2 }).pastWork).toBe("on file");
+    expect(toQuestProfile({ user: baseUser, confirmed: ["pastWork"], workCount: 0 }).pastWork).toBe(
+      "on file",
+    );
+  });
+
+  it("joins list columns and leaves empty lists unanswered", () => {
+    const profile = toQuestProfile({
+      user: { ...baseUser, majors: ["Computer Science", "Studio Art"], askMeAbout: ["Grad school"] },
+      confirmed: [],
+      workCount: 0,
+    });
+    expect(profile.majors).toBe("Computer Science, Studio Art");
+    expect(profile.askMeAbout).toBe("Grad school");
+    expect(profile.minors).toBeNull();
   });
 
   it("keeps a null classYear null", () => {
     expect(
-      toQuestProfile({ user: baseUser, confirmed: [], hasWork: false }).classYear,
+      toQuestProfile({ user: baseUser, confirmed: [], workCount: 0 }).classYear,
     ).toBeNull();
   });
 });

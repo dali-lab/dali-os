@@ -10,10 +10,12 @@ vi.mock("~/lib/alumni-onboarding.server", () => ({
   loadOnboarding: vi.fn(),
   finishOnboarding: vi.fn(),
   saveAbout: vi.fn(),
-  saveClassAndMajor: vi.fn(),
+  saveBasedIn: vi.fn(),
   saveHometown: vi.fn(),
+  saveStudy: vi.fn(),
   saveWorkSlot: vi.fn(),
 }));
+vi.mock("~/lib/alumni-history.server", () => ({ reportHistoryCorrection: vi.fn() }));
 vi.mock("~/lib/contact-email.server", () => ({
   listContactEmailOptions: vi.fn(),
   runContactEmailIntent: vi.fn(),
@@ -50,10 +52,12 @@ import {
   finishOnboarding,
   loadOnboarding,
   saveAbout,
-  saveClassAndMajor,
+  saveBasedIn,
   saveHometown,
+  saveStudy,
   saveWorkSlot,
 } from "~/lib/alumni-onboarding.server";
+import { reportHistoryCorrection } from "~/lib/alumni-history.server";
 import { ProfileValidationError } from "~/members/lib/profile-update.server";
 import { action, loader } from "../alumni.onboarding";
 
@@ -104,12 +108,10 @@ describe("loader", () => {
     expect(loadOnboarding).not.toHaveBeenCalled();
   });
 
-  it("returns the profile data and whether the pixel lab link should show", async () => {
+  it("returns the profile data with the contact email options", async () => {
     const contactEmail = { options: [{ address: "ada@example.com", proven: true, current: true }], preselected: "ada@example.com" };
     vi.mocked(listContactEmailOptions).mockResolvedValue(contactEmail);
-    expect(await runLoader()).toEqual({ firstName: "Ada", gameOn: false, contactEmail });
-    flags(true, true);
-    expect(await runLoader()).toEqual({ firstName: "Ada", gameOn: true, contactEmail });
+    expect(await runLoader()).toEqual({ firstName: "Ada", contactEmail });
     expect(listContactEmailOptions).toHaveBeenCalledWith("u1");
   });
 });
@@ -146,11 +148,28 @@ describe("action", () => {
     expect((await post({ intent: "nope" })).status).toBe(400);
   });
 
-  it("saves class and major, and hometown", async () => {
-    await post({ intent: "save-class", classYear: "2024", major: "CS" });
-    expect(saveClassAndMajor).toHaveBeenCalledWith("u1", { classYear: "2024", major: "CS" });
+  it("saves the class year with majors and minors parsed from JSON, and hometown", async () => {
+    await post({ intent: "save-class", classYear: "2024", majors: '["CS","Studio Art"]', minors: "[]" });
+    expect(saveStudy).toHaveBeenCalledWith("u1", { classYear: "2024", majors: ["CS", "Studio Art"], minors: [] });
     await post({ intent: "save-hometown", hometown: "Portland" });
     expect(saveHometown).toHaveBeenCalledWith("u1", "Portland");
+  });
+
+  it("saves based in with the picked city id", async () => {
+    await post({ intent: "save-based-in", currentLocation: "Brooklyn, New York", currentLocationGeonameId: "5110302" });
+    expect(saveBasedIn).toHaveBeenCalledWith("u1", {
+      currentLocation: "Brooklyn, New York",
+      currentLocationGeonameId: "5110302",
+    });
+  });
+
+  it("sends a history report to Core and refuses an empty one", async () => {
+    const res = await post({ intent: "report-history", note: "Also on Rauner Archive in 24W" });
+    expect(await res.json()).toEqual({ ok: true });
+    expect(reportHistoryCorrection).toHaveBeenCalledWith("u1", "Also on Rauner Archive in 24W");
+    const empty = await post({ intent: "report-history", note: "   " });
+    expect(empty.status).toBe(400);
+    expect(reportHistoryCorrection).toHaveBeenCalledTimes(1);
   });
 
   it("saves a job slot and rejects an unknown slot", async () => {
@@ -174,9 +193,27 @@ describe("action", () => {
       funFact: "f",
       outsideOfWork: "o",
       askMeAbout: ["Grad school", "Startups"],
+      linkedinUrl: "",
+      personalSite: "",
+      birthday: "",
+      dietaryRestrictions: "",
     });
-    await post({ intent: "save-about", funFact: "", outsideOfWork: "", askMeAbout: "garbage" });
-    expect(saveAbout).toHaveBeenLastCalledWith("u1", { funFact: "", outsideOfWork: "", askMeAbout: [] });
+    await post({
+      intent: "save-about",
+      askMeAbout: "garbage",
+      linkedinUrl: "https://linkedin.com/in/ada",
+      birthday: "2001-06-05",
+      dietaryRestrictions: "Vegetarian",
+    });
+    expect(saveAbout).toHaveBeenLastCalledWith("u1", {
+      funFact: "",
+      outsideOfWork: "",
+      askMeAbout: [],
+      linkedinUrl: "https://linkedin.com/in/ada",
+      personalSite: "",
+      birthday: "2001-06-05",
+      dietaryRestrictions: "Vegetarian",
+    });
   });
 
   it("finishes with only the switched-on tiles true", async () => {

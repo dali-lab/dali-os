@@ -54,7 +54,7 @@ test.describe('profile edit and privacy', () => {
     const about = page.locator('article').filter({ has: page.getByRole('heading', { name: 'About' }) });
     await about.getByRole('button', { name: 'Edit' }).click();
     await about.locator('input[name="pronouns"]').fill(pronouns);
-    await about.locator('input[name="major"]').fill(major);
+    await about.locator('input[name="majors"]').fill(major);
 
     const saved = page.waitForResponse(
       (r) => r.request().method() === 'POST' && r.url().includes(`/members/${ownerId}`),
@@ -85,7 +85,7 @@ test.describe('profile edit and privacy', () => {
     await expect(page.getByRole('button', { name: 'Edit' })).toHaveCount(0);
 
     const res = await page.request.post(`/members/${ownerId}`, {
-      form: { intent: 'profile', firstName: 'Marcus', lastName: 'Bell', pronouns: 'hijacked', major: 'hijacked' },
+      form: { intent: 'profile', firstName: 'Marcus', lastName: 'Bell', pronouns: 'hijacked', majors: 'hijacked' },
     });
     expect(await res.text()).toContain("You don&#x27;t have permission to edit this member.");
     expect(await readProfile(ownerId)).toEqual(before);

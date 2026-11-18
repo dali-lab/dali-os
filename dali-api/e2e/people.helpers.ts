@@ -37,7 +37,7 @@ export async function snapshotProfile(userId: string): Promise<ProfileSnapshot> 
 
 export async function restoreProfile(userId: string, snap: ProfileSnapshot) {
   await withClient((c) =>
-    c.query(`UPDATE "User" SET pronouns = $2, major = $3, hometown = $4 WHERE id = $1`, [
+    c.query(`UPDATE "User" SET pronouns = $2, major = $3, majors = CASE WHEN $3::text IS NULL THEN ARRAY[]::text[] ELSE ARRAY[$3::text] END, hometown = $4 WHERE id = $1`, [
       userId,
       snap.pronouns,
       snap.major,

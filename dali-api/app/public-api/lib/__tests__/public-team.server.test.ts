@@ -62,7 +62,7 @@ describe("listPublicTeam query shape", () => {
       "id",
       "lastName",
       "linkedinUrl",
-      "major",
+      "majors",
       "photoUrl",
       "projectAssignments",
     ]);
@@ -77,7 +77,7 @@ describe("listPublicTeam mapping", () => {
         firstName: "Ada",
         lastName: "Lovelace",
         classYear: 2027,
-        major: "Computer Science",
+        majors: ["Computer Science", "Studio Art"],
         photoUrl: "uploads/avatars/u1.webp",
         linkedinUrl: "https://linkedin.com/in/ada",
         projectAssignments: [
@@ -93,7 +93,7 @@ describe("listPublicTeam mapping", () => {
     const [m] = await listPublicTeam();
     expect(m.name).toBe("Ada Lovelace");
     expect(m.year).toBe("2027");
-    expect(m.majorMinor).toBe("Computer Science");
+    expect(m.majorMinor).toBe("Computer Science, Studio Art");
     // Most recent term first.
     expect(m.roles).toEqual(["Fullstack Dev", "UI/UX"]);
     expect(m.role).toBe("Fullstack Dev");
@@ -110,7 +110,7 @@ describe("listPublicTeam mapping", () => {
         firstName: "Ada",
         lastName: "Lovelace",
         classYear: 2027,
-        major: null,
+        majors: [],
         photoUrl: null,
         linkedinUrl: null,
         projectAssignments: [
@@ -144,7 +144,7 @@ describe("listPublicTeam mapping", () => {
         firstName: "Grace",
         lastName: "Hopper",
         classYear: null,
-        major: null,
+        majors: [],
         photoUrl: null,
         linkedinUrl: null,
         projectAssignments: [
@@ -168,7 +168,7 @@ describe("listPublicTeam mapping", () => {
         firstName: "New",
         lastName: "Member",
         classYear: null,
-        major: null,
+        majors: [],
         photoUrl: null,
         linkedinUrl: null,
         projectAssignments: [],
@@ -196,7 +196,7 @@ describe("listPublicTeam mapping", () => {
         firstName: "A",
         lastName: "B",
         classYear: null,
-        major: null,
+        majors: [],
         photoUrl: null,
         linkedinUrl: null,
         projectAssignments: [],

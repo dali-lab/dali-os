@@ -7,7 +7,7 @@ import {
   blockIdFor,
   classTag,
   joinRoles,
-  parseAskMeAbout,
+  parseJsonList,
   splitWork,
   summarizeDali,
   wallFilledForStep,
@@ -98,8 +98,8 @@ describe("helpers", () => {
   });
 
   it("parses the topic list and drops anything that is not a string list", () => {
-    expect(parseAskMeAbout('["a","b",3]')).toEqual(["a", "b"]);
-    expect(parseAskMeAbout("nope")).toEqual([]);
-    expect(parseAskMeAbout('{"a":1}')).toEqual([]);
+    expect(parseJsonList('["a","b",3]')).toEqual(["a", "b"]);
+    expect(parseJsonList("nope")).toEqual([]);
+    expect(parseJsonList('{"a":1}')).toEqual([]);
   });
 });
