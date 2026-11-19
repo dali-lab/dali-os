@@ -37,6 +37,7 @@ function msg(
 ): MailMessage {
   return {
     id,
+    labelIds: [],
     to: ME,
     cc: "",
     messageId: `<${id}@demo>`,
@@ -66,6 +67,7 @@ function thread(
     date: last.date,
     unread,
     messageCount: messages.length,
+    labelIds: [],
     messages,
   };
 }

@@ -113,6 +113,7 @@ export interface ThreadSummary {
   date: string;
   unread: boolean;
   messageCount: number;
+  labelIds: string[];
 }
 
 export interface MailAttachment {
@@ -126,6 +127,7 @@ export interface MailAttachment {
 
 export interface MailMessage {
   id: string;
+  labelIds: string[];
   from: string;
   to: string;
   cc: string;
@@ -228,6 +230,7 @@ export async function listThreads(
         date: new Date(Number(last.internalDate ?? 0)).toISOString(),
         unread: messages.some((m) => m.labelIds?.includes("UNREAD")),
         messageCount: messages.length,
+        labelIds: [...new Set(messages.flatMap((m) => m.labelIds ?? []))],
       },
     ];
   });
@@ -238,6 +241,27 @@ export async function listThreads(
 export async function inboxUnreadCount(token: string): Promise<number> {
   const label = await gmail<{ messagesUnread?: number }>(token, "/labels/INBOX");
   return label.messagesUnread ?? 0;
+}
+
+export interface MailLabel {
+  id: string;
+  name: string;
+  type: "system" | "user";
+  messagesTotal?: number;
+  messagesUnread?: number;
+}
+
+export async function listLabels(token: string): Promise<MailLabel[]> {
+  const res = await gmail<{
+    labels?: { id: string; name: string; type?: string; messagesTotal?: number; messagesUnread?: number }[];
+  }>(token, "/labels");
+  return (res.labels ?? []).map((l) => ({
+    id: l.id,
+    name: l.name,
+    type: l.type === "user" ? "user" : "system",
+    ...(l.messagesTotal !== undefined ? { messagesTotal: l.messagesTotal } : {}),
+    ...(l.messagesUnread !== undefined ? { messagesUnread: l.messagesUnread } : {}),
+  }));
 }
 
 // Bare message/thread ids matching a search, for the applicant-email indexer
@@ -308,6 +332,7 @@ export async function getThread(token: string, threadId: string): Promise<MailMe
     if (m.payload) collectParts(m.payload, body);
     return {
       id: m.id,
+      labelIds: m.labelIds ?? [],
       from: header(m.payload, "From"),
       to: header(m.payload, "To"),
       cc: header(m.payload, "Cc"),
