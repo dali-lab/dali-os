@@ -165,6 +165,53 @@ describe("pageBarCrumbs for alumni", () => {
   });
 });
 
+describe("pageBarCrumbs with paperwork on", () => {
+  const leaf = (pathname: string, label: string) => [{ pathname, handle: { breadcrumb: () => label }, data: {} }];
+  const crumbsAt = (path: string, matches: unknown[], title: string, paperwork: boolean) =>
+    pageBarCrumbs({
+      path,
+      trail: resolvePageBarTrail(matches as never, path.split("?")[0], "")?.crumbs ?? [],
+      title,
+      flags: { expenses: true, "refer-a-partner": true, paperwork },
+    }).map((c) => (c.to ? `${c.label} → ${c.to}` : c.label));
+
+  it("files Expenses under Paperwork, which claims it in the rail", () => {
+    expect(crumbsAt("/expenses", leaf("/expenses", "Expenses"), "Expenses", true)).toEqual([
+      "Lab → /projects",
+      "Paperwork → /paperwork",
+      "Expenses",
+    ]);
+    expect(crumbsAt("/expenses?expense=abc", leaf("/expenses", "Expenses"), "Expenses", true)).toEqual([
+      "Lab → /projects",
+      "Paperwork → /paperwork",
+      "Expenses",
+    ]);
+  });
+
+  it("files Refer a partner and its pages under Paperwork", () => {
+    expect(crumbsAt("/refer", [], "Refer a partner", true)).toEqual([
+      "Lab → /projects",
+      "Paperwork → /paperwork",
+      "Refer a partner",
+    ]);
+    expect(crumbsAt("/refer/new", [], "New referral", true)).toEqual([
+      "Lab → /projects",
+      "Paperwork → /paperwork",
+      "Refer → /refer",
+      "New",
+    ]);
+  });
+
+  it("does not repeat Paperwork on its own page", () => {
+    expect(crumbsAt("/paperwork", [], "Paperwork", true)).toEqual(["Lab → /projects", "Paperwork"]);
+  });
+
+  it("keeps Expenses and Refer a partner straight under Lab with paperwork off", () => {
+    expect(crumbsAt("/expenses", leaf("/expenses", "Expenses"), "Expenses", false)).toEqual(["Lab → /projects", "Expenses"]);
+    expect(crumbsAt("/refer/new", [], "New referral", false)).toEqual(["Lab → /projects", "Refer → /refer", "New"]);
+  });
+});
+
 describe("fallbackPageLabel", () => {
   it("names the destinations and home", () => {
     expect(fallbackPageLabel("/calendar?view=week")).toBe("Calendar");

@@ -1,6 +1,6 @@
 import type { Crumb } from '~/components/Breadcrumbs'
 import type { FeatureFlagMap } from '~/lib/feature-flags'
-import { areaForPath, areasForViewer, owningSubtab, type RoleFlags, type SubTab } from '~/lib/nav-areas'
+import { areaForPath, areasForViewer, claimingSubtab, owningSubtab, type RoleFlags, type SubTab } from '~/lib/nav-areas'
 
 type SectionRoot = { label: string; to: string }
 type Viewer = Pick<RoleFlags, 'isAlumni' | 'isNewMember'>
@@ -85,7 +85,9 @@ export function pageBarCrumbs({
   // its home in its first crumb, which beats the url's prefix.
   const anchor = own.length > 1 && own[0]?.to ? own[0].to : path
   const root = sectionRoot(anchor, flags, roles)
-  const rest = root && base[0]?.label === root.label ? base.slice(1) : base
+  const claimer = subtab ? undefined : claimingSubtab(path, flags, roles)
+  const below = root && base[0]?.label === root.label ? base.slice(1) : base
+  const rest = claimer && below[0]?.label !== claimer.label ? [{ label: claimer.label, to: claimer.href }, ...below] : below
   const crumbs: Crumb[] = root ? [{ label: root.label, to: root.to }, ...rest] : rest
   return crumbs.map((c, i) => (i === crumbs.length - 1 ? { ...c, to: undefined } : c))
 }
