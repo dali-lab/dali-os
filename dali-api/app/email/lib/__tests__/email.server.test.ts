@@ -21,7 +21,7 @@ vi.mock("~/lib/login-next", () => ({ redirectToLogin: vi.fn(() => new Response(n
 vi.mock("~/lib/ai.server", () => ({ isAiEnabled: vi.fn(() => false) }));
 vi.mock("~/lib/s3.server", () => ({ deleteObject: vi.fn(), getObjectBytes: vi.fn() }));
 vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
-vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn() }));
+vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn(), isLabMemberOrAlum: vi.fn() }));
 vi.mock("~/email/lib/demo-data.server", () => ({
   isEmailDemo: vi.fn(() => false),
   demoEmailPage: vi.fn(),
@@ -65,7 +65,8 @@ vi.mock("~/email/lib/gmail-mailbox.server", () => {
 
 import { prisma } from "~/lib/db.server";
 import { requireAuth, isImpersonating, isNonMember } from "~/lib/auth";
-import { getUserRoles } from "~/lib/roles";
+import { setTtlCacheEnabledForTests } from "~/lib/ttl-cache";
+import { getUserRoles, isLabMemberOrAlum } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { deleteObject, getObjectBytes } from "~/lib/s3.server";
 import { logAuditEvent } from "~/lib/audit";
@@ -90,8 +91,15 @@ import {
   sendMessage,
 } from "~/email/lib/gmail-mailbox.server";
 import {
+  addMailComment,
+  changeThreadLabels,
+  deleteMailComment,
+  emailAccessDenied,
   loadEmailPage,
+  loadFeed,
+  loadUnreadCounts,
   loadMoreThreads,
+  upsertDraft,
   loadUnreadTotal,
   parseThreadRef,
   submitEmailAction,
@@ -460,6 +468,7 @@ describe("submitEmailAction: subscriptions", () => {
 
 describe("submitEmailAction: account gate", () => {
   it("deleteComment only deletes the caller's own comment", async () => {
+    db.mailComment.deleteMany.mockResolvedValue({ count: 1 });
     await submitEmailAction(post({ intent: "deleteComment", commentId: "c1" }));
     expect(db.mailComment.deleteMany).toHaveBeenCalledWith({ where: { id: "c1", authorId: "u1" } });
     expect(findReadableAccount).not.toHaveBeenCalled();
@@ -843,5 +852,89 @@ describe("submitEmailAction: applicant linking", () => {
     expect(setThreadLink).toHaveBeenCalledWith(expect.objectContaining({ target: null, byUserId: "u1" }));
     expect(recordUserEmail).not.toHaveBeenCalled();
     expect(logAuditEvent).toHaveBeenCalledWith(expect.objectContaining({ action: "email.applicant_unlink" }));
+  });
+});
+
+describe("extracted helpers", () => {
+  it("emailAccessDenied rejects NetID-only users and non-members", async () => {
+    m(isLabMemberOrAlum).mockResolvedValue(true);
+    const req = new Request("http://localhost/");
+    expect(await emailAccessDenied({ id: "u1", daliEmail: null, netId: "f00" }, req)).toBe(true);
+    expect(await emailAccessDenied({ id: "u1", daliEmail: "a@dali.dartmouth.edu", netId: "f00" }, req)).toBe(false);
+    m(isLabMemberOrAlum).mockResolvedValue(false);
+    expect(await emailAccessDenied({ id: "u1", daliEmail: "a@dali.dartmouth.edu", netId: null }, req)).toBe(true);
+  });
+
+  it("loadUnreadCounts leaves out an unreachable inbox", async () => {
+    m(getMailboxToken).mockImplementation(async (a: { id: string }) => a.id);
+    m(inboxUnreadCount).mockImplementation(async (t: string) => {
+      if (t === "a2") throw new MailboxError("down");
+      return 5;
+    });
+    expect(await loadUnreadCounts([acct({ id: "a1" }), acct({ id: "a2" })] as never)).toEqual({ a1: 5 });
+  });
+
+  it("loadFeed reports a failing inbox in errors and keeps the rest", async () => {
+    m(getMailboxToken).mockImplementation(async (a: { id: string }) => a.id);
+    m(listThreads).mockImplementation(async (t: string) => {
+      if (t === "a2") throw new MailboxError("down");
+      return { threads: [thread("t1", "2026-01-01")], nextPageToken: "n1" };
+    });
+    const feed = await loadFeed([acct({ id: "a1" }), acct({ id: "a2" })] as never, "in:inbox", false);
+    expect(feed.errors).toEqual(["a2"]);
+    expect(feed.next).toEqual({ a1: "n1" });
+    expect(feed.threads.map((t) => t.accountId)).toEqual(["a1"]);
+  });
+
+  it("deleteMailComment only removes the author's own comment and reports whether it did", async () => {
+    db.mailComment.deleteMany.mockResolvedValue({ count: 0 });
+    expect(await deleteMailComment("c1", "u1", "a1")).toBe(0);
+    expect(db.mailComment.deleteMany).toHaveBeenCalledWith({ where: { id: "c1", authorId: "u1", accountId: "a1" } });
+    db.mailComment.deleteMany.mockResolvedValue({ count: 1 });
+    expect(await deleteMailComment("c1", "u1")).toBe(1);
+    expect(db.mailComment.deleteMany).toHaveBeenLastCalledWith({ where: { id: "c1", authorId: "u1" } });
+  });
+
+  it("addMailComment caps the body and notifies mentions", async () => {
+    db.mailComment.create.mockResolvedValue({ id: "c1" });
+    m(notifyMailCommentMentions).mockResolvedValue(undefined);
+    const body = "y".repeat(6000);
+    const res = await addMailComment({ account: acct() as never, threadId: "t1", userId: "u1", body, request: new Request("http://x/") });
+    expect(res).toEqual({ id: "c1" });
+    expect(db.mailComment.create).toHaveBeenCalledWith({
+      data: { accountId: "a1", threadId: "t1", authorId: "u1", body: "y".repeat(5000) },
+    });
+    expect(notifyMailCommentMentions).toHaveBeenCalledWith(expect.objectContaining({ body }));
+  });
+
+  it("changeThreadLabels modifies the thread and clears the cached unread total", async () => {
+    m(readableMailAccounts).mockResolvedValue([acct()]);
+    m(getMailboxToken).mockResolvedValue("tok");
+    m(inboxUnreadCount).mockResolvedValue(2);
+    const req = new Request("http://localhost/");
+    setTtlCacheEnabledForTests(true);
+    expect(await loadUnreadTotal(req, "u-cache")).toBe(2);
+    m(inboxUnreadCount).mockResolvedValue(1);
+    expect(await loadUnreadTotal(req, "u-cache")).toBe(2);
+    await changeThreadLabels(acct() as never, "t1", { remove: ["UNREAD"] }, "u-cache");
+    expect(modifyThread).toHaveBeenCalledWith("tok", "t1", { remove: ["UNREAD"] });
+    expect(await loadUnreadTotal(req, "u-cache")).toBe(1);
+    setTtlCacheEnabledForTests(null);
+  });
+
+  it("upsertDraft creates for the author, and updates only a draft visible to them", async () => {
+    const input = { to: "a@example.edu", cc: "", bcc: "", subject: "s", body: "b", shared: false, threadId: "" };
+    db.mailDraft.create.mockResolvedValue({ id: "d1" });
+    await upsertDraft(input, "a1", "u1");
+    expect(db.mailDraft.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ accountId: "a1", threadId: null, createdById: "u1", updatedById: "u1" }),
+    });
+    db.mailDraft.findFirst.mockResolvedValue({ id: "d9" });
+    db.mailDraft.update.mockResolvedValue({ id: "d9" });
+    await upsertDraft({ ...input, draftId: "d9" }, "a1", "u1");
+    expect(db.mailDraft.findFirst).toHaveBeenCalledWith({
+      where: { id: "d9", accountId: "a1", sentAt: null, OR: [{ shared: true }, { createdById: "u1" }] },
+    });
+    expect(db.mailDraft.update).toHaveBeenCalledWith({ where: { id: "d9" }, data: expect.any(Object) });
   });
 });

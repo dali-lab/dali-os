@@ -2,7 +2,7 @@
 title: Connect an AI assistant
 summary: Connect Claude Code, Claude Desktop, Codex or another AI assistant to DALI OS, choose what it may do, and revoke access later.
 paths: [/help/mcp, /settings/connections]
-keywords: [mcp, claude code, claude desktop, codex, ai assistant, connect, authorize, oauth, connected apps, revoke, scopes, read, write]
+keywords: [mcp, claude code, claude desktop, codex, ai assistant, connect, authorize, oauth, connected apps, revoke, scopes, read, write, email, gmail, labels, drafts]
 ---
 
 DALI OS has an MCP server, which lets an AI assistant you already use read your DALI data and, if you allow it, act for you. For example, you can ask Claude Code what is on your task list, have it draft a standup from your project board, or ask it to schedule a meeting. The assistant only ever acts as you, so it can see and do what you can and nothing more.
@@ -26,6 +26,15 @@ When you approve, you grant one or more levels of access.
 - **Admin**: elevated lab actions, such as announcements and background jobs. Only Core and Admin can grant this, and tools still check your role every time.
 
 The setup page lists every area an assistant can work in, with the access each needs. Some areas are read only by design, such as Hiring. Even with write access, an assistant can't do anything you couldn't do yourself in the app.
+
+## Email
+
+An assistant can work in the project and shared inboxes you can open in [Email](/email). It reads them with your own sign-in, so connect an inbox in Email first.
+
+- With **Read**, it can list your inboxes and their labels, search threads (including by label), and read a thread with its comments and drafts. It sees attachment names and sizes, not the files.
+- With **Write**, it can add or remove labels, archive a thread, mark it read or unread, leave or delete your own comments, and save drafts.
+
+An assistant can't send email. It saves a draft, and you review it and select **Send** in Email. It never sees your personal inbox, and it can't create new labels.
 
 The setup page also lists context you can attach to a conversation, such as your profile, your unread announcements, forms you have been asked to fill, and a project's board. It also lists ready-made prompts like `weekly-digest`, `meeting-prep` and `standup`.
 

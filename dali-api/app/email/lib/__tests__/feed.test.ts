@@ -12,6 +12,7 @@ const thread = (accountId: string, id: string, day: number, unread = false): Fee
   date: new Date(Date.UTC(2026, 0, day)).toISOString(),
   unread,
   messageCount: 1,
+  labelIds: [],
 });
 
 const ids = (threads: FeedThread[]) => threads.map((t) => `${t.accountId}~${t.id}`);

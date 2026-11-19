@@ -9,7 +9,7 @@ import { isAiEnabled } from "~/lib/ai.server";
 import { deleteObject, getObjectBytes } from "~/lib/s3.server";
 import { isBlockedUpload } from "~/lib/file-validation";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
-import { getUserRoles, type UserRoles } from "~/lib/roles";
+import { getUserRoles, isLabMemberOrAlum, type UserRoles } from "~/lib/roles";
 import { demoEmailAction, demoEmailPage, isEmailDemo } from "~/email/lib/demo-data.server";
 import {
   categoriesForUser,
@@ -61,19 +61,27 @@ async function requireEmailUser(request: Request) {
   return { userId: auth.user.sub, roles, demo: false as const };
 }
 
+export async function emailAccessDenied(
+  user: { id: string; daliEmail: string | null; netId: string | null },
+  request: Request,
+): Promise<boolean> {
+  if (!user.daliEmail && user.netId) return true;
+  return !(await isLabMemberOrAlum(user.id, request));
+}
+
 // Threads are addressed as "<accountId>~<threadId>" in the URL.
 export function parseThreadRef(ref: string | null): { accountId: string; threadId: string } | null {
   const [accountId, threadId] = (ref ?? "").split("~");
   return accountId && threadId ? { accountId, threadId } : null;
 }
 
-function draftVisibleTo(userId: string) {
+export function draftVisibleTo(userId: string) {
   return { sentAt: null, OR: [{ shared: true }, { createdById: userId }] };
 }
 
 // Per-inbox unread totals for the inbox rail. An inbox that can't be reached
 // is left out rather than shown as zero.
-async function loadUnreadCounts(accounts: ReadableMailAccount[]): Promise<Record<string, number>> {
+export async function loadUnreadCounts(accounts: ReadableMailAccount[]): Promise<Record<string, number>> {
   const counts = await Promise.all(
     accounts.map(async (a) => {
       try {
@@ -90,7 +98,7 @@ async function loadUnreadCounts(accounts: ReadableMailAccount[]): Promise<Record
 // Each inbox pages on its own Gmail token, so the cursor is one token per
 // inbox. With a cursor, only the inboxes it names are read (the rest have run
 // out). An inbox that fails keeps its token so the page can be asked for again.
-async function loadFeed(
+export async function loadFeed(
   accounts: ReadableMailAccount[],
   query: string,
   includeSpamTrash: boolean,
@@ -360,28 +368,79 @@ function fromHeader(name: string | null, address: string): string {
   return safe ? `"${safe}" <${address}>` : address;
 }
 
-// Create or update the draft from the compose form. Shared by save/send and by
-// attach, so a not-yet-saved compose gets a draft row before a file is pinned
-// to it.
-async function upsertDraftFromForm(form: FormData, accountId: string, userId: string) {
-  const data = {
-    accountId,
-    threadId: field(form, "threadId") || null,
-    to: field(form, "to"),
-    cc: field(form, "cc"),
-    bcc: field(form, "bcc"),
-    subject: field(form, "subject"),
-    body: String(form.get("body") ?? ""),
-    shared: form.get("shared") === "on",
-    updatedById: userId,
-  };
-  const draftId = field(form, "draftId");
+export type DraftInput = {
+  threadId?: string | null;
+  to: string;
+  cc: string;
+  bcc: string;
+  subject: string;
+  body: string;
+  shared: boolean;
+  draftId?: string | null;
+};
+
+export async function upsertDraft(input: DraftInput, accountId: string, userId: string) {
+  const { draftId, ...fields } = input;
+  const data = { accountId, ...fields, threadId: fields.threadId || null, updatedById: userId };
   const existing = draftId
     ? await prisma.mailDraft.findFirst({ where: { id: draftId, accountId, ...draftVisibleTo(userId) } })
     : null;
   return existing
     ? prisma.mailDraft.update({ where: { id: existing.id }, data })
     : prisma.mailDraft.create({ data: { ...data, createdById: userId } });
+}
+
+function upsertDraftFromForm(form: FormData, accountId: string, userId: string) {
+  return upsertDraft(
+    {
+      threadId: field(form, "threadId") || null,
+      to: field(form, "to"),
+      cc: field(form, "cc"),
+      bcc: field(form, "bcc"),
+      subject: field(form, "subject"),
+      body: String(form.get("body") ?? ""),
+      shared: form.get("shared") === "on",
+      draftId: field(form, "draftId"),
+    },
+    accountId,
+    userId,
+  );
+}
+
+export const MAIL_COMMENT_MAX = 5000;
+
+export async function addMailComment(args: {
+  account: ReadableMailAccount;
+  threadId: string;
+  userId: string;
+  body: string;
+  request: Request;
+}) {
+  const { account, threadId, userId, body, request } = args;
+  const comment = await prisma.mailComment.create({
+    data: { accountId: account.id, threadId, authorId: userId, body: body.slice(0, MAIL_COMMENT_MAX) },
+  });
+  void notifyMailCommentMentions({ account, threadId, authorId: userId, body, request }).catch((err) =>
+    console.error("mail comment mention notify failed", err),
+  );
+  return comment;
+}
+
+export async function deleteMailComment(commentId: string, userId: string, accountId?: string) {
+  const { count } = await prisma.mailComment.deleteMany({
+    where: { id: commentId, authorId: userId, ...(accountId ? { accountId } : {}) },
+  });
+  return count;
+}
+
+export async function changeThreadLabels(
+  account: ReadableMailAccount,
+  threadId: string,
+  change: { add?: string[]; remove?: string[] },
+  userId: string,
+) {
+  await modifyThread(await getMailboxToken(account), threadId, change);
+  invalidateUnreadTotal(userId);
 }
 
 function draftAttachments(draftId: string) {
@@ -446,7 +505,7 @@ export async function submitEmailAction(request: Request) {
   }
 
   if (intent === "deleteComment") {
-    await prisma.mailComment.deleteMany({ where: { id: field(form, "commentId"), authorId: userId } });
+    await deleteMailComment(field(form, "commentId"), userId);
     return { ok: true };
   }
 
@@ -597,24 +656,19 @@ export async function submitEmailAction(request: Request) {
   if (intent === "comment") {
     const body = field(form, "body");
     if (!threadId || !body) return Response.json({ error: "Write a comment first." }, { status: 400 });
-    await prisma.mailComment.create({
-      data: { accountId: account.id, threadId, authorId: userId, body: body.slice(0, 5000) },
-    });
-    void notifyMailCommentMentions({ account, threadId, authorId: userId, body, request }).catch((err) =>
-      console.error("mail comment mention notify failed", err),
-    );
+    await addMailComment({ account, threadId, userId, body, request });
     return { ok: true };
   }
 
   if (intent === "archive" || intent === "markUnread") {
     if (!threadId) return Response.json({ error: "No thread." }, { status: 400 });
     try {
-      await modifyThread(
-        await getMailboxToken(account),
+      await changeThreadLabels(
+        account,
         threadId,
         intent === "archive" ? { remove: ["INBOX"] } : { add: ["UNREAD"] },
+        userId,
       );
-      invalidateUnreadTotal(userId);
     } catch (err) {
       if (err instanceof MailboxError) return Response.json({ error: "Gmail didn't respond. Try again." }, { status: 502 });
       throw err;

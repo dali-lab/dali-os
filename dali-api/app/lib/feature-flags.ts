@@ -210,6 +210,12 @@ export const FEATURE_FLAGS = [
       "An Expenses page under Lab where members drop receipts and track what they spent on staff cards or their own, staff and card owners approve, and card statements match to receipts. Ships off.",
   },
   {
+    key: "mcp-email",
+    label: "Email over MCP",
+    description:
+      "AI assistants connected to DALI OS can search the project and shared inboxes a member can open in Email, read threads, apply labels, comment, and save drafts for the member to send. Personal inboxes are never included. Ships off.",
+  },
+  {
     key: "paperwork",
     label: "Paperwork",
     description:

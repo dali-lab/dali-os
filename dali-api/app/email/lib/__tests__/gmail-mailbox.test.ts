@@ -12,6 +12,7 @@ import {
   decodeEntities,
   getMailboxToken,
   getThread,
+  listLabels,
   listThreads,
   MailboxError,
   sendMessage,
@@ -253,5 +254,63 @@ describe("sendMessage env fence", () => {
     expect(raw).toContain("Bcc: bcc@x.com");
     expect(raw).toContain("Subject: Hello");
     expect(raw).not.toContain("[STAGING");
+  });
+});
+
+describe("labels in thread output", () => {
+  it("listThreads returns the union of label ids across a thread's messages", async () => {
+    const spy = vi.spyOn(globalThis, "fetch");
+    spy.mockResolvedValueOnce(
+      new Response(JSON.stringify({ threads: [{ id: "t1" }] }), { status: 200 }),
+    );
+    spy.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          id: "t1",
+          messages: [
+            { id: "m1", labelIds: ["INBOX", "Label_1"], internalDate: "1", payload: { headers: [] } },
+            { id: "m2", labelIds: ["INBOX", "UNREAD"], internalDate: "2", payload: { headers: [] } },
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
+    const page = await listThreads("token", { query: "", max: 20 });
+    expect(page.threads[0].labelIds.sort()).toEqual(["INBOX", "Label_1", "UNREAD"]);
+    expect(page.threads[0].unread).toBe(true);
+  });
+
+  it("getThread returns each message's label ids", async () => {
+    mockFetch({
+      messages: [{ id: "m1", labelIds: ["INBOX", "STARRED"], internalDate: "1", payload: { mimeType: "text/plain", headers: [] } }],
+    });
+    const [m] = await getThread("token", "t1");
+    expect(m.labelIds).toEqual(["INBOX", "STARRED"]);
+  });
+
+  it("getThread defaults to no labels", async () => {
+    mockFetch({ messages: [{ id: "m1", internalDate: "1", payload: { mimeType: "text/plain", headers: [] } }] });
+    expect((await getThread("token", "t1"))[0].labelIds).toEqual([]);
+  });
+});
+
+describe("listLabels", () => {
+  it("maps ids, names, system or user type and counts", async () => {
+    const spy = mockFetch({
+      labels: [
+        { id: "INBOX", name: "INBOX", type: "system", messagesTotal: 10, messagesUnread: 2 },
+        { id: "Label_1", name: "Partners", type: "user" },
+      ],
+    });
+    expect(await listLabels("token")).toEqual([
+      { id: "INBOX", name: "INBOX", type: "system", messagesTotal: 10, messagesUnread: 2 },
+      { id: "Label_1", name: "Partners", type: "user" },
+    ]);
+    expect(String(spy.mock.calls[0][0])).toMatch(/\/labels$/);
+  });
+
+  it("returns an empty list when Gmail has none", async () => {
+    mockFetch({});
+    expect(await listLabels("token")).toEqual([]);
   });
 });
