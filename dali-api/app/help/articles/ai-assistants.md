@@ -29,7 +29,7 @@ The setup page lists every area an assistant can work in, with the access each n
 
 ## Email
 
-When email for assistants is turned on for you, an assistant can work in the project and shared inboxes you can open in [Email](/email). It reads them with your own sign-in, so connect an inbox in Email first.
+An assistant can work in the project and shared inboxes you can open in [Email](/email). It reads them with your own sign-in, so connect an inbox in Email first.
 
 - With **Read**, it can list your inboxes and their labels, search threads (including by label), and read a thread with its comments and drafts. It sees attachment names and sizes, not the files.
 - With **Write**, it can add or remove labels, archive a thread, mark it read or unread, leave or delete your own comments, and save drafts.
