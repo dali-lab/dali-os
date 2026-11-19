@@ -465,6 +465,17 @@ export function owningSubtab(
     .find((t) => t.owns && (p === t.owns || ownedLen(p, t) >= 0));
 }
 
+export function claimingSubtab(
+  path: string,
+  flags: Partial<FeatureFlagMap> = {},
+  r?: Pick<RoleFlags, "isAlumni" | "isNewMember">,
+): SubTab | undefined {
+  const p = pathnameOf(path);
+  return areasForViewer(r, flags)
+    .flatMap((a) => a.subtabs)
+    .find((t) => t.claims?.some((c) => p === c || p.startsWith(c + "/")));
+}
+
 export function areasForViewer(
   r: Pick<RoleFlags, "isAlumni" | "isNewMember"> | undefined,
   flags: Partial<FeatureFlagMap>,

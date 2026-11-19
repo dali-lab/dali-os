@@ -52,21 +52,21 @@ afterEach(() => {
 const row = (title: string) =>
   [...document.body.querySelectorAll<HTMLButtonElement>("button[data-idx]")].find((b) => b.textContent?.includes(title));
 
-describe("CommandPalette Add receipt", () => {
+describe("CommandPalette New expense", () => {
   it("is absent while the expenses flag is off", () => {
     mount({});
-    expect(row("Add receipt")).toBeUndefined();
+    expect(row("New expense")).toBeUndefined();
   });
 
   it("is absent for alumni", () => {
     mount({ flags: { expenses: true }, roles: { isAlumni: true } });
-    expect(row("Add receipt")).toBeUndefined();
+    expect(row("New expense")).toBeUndefined();
   });
 
   it("opens the Expenses page when the flag is on", () => {
     const onOpen = vi.fn();
     mount({ flags: { expenses: true }, roles: {}, onOpen });
-    act(() => row("Add receipt")!.click());
+    act(() => row("New expense")!.click());
     expect(onOpen).toHaveBeenCalledWith("/expenses", "Expenses", false);
   });
 });
