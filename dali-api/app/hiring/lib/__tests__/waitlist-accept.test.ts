@@ -54,7 +54,12 @@ const db = prisma as any;
 const CREDS = "Log in with {{daliEmail}} and {{tempPassword}}.";
 
 function setupWaitlisted(
-  opts: { startTermCode?: string | null; cycleTermCode?: string | null; offerRespondBy?: Date | null } = {},
+  opts: {
+    startTermCode?: string | null;
+    cycleTermCode?: string | null;
+    offerRespondBy?: Date | null;
+    startTermIds?: string[];
+  } = {},
 ) {
   const tx = {
     applicationCycleStatusUpdate: { create: vi.fn() },
@@ -69,10 +74,13 @@ function setupWaitlisted(
         applicationCycleId: "cycle-1",
         userId: "applicant-1",
         user: { firstName: "Ada", dartmouthEmail: "ada@dartmouth.edu", netId: null },
+        startTermId: opts.startTermCode ? `t-${opts.startTermCode}` : null,
         startTerm: opts.startTermCode ? { code: opts.startTermCode } : null,
         applicationCycle: {
           offerRespondBy: opts.offerRespondBy ?? null,
           waitlistRespondBy: null,
+          termId: opts.cycleTermCode ? `t-${opts.cycleTermCode}` : null,
+          startTermIds: opts.startTermIds ?? [],
           term: opts.cycleTermCode ? { code: opts.cycleTermCode } : null,
         },
       },
@@ -123,6 +131,16 @@ describe("acceptFromWaitlist — acceptance email", () => {
       `Log in with ada.lovelace@dali.dartmouth.edu and ${ONE_TIME}.`,
     );
     expect(sentEmail().bodyHtml).toContain("<logo/>");
+  });
+
+  it("refuses before any write when the cycle offers a choice the applicant never made", async () => {
+    const tx = setupWaitlisted({ startTermCode: null, cycleTermCode: "26F", startTermIds: ["t-27W", "t-27S"] });
+    templates({ subject: "Welcome", body: "Starting in {{startTerm}}." });
+
+    const result = await accept();
+    expect(result).toMatchObject({ ok: false, reason: "email-vars" });
+    expect((result as { message: string }).message).toMatch(/this applicant has no start term/);
+    expect(tx.decision.create).not.toHaveBeenCalled();
   });
 
   it("fills {{startTerm}} and {{respondBy}} into the letter", async () => {

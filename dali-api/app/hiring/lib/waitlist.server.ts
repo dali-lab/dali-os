@@ -44,6 +44,7 @@ import {
 } from "~/hiring/lib/decision-email-vars";
 import { getHiringEmail } from "~/hiring/lib/hiring-emails.server";
 import { compactRanks } from "~/hiring/lib/waitlist";
+import { startTermCodeFor } from "~/hiring/lib/start-terms.server";
 
 // ─── List ────────────────────────────────────────────────────────────────────
 
@@ -277,11 +278,14 @@ export async function acceptFromWaitlist(args: {
           user: {
             select: { firstName: true, dartmouthEmail: true, netId: true },
           },
+          startTermId: true,
           startTerm: { select: { code: true } },
           applicationCycle: {
             select: {
               offerRespondBy: true,
               waitlistRespondBy: true,
+              termId: true,
+              startTermIds: true,
               term: { select: { code: true } },
             },
           },
@@ -323,7 +327,8 @@ export async function acceptFromWaitlist(args: {
 
   const cycle = da.application.applicationCycle;
   const emailDates = {
-    startTermCode: da.application.startTerm?.code ?? cycle?.term?.code ?? null,
+    startTermCode: await startTermCodeFor(da.application, cycle),
+    offersStartTerms: cycle.startTermIds.length > 0,
     offerRespondBy: cycle?.offerRespondBy ?? null,
     waitlistRespondBy: cycle?.waitlistRespondBy ?? null,
   };
