@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, type ReactNode } from "react";
 import { cn } from "~/lib/cn";
 import { useCurrentMembers } from "~/hiring/lib/current-members";
 import { Link, useNavigate, useSearchParams, useRevalidator } from "react-router";
@@ -23,7 +23,7 @@ import { DelibsSection } from "~/hiring/components/domain-lead/DelibsSection";
 import { DecisionPillBadge, PrePipelinePillBadge } from "~/hiring/components/domain-lead/DecisionPills";
 import { DomainApplicationsTable } from "~/hiring/components/domain-lead/DomainApplicationsTable";
 
-export function DomainPanel({ entry, allForms, emailEngagement }: { entry: DomainLeadEntry; allForms: { id: string; name: string }[]; emailEngagement: Record<string, EngagementSummary> }) {
+export function DomainPanel({ entry, title, allForms, emailEngagement }: { entry: DomainLeadEntry; title: ReactNode; allForms: { id: string; name: string }[]; emailEngagement: Record<string, EngagementSummary> }) {
   const { assignment, cycle, availableCycles, apps, linkedChallengeForms, isChallengeReady, interviews, reviewers: cycleReviewers, delibsSessions, draftDecisions, cycleReviewersForDomain, delibRounds: roundSummaries, rubricVersionOptions, currentRubricVersionId, rubricCriteria, interviewers, hasApplicationReviews, confidentialityRequired } = entry;
   const os = useOsChrome();
   const navigate = useNavigate();
@@ -75,7 +75,7 @@ export function DomainPanel({ entry, allForms, emailEngagement }: { entry: Domai
 
   const header = (
     <header className="flex flex-wrap items-center justify-between gap-3">
-      <h1 className={os.pageTitle}>{assignment.domain.name}</h1>
+      {title}
       <div className="flex flex-wrap items-center gap-2">
         {cycle?.statusUpdates[0]?.newStatus && (
           <Pill dot={STATUS_TONES[cycle.statusUpdates[0].newStatus] ?? "neutral"}>

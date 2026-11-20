@@ -9,9 +9,8 @@ import { loadDomainLeadDashboard } from "~/hiring/lib/domain-lead-dashboard.serv
 import { DOMAIN_LEAD_ACTIONS, resolveLeadDomain } from "~/hiring/lib/domain-lead-actions.server";
 import { useToast } from "~/components/ui/toast";
 import { useOsChrome } from "~/components/os-chrome";
-import { Users } from "lucide-react";
-import { PageTabRow } from "~/components/os-page";
 import { DomainPanel } from "~/hiring/components/domain-lead/DomainPanel";
+import { DomainTitle } from "~/hiring/components/domain-lead/DomainTitle";
 
 export const meta: Route.MetaFunction = () => [{ title: "Domain lead · DALI OS" }];
 
@@ -46,7 +45,7 @@ export default function DomainLeadDashboard() {
   const toast = useToast();
   const os = useOsChrome();
   const domainData = data.domainData;
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
 
   useEffect(() => {
     if (actionData?.notice) toast.success(actionData.notice);
@@ -62,34 +61,16 @@ export default function DomainLeadDashboard() {
     );
   }
 
-  // One domain at a time; leads of several switch between them.
   const domainParam = searchParams.get("domain");
   const current = domainData.find((d) => d.assignment.domainId === domainParam) ?? domainData[0];
-  const setDomain = (domainId: string) =>
-    setSearchParams(
-      (prev) => {
-        const next = new URLSearchParams(prev);
-        next.set("domain", domainId);
-        next.delete("cycle");
-        return next;
-      },
-      { preventScrollReset: true },
-    );
+  const title = (
+    <DomainTitle
+      domains={domainData.map((d) => ({ id: d.assignment.domainId, name: d.assignment.domain.name }))}
+      currentId={current.assignment.domainId}
+    />
+  );
 
   return (
-    <div className="flex flex-col gap-6">
-      {domainData.length > 1 && (
-        <PageTabRow
-          label="Domain"
-          tabs={domainData.map((d) => ({
-            label: d.assignment.domain.name,
-            icon: Users,
-            active: d === current,
-            onClick: () => setDomain(d.assignment.domainId),
-          }))}
-        />
-      )}
-      <DomainPanel key={`${current.assignment.id}-${current.cycle?.id ?? "none"}`} entry={current} allForms={data.allForms ?? []} emailEngagement={data.emailEngagement ?? {}} />
-    </div>
+    <DomainPanel key={`${current.assignment.id}-${current.cycle?.id ?? "none"}`} entry={current} title={title} allForms={data.allForms ?? []} emailEngagement={data.emailEngagement ?? {}} />
   );
 }
