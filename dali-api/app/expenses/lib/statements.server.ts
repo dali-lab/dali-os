@@ -1,4 +1,5 @@
 import type { Prisma } from "~/generated/prisma/client";
+import { auditExpense } from "./audit.server";
 import { prisma } from "~/lib/db.server";
 import { canImportStatement, canViewCard, type ExpenseViewer } from "./access";
 import { ExpenseError } from "./errors";
@@ -139,6 +140,7 @@ export async function importStatement(
   }
 
   const match = await runAutoMatch(cardId);
+  await auditExpense(actor, "expense.statement.import", cardId, { imported: created.length, skipped: parsed.rows.length - created.length });
   return {
     imported: created.length,
     skipped: parsed.rows.length - created.length,

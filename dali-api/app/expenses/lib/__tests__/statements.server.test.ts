@@ -7,6 +7,8 @@ const m = vi.hoisted(() => ({
     expense: { findMany: vi.fn(), updateMany: vi.fn() },
   },
 }));
+const audit = vi.hoisted(() => vi.fn());
+vi.mock("~/lib/audit", () => ({ logAuditEvent: audit }));
 vi.mock("~/lib/db.server", () => ({ prisma: m.prisma }));
 
 import type { ExpenseViewer } from "../access";
@@ -160,5 +162,17 @@ describe("listCharges", () => {
     expect(all.map((c) => c.state)).toEqual(["matched", "needs_receipt", "refund"]);
     expect(all.every((c) => !("rawRow" in c))).toBe(true);
     expect((await listCharges(owner, "c1", { state: "needs_receipt" })).map((c) => c.id)).toEqual(["b"]);
+  });
+});
+
+describe("importStatement audit", () => {
+  it("records the import against the card", async () => {
+    await importStatement(owner, "c1", csv("11/17/2026,A,1.00", "11/18/2026,B,2.00"), map);
+    expect(audit).toHaveBeenCalledWith({ action: "expense.statement.import", userId: "u", targetId: "c1", metadata: { imported: 2, skipped: 0 } });
+  });
+
+  it("records nothing when the import is refused", async () => {
+    await code(importStatement(viewer(), "c1", csv("11/17/2026,A,1.00"), map));
+    expect(audit).not.toHaveBeenCalled();
   });
 });

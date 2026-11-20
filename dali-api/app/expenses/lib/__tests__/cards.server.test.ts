@@ -10,6 +10,8 @@ const m = vi.hoisted(() => ({
     expense: { count: vi.fn() },
   },
 }));
+const audit = vi.hoisted(() => vi.fn());
+vi.mock("~/lib/audit", () => ({ logAuditEvent: audit }));
 vi.mock("~/lib/db.server", () => ({ prisma: m.prisma }));
 
 import type { ExpenseViewer } from "../access";
@@ -207,5 +209,53 @@ describe("listCards", () => {
     expect((await listCards(viewer({ userId: "h" }))).map((c) => c.id)).toEqual(["c1"]);
     expect((await listCards(viewer({ userId: "p", ownedCardIds: ["c2"] }))).map((c) => c.id)).toEqual(["c2"]);
     expect(await listCards(viewer({ userId: "zz" }))).toEqual([]);
+  });
+});
+
+describe("audit trail", () => {
+  const last = () => audit.mock.calls.at(-1)![0];
+
+  it("records card create, including who holds it", async () => {
+    m.prisma.expenseCard.create.mockResolvedValue({ id: "c1", nickname: "Visa", last4: "1234", ownerId: "o", holderIds: ["a"], holderGroupIds: ["g1"] });
+    await createCard(core, { nickname: "Visa", last4: "1234", ownerId: "o", holderIds: ["a"], holderGroupIds: ["g1"] });
+    expect(last()).toMatchObject({
+      action: "expense.card.create",
+      userId: "u",
+      targetId: "c1",
+      metadata: { ownerId: "o", holderIds: ["a"], holderGroupIds: ["g1"], last4: "1234" },
+    });
+  });
+
+  it("records card update and holder changes", async () => {
+    m.prisma.expenseCard.update.mockResolvedValue({ id: "c1", ownerId: "o", holderIds: ["a", "b"], holderGroupIds: [] });
+    await updateCard(core, "c1", { holderIds: ["a", "b"] });
+    expect(last()).toMatchObject({ action: "expense.card.update", targetId: "c1", metadata: { fields: ["holderIds"], holderIds: ["a", "b"] } });
+  });
+
+  it("records card archive only when it happens", async () => {
+    m.prisma.expense.count.mockResolvedValue(2);
+    await archiveCard(core, "c1");
+    expect(audit).not.toHaveBeenCalled();
+    m.prisma.expenseCard.updateMany.mockResolvedValue({ count: 1 });
+    await archiveCard(core, "c1", { confirm: true });
+    expect(last()).toMatchObject({ action: "expense.card.archive", targetId: "c1", metadata: { submittedCount: 2 } });
+  });
+
+  it("records category create, update and archive", async () => {
+    m.prisma.expenseCategory.create.mockResolvedValue({ id: "k1" });
+    await createCategory(core, { label: "Misc" });
+    expect(last()).toMatchObject({ action: "expense.category.create", targetId: "k1", metadata: { label: "Misc" } });
+    m.prisma.expenseCategory.update.mockResolvedValue({ id: "k1" });
+    await updateCategory(core, "k1", { label: "Other" });
+    expect(last()).toMatchObject({ action: "expense.category.update", targetId: "k1", metadata: { fields: ["label"] } });
+    m.prisma.expenseCategory.updateMany.mockResolvedValue({ count: 1 });
+    await archiveCategory(core, "k1");
+    expect(last()).toMatchObject({ action: "expense.category.archive", targetId: "k1" });
+  });
+
+  it("writes nothing for a refused change", async () => {
+    await code(createCard(viewer(), { nickname: "X", last4: "1234", ownerId: "o" }));
+    await code(createCategory(viewer(), { label: "X" }));
+    expect(audit).not.toHaveBeenCalled();
   });
 });
