@@ -10,9 +10,9 @@
 //
 // Usage:
 //   tsx --env-file .env scripts/bootstrap-application.ts \
-//     --first "Brendon" --last "Bazzani" \
-//     --netid f007b37 \
-//     --email "Brendon.R.Bazzani.28@dartmouth.edu" \
+//     --first "Ada" --last "Lovelace" \
+//     --netid f00xxxx \
+//     --email "ada@example.edu" \
 //     --cycle <cycleId> \
 //     --domain "Engineering" \
 //     [--execute]

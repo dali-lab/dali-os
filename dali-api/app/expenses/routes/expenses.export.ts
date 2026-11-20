@@ -3,7 +3,7 @@ import { csvResponse } from "~/lib/csv";
 import { ExpenseError } from "../lib/errors";
 import { exportExpensesCsv, exportExpensesPdf } from "../lib/export.server";
 import { guardExpenses } from "./guard.server";
-import { parseExpenseFilters, parseScope } from "./filters";
+import { parseExpenseFilters, parseScope } from "../lib/filters";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const guard = await guardExpenses(request, { write: false, page: false });

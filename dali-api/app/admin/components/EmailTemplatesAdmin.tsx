@@ -15,6 +15,7 @@ import { cn } from "~/lib/cn";
 import {
   EMAIL_TEMPLATE_KEYS,
   emailTemplateDef,
+  sampleWith,
   type EmailTemplateKey,
   type WhenMissing,
 } from "~/email/lib/registry";
@@ -162,11 +163,13 @@ function TemplatePanel({
   row,
   versions,
   onClose,
+  sample,
 }: {
   templateKey: EmailTemplateKey;
   row: AdminEmailRow | null;
   versions: AdminEmailVersion[];
   onClose?: () => void;
+  sample?: Record<string, string>;
 }) {
   const os = useOsChrome();
   const toast = useToast();
@@ -179,7 +182,11 @@ function TemplatePanel({
   const busy = fetcher.state !== "idle";
 
   const warnings = useMemo(() => lint(`${subject}\n${body}`, def.variables), [subject, body, def.variables]);
-  const preview = useMemo(() => renderEmail({ subject, body }, def.sample as never), [subject, body, def.sample]);
+  const sampleJson = sample ? JSON.stringify(sample) : "";
+  const preview = useMemo(
+    () => renderEmail({ subject, body }, sampleWith(templateKey, sampleJson ? JSON.parse(sampleJson) : null) as never),
+    [subject, body, templateKey, sampleJson],
+  );
 
   const handled = useRef<unknown>(null);
   useEffect(() => {
@@ -196,7 +203,10 @@ function TemplatePanel({
   }, [fetcher.state, fetcher.data, toast, onClose]);
 
   const submit = (intent: "save" | "send-test") =>
-    fetcher.submit({ intent, key: templateKey, subject, body, stay: "1" }, { method: "post", action: EDITOR_ROUTE });
+    fetcher.submit(
+      { intent, key: templateKey, subject, body, stay: "1", ...(sampleJson && { sample: sampleJson }) },
+      { method: "post", action: EDITOR_ROUTE },
+    );
 
   const insert = (v: string) => {
     const token = `{{${v}}}`;
@@ -297,7 +307,9 @@ function TemplatePanel({
       </section>
 
       <section className="flex flex-col gap-3" aria-label="Preview">
-        <h2 className="text-sm font-semibold text-os-grey">Preview with sample values</h2>
+        <h2 className="text-sm font-semibold text-os-grey">
+          {sample ? "Preview with this cycle's dates and sample values" : "Preview with sample values"}
+        </h2>
         <div className={cn(os.panel, os.panelPad, "text-sm")}>
           <p className="mb-3 font-semibold text-foreground">{preview.subject}</p>
           {/* Safe: renderEmail runs the body through DOMPurify. */}
@@ -349,9 +361,11 @@ const EDITOR_ROUTE = "/core/communications/email";
 export function EmailEditorModal({
   templateKey,
   onClose,
+  sample,
 }: {
   templateKey: EmailTemplateKey;
   onClose: () => void;
+  sample?: Record<string, string>;
 }) {
   const loader = useFetcher<{ rows: AdminEmailRow[]; versions: AdminEmailVersion[] }>();
   useEffect(() => {
@@ -368,6 +382,7 @@ export function EmailEditorModal({
         row={row}
         versions={loader.data.versions}
         onClose={onClose}
+        sample={sample}
       />
     </Modal>
   );
