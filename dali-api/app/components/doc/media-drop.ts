@@ -51,7 +51,9 @@ export function insertMediaFiles(editor: DocEditorInstance, files: File[], targe
         if (!editor.getBlock(id)) return;
         editor.updateBlock(id, (typeof result === "string" ? { props: { url: result } } : result) as never);
       })
-      .catch(() => {});
+      .catch(() => {
+        if (editor.getBlock(id)) editor.removeBlocks([id]);
+      });
   }
 }
 

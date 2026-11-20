@@ -2,13 +2,12 @@ import { prisma } from "~/lib/db.server";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { getUserRoles } from "~/lib/roles";
 import { impersonationAllowsWrites, isImpersonating } from "~/lib/auth";
+import { isHttpError } from "~/lib/http-error";
 import { mobileError, requireMobileUser } from "~/lib/mobile-auth.server";
 import { expenseAccessDenial, type ExpenseViewer } from "./access";
-import { ExpenseError } from "./errors";
 import { loadExpenseViewer, type ExpenseDetail, type listExpenses } from "./expenses.server";
 import { expenseLineItems } from "./line-items";
 import { centsToDecimalString } from "./money";
-import { ReceiptKeyError } from "./receipts.server";
 
 type ListRow = Awaited<ReturnType<typeof listExpenses>>[number];
 type ActiveExpense = ListRow | ExpenseDetail;
@@ -35,9 +34,8 @@ export async function requireMobileExpenses(request: Request): Promise<MobileExp
 }
 
 export function mobileExpenseError(e: unknown): Response {
-  if (e instanceof ExpenseError) return mobileError(e.message, e.status);
-  if (e instanceof ReceiptKeyError) return mobileError(e.message, 400);
-  throw e;
+  if (!isHttpError(e)) throw e;
+  return mobileError(e.message, e.status);
 }
 
 const money = (cents: number | null) => (cents === null ? null : centsToDecimalString(cents));

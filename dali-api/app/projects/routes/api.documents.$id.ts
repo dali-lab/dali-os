@@ -3,6 +3,7 @@ import type { AuthSuccess } from "~/lib/auth";
 import { prisma } from "~/lib/db.server";
 import { requireProjectEditAccess, requireMemberSession } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
+import { errorResponse } from "~/lib/http-error.server";
 import { logAuditEvent } from "~/lib/audit";
 import { notebookErrorResponse, trashNotebook } from "~/calendar/lib/notebooks.server";
 import { isRoot, ROOT_DELETE_ERROR, CLEARED_FOLDER_TYPE } from "~/drive/lib/drive-roots";
@@ -152,7 +153,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       data.title = await resolveRenameTitle(page, body.title, auth.user.sub, request);
     } catch (err) {
       if (err instanceof PageRenameError) {
-        return withCors(request, Response.json({ error: err.message }, { status: err.status }));
+        return errorResponse(err, request);
       }
       return withCors(request, notebookErrorResponse(err));
     }

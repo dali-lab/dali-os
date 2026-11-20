@@ -106,14 +106,13 @@ function burst(line: HTMLElement): () => void {
   };
 }
 
-/* Decorative art, like the landing backgrounds: literal colors so the hat stays a party hat in both themes. */
 function PartyHat() {
   return (
     <svg viewBox="0 0 40 44" aria-hidden className="landing-birthday-hat">
-      <path d="M20 4 L34 40 L6 40 Z" fill="#f59e0b" />
-      <path d="M12.9 22.3 L27.1 22.3 L29.8 29.3 L10.2 29.3 Z" fill="#6366f1" />
-      <path d="M8.7 33.2 L31.3 33.2 L34 40 L6 40 Z" fill="#ec4899" />
-      <circle cx="20" cy="4" r="3.6" fill="#fde047" />
+      <path d="M20 4 L34 40 L6 40 Z" className="fill-[var(--os-role-amber-ink)]" />
+      <path d="M12.9 22.3 L27.1 22.3 L29.8 29.3 L10.2 29.3 Z" className="fill-[var(--os-role-indigo-ink)]" />
+      <path d="M8.7 33.2 L31.3 33.2 L34 40 L6 40 Z" className="fill-[var(--os-role-pink-ink)]" />
+      <circle cx="20" cy="4" r="3.6" className="fill-os-amber" />
     </svg>
   );
 }

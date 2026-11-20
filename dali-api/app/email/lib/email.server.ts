@@ -38,7 +38,8 @@ import {
   type MailMessage,
   type ThreadSummary,
 } from "~/email/lib/gmail-mailbox.server";
-import { getThreadLink, indexMessages, setThreadLink, type IndexableMessage } from "~/email/lib/mail-index.server";
+import { loadThreadAnnotations } from "~/email/lib/thread-annotations.server";
+import { indexMessages, setThreadLink, type IndexableMessage } from "~/email/lib/mail-index.server";
 
 const DALI_EMAIL_SUFFIX = "@dali.dartmouth.edu";
 
@@ -311,32 +312,15 @@ async function loadThread(
     if (err instanceof MailboxError) return { accountId: account.id, threadId, error: true as const };
     throw err;
   }
-  const comments = await prisma.mailComment.findMany({
-    where: { accountId: account.id, threadId },
-    orderBy: { createdAt: "asc" },
-    include: { author: { select: { id: true, firstName: true, lastName: true, photoUrl: true } } },
-  });
-
-  const linkEnabled = account.kind === "Shared";
-  let applicantLink: { userId: string; name: string; photoUrl: string | null; source: "Auto" | "Manual" } | null =
-    null;
-  if (linkEnabled) {
-    const link = await getThreadLink(account.id, threadId);
-    if (link && "userId" in link) {
-      const linkedUser = await prisma.user.findUnique({
-        where: { id: link.userId },
-        select: { firstName: true, lastName: true, photoUrl: true },
-      });
-      if (linkedUser) {
-        applicantLink = {
-          userId: link.userId,
-          name: `${linkedUser.firstName} ${linkedUser.lastName}`.trim(),
-          photoUrl: await resolvePhotoUrl(linkedUser.photoUrl),
-          source: link.source,
-        };
+  const { comments, linkedUser, linkEnabled } = await loadThreadAnnotations(account, threadId);
+  const applicantLink = linkedUser
+    ? {
+        userId: linkedUser.userId,
+        name: `${linkedUser.firstName} ${linkedUser.lastName}`.trim(),
+        photoUrl: await resolvePhotoUrl(linkedUser.photoUrl),
+        source: linkedUser.source,
       }
-    }
-  }
+    : null;
 
   return {
     accountId: account.id,
@@ -379,12 +363,14 @@ export type DraftInput = {
   draftId?: string | null;
 };
 
+export function findVisibleDraft(draftId: string, accountId: string, userId: string) {
+  return prisma.mailDraft.findFirst({ where: { id: draftId, accountId, ...draftVisibleTo(userId) } });
+}
+
 export async function upsertDraft(input: DraftInput, accountId: string, userId: string) {
   const { draftId, ...fields } = input;
   const data = { accountId, ...fields, threadId: fields.threadId || null, updatedById: userId };
-  const existing = draftId
-    ? await prisma.mailDraft.findFirst({ where: { id: draftId, accountId, ...draftVisibleTo(userId) } })
-    : null;
+  const existing = draftId ? await findVisibleDraft(draftId, accountId, userId) : null;
   return existing
     ? prisma.mailDraft.update({ where: { id: existing.id }, data })
     : prisma.mailDraft.create({ data: { ...data, createdById: userId } });
@@ -619,9 +605,7 @@ export async function submitEmailAction(request: Request) {
   }
 
   if (intent === "detach") {
-    const draft = await prisma.mailDraft.findFirst({
-      where: { id: field(form, "draftId"), accountId: account.id, ...draftVisibleTo(userId) },
-    });
+    const draft = await findVisibleDraft(field(form, "draftId"), account.id, userId);
     if (!draft) return Response.json({ error: "Draft not found." }, { status: 404 });
     const row = await prisma.mailDraftAttachment.findFirst({
       where: { id: field(form, "attachmentId"), draftId: draft.id },

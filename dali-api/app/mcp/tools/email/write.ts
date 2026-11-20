@@ -1,9 +1,8 @@
-import { prisma } from "~/lib/db.server";
 import {
   addMailComment,
   changeThreadLabels,
   deleteMailComment,
-  draftVisibleTo,
+  findVisibleDraft,
   upsertDraft,
 } from "~/email/lib/email.server";
 import { getMailboxToken, listLabels } from "~/email/lib/gmail-mailbox.server";
@@ -140,11 +139,7 @@ export const DRAFT_MAIL_DEF = {
 export async function runDraftMail(ctx: McpCtx, args: Record<string, unknown>) {
   const account = await mcpMailAccount(ctx, args.accountId);
   const draftId = args.draftId as string | undefined;
-  const existing = draftId
-    ? await prisma.mailDraft.findFirst({
-        where: { id: draftId, accountId: account.id, ...draftVisibleTo(ctx.user.id) },
-      })
-    : null;
+  const existing = draftId ? await findVisibleDraft(draftId, account.id, ctx.user.id) : null;
   if (draftId && !existing) throw new McpNotFoundError("Draft not found");
   const str = (key: string, fallback: string | undefined) => (args[key] as string | undefined) ?? fallback ?? "";
   const draft = await upsertDraft(

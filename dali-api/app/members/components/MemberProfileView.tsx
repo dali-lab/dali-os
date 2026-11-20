@@ -446,14 +446,12 @@ function MemberHeader({
 /** Shared colored-icon header for each profile grid card. */
 function CardHeader({
   icon,
-  iconBg,
-  iconColor,
+  tone,
   title,
   trailing,
 }: {
   icon: ReactNode;
-  iconBg: string;
-  iconColor: string;
+  tone: "violet" | "teal" | "pink" | "blue" | "amber" | "cyan";
   title: string;
   trailing?: ReactNode;
 }) {
@@ -461,7 +459,7 @@ function CardHeader({
     <div className="flex items-center gap-3 px-5 pt-4 pb-3">
       <span
         className="w-[34px] h-[34px] rounded-[10px] flex items-center justify-center shrink-0"
-        style={{ background: iconBg, color: iconColor }}
+        style={{ background: `var(--os-role-${tone}-fill)`, color: `var(--os-role-${tone}-ink)` }}
       >
         {icon}
       </span>
@@ -606,8 +604,7 @@ function AboutCard({
       <article className="rounded-os-card bg-os-card overflow-hidden h-full">
         <CardHeader
           icon={<UserIcon className="w-[17px] h-[17px]" />}
-          iconBg="rgba(185,162,242,0.14)"
-          iconColor="#b9a2f2"
+          tone="violet"
           title="About"
           trailing={
             canEdit && (
@@ -799,8 +796,7 @@ function AlumniDetailsCard({
       <article className="rounded-os-card bg-os-card overflow-hidden h-full">
         <CardHeader
           icon={<Sparkles className="w-[17px] h-[17px]" />}
-          iconBg="rgba(185,162,242,0.14)"
-          iconColor="#b9a2f2"
+          tone="violet"
           title="Alumni details"
           trailing={
             canEdit && (
@@ -904,8 +900,7 @@ function ContactCard({
       <article className="rounded-os-card bg-os-card overflow-hidden h-full">
         <CardHeader
           icon={<Mail className="w-[17px] h-[17px]" />}
-          iconBg="rgba(121,211,195,0.13)"
-          iconColor="#79d3c3"
+          tone="teal"
           title="Contact"
           trailing={
             canEdit && (
@@ -1084,8 +1079,7 @@ function DomainsCard({
     <article className="rounded-os-card bg-os-card overflow-hidden h-full">
       <CardHeader
         icon={<Layers className="w-[17px] h-[17px]" />}
-        iconBg="rgba(245,154,184,0.14)"
-        iconColor="#f59ab8"
+        tone="pink"
         title="Roles, domains & levels"
         trailing={
           !canManage ? (
@@ -1169,8 +1163,7 @@ function WorkExperienceCard({
     <article className="rounded-os-card bg-os-card overflow-hidden sm:col-span-2">
       <CardHeader
         icon={<Briefcase className="w-[17px] h-[17px]" />}
-        iconBg="rgba(122,184,245,0.14)"
-        iconColor="#7ab8f5"
+        tone="blue"
         title="Work experience"
         trailing={
           canEdit && (
@@ -1418,8 +1411,7 @@ function GroupsCard({
     <article className="rounded-os-card bg-os-card overflow-hidden h-full">
       <CardHeader
         icon={<UsersRound className="w-[17px] h-[17px]" />}
-        iconBg="rgba(242,184,75,0.14)"
-        iconColor="#f2b84b"
+        tone="amber"
         title="Groups"
       />
       <div className="px-5 pb-5 flex flex-col gap-2">
@@ -1493,8 +1485,7 @@ function WalletCard({
     <article className="rounded-os-card bg-os-card overflow-hidden h-full">
       <CardHeader
         icon={<Wallet className="w-[17px] h-[17px]" />}
-        iconBg="rgba(168,211,222,0.14)"
-        iconColor="#a8d3de"
+        tone="cyan"
         title="Membership pass"
       />
       <div className="px-5 pb-5 flex flex-col gap-3">
