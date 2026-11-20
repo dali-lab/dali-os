@@ -3,10 +3,10 @@
 // the open one's editor, preview and history on the right.
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Form, useFetcher, useNavigation, useSearchParams } from "react-router";
-import { AlertTriangle, History, RotateCcw, Send } from "lucide-react";
+import { useFetcher, useSearchParams } from "react-router";
+import { AlertTriangle, History, Send, X } from "lucide-react";
 
-import { Modal, ModalHeader } from "~/components/Modal";
+import { Modal, MODAL_TITLE_CLASS } from "~/components/Modal";
 import { modalCardClass, useOsChrome } from "~/components/os-chrome";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { useToast } from "~/components/ui/toast";
@@ -161,10 +161,12 @@ function TemplatePanel({
   templateKey,
   row,
   versions,
+  onClose,
 }: {
   templateKey: EmailTemplateKey;
   row: AdminEmailRow | null;
   versions: AdminEmailVersion[];
+  onClose?: () => void;
 }) {
   const os = useOsChrome();
   const toast = useToast();
@@ -186,9 +188,12 @@ function TemplatePanel({
     handled.current = d;
     if (d.error) toast.error(d.error);
     else if (d.testSent) toast.success("Test sent to your DALI email");
-    else if (d.saved) toast.success("Saved. Every send uses it from now on");
+    else if (d.saved) {
+      toast.success("Saved. Every send uses it from now on");
+      onClose?.();
+    }
     else if (d.rolledBack) toast.success("Version restored");
-  }, [fetcher.state, fetcher.data, toast]);
+  }, [fetcher.state, fetcher.data, toast, onClose]);
 
   const submit = (intent: "save" | "send-test") =>
     fetcher.submit({ intent, key: templateKey, subject, body, stay: "1" }, { method: "post", action: EDITOR_ROUTE });
@@ -209,11 +214,16 @@ function TemplatePanel({
 
   return (
     <div className="flex min-w-0 flex-col gap-6">
-      <section className={cn(os.panel, os.panelPad, os.formClass, "flex flex-col gap-5")} aria-label={`${def.label} template`}>
+      <section
+        className={cn(onClose ? "" : cn(os.panel, os.panelPad), os.formClass, "flex flex-col gap-5")}
+        aria-label={`${def.label} template`}
+      >
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className={os.sectionTitle}>{def.label}</h2>
+              <h2 id={onClose ? TITLE_ID : undefined} className={onClose ? MODAL_TITLE_CLASS : os.sectionTitle}>
+                {def.label}
+              </h2>
               <Pill>{def.area}</Pill>
             </div>
             <p className="mt-1 text-sm text-os-grey">{def.description}</p>
@@ -230,6 +240,11 @@ function TemplatePanel({
             <button type="button" className={os.actionBtnPrimary} disabled={busy || !dirty} onClick={() => submit("save")}>
               Save
             </button>
+            {onClose && (
+              <button type="button" onClick={onClose} aria-label="Close" className="os-icon-btn">
+                <X className="h-5 w-5" aria-hidden />
+              </button>
+            )}
           </div>
         </div>
 
@@ -346,190 +361,14 @@ export function EmailEditorModal({
   if (!loader.data) return null;
   const row = loader.data.rows.find((r) => r.key === templateKey) ?? null;
   return (
-    <EmailEditor
-      // Reseeds the fields when a restore swaps the copy underneath them.
-      key={row?.updatedAt ?? "unedited"}
-      templateKey={templateKey}
-      row={row}
-      versions={loader.data.versions}
-      onClose={onClose}
-    />
-  );
-}
-
-function EmailEditor({
-  templateKey,
-  row,
-  versions,
-  onClose,
-}: {
-  templateKey: EmailTemplateKey;
-  row: AdminEmailRow | null;
-  versions: AdminEmailVersion[];
-  /** Set when opened in place on another page: saves stay on that page. */
-  onClose?: () => void;
-}) {
-  const [, setSearchParams] = useSearchParams();
-  const def = emailTemplateDef(templateKey);
-  const nav = useNavigation();
-  const fetcher = useFetcher<{ saved?: true; error?: string }>();
-  const inPlace = !!onClose;
-  const EditorForm = inPlace ? fetcher.Form : Form;
-  const formProps = inPlace ? { action: EDITOR_ROUTE } : {};
-  const busy = inPlace ? fetcher.state !== "idle" : nav.state !== "idle";
-  const saved = fetcher.state === "idle" && !!fetcher.data?.saved;
-  useEffect(() => {
-    if (saved) onClose?.();
-  }, [saved]);
-  // On the list, closing just drops ?key= — the list is the same route.
-  const close =
-    onClose ??
-    (() =>
-      setSearchParams((p) => {
-        p.delete("key");
-        return p;
-      }));
-  const [subject, setSubject] = useState(row?.subject ?? "");
-  const [body, setBody] = useState(row?.body ?? "");
-
-  const warnings = useMemo(
-    () => lint(`${subject}\n${body}`, def.variables),
-    [subject, body, def.variables],
-  );
-  const preview = useMemo(
-    () => renderEmail({ subject, body }, def.sample as never),
-    [subject, body, def.sample],
-  );
-
-  return (
-    <Modal
-      open
-      onClose={close}
-      labelledBy={TITLE_ID}
-      containerClassName={modalCardClass("max-w-2xl")}
-    >
-      <ModalHeader
-        titleId={TITLE_ID}
-        title={def.label}
-        subtitle={def.description}
-        onClose={close}
+    <Modal open onClose={onClose} labelledBy={TITLE_ID} containerClassName={modalCardClass("max-w-3xl")}>
+      <TemplatePanel
+        key={row?.updatedAt ?? "unedited"}
+        templateKey={templateKey}
+        row={row}
+        versions={loader.data.versions}
+        onClose={onClose}
       />
-      <div className="space-y-4">
-
-        <EditorForm method="post" {...formProps} className="space-y-4">
-          <input type="hidden" name="intent" value="save" />
-          <input type="hidden" name="key" value={templateKey} />
-          {inPlace && <input type="hidden" name="stay" value="1" />}
-
-          <label className="block">
-            <span className="text-sm font-medium">Subject</span>
-            <input
-              name="subject"
-              value={subject}
-              onChange={(e) => setSubject(e.target.value)}
-              className="mt-1 w-full border rounded px-2 py-1.5 text-sm bg-transparent"
-            />
-          </label>
-
-          <label className="block">
-            <span className="text-sm font-medium">Body</span>
-            <textarea
-              name="body"
-              rows={14}
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              className="mt-1 w-full border rounded px-2 py-1.5 text-sm font-mono bg-transparent"
-            />
-          </label>
-
-          <p className="text-xs text-muted-foreground">
-            Supports{" "}
-            {def.variables.map((v, i) => (
-              <span key={v}>
-                {i > 0 ? ", " : ""}
-                <code>{`{{${v}}}`}</code>
-              </span>
-            ))}
-            . Leave both fields empty to turn this email off.
-          </p>
-
-          {warnings.unknown.length > 0 ? (
-            <p className="text-xs text-os-amber">
-              Not a known variable: {warnings.unknown.map((t) => `{{${t}}}`).join(", ")}. These
-              ship as literal text — placeholders are case-sensitive.
-            </p>
-          ) : null}
-          {warnings.unfilled.length > 0 ? (
-            <p className="text-xs text-os-amber">
-              Never filled for this email: {warnings.unfilled.map((t) => `{{${t}}}`).join(", ")}.
-            </p>
-          ) : null}
-          {fetcher.state === "idle" && fetcher.data?.error ? (
-            <p className="text-xs text-os-red">{fetcher.data.error}</p>
-          ) : null}
-
-          <div className="flex items-center gap-2">
-            <button
-              type="submit"
-              disabled={busy}
-              className="px-3 py-1.5 text-sm rounded bg-foreground text-background disabled:opacity-50"
-            >
-              Save changes
-            </button>
-            <button
-              type="submit"
-              name="intent"
-              value="send-test"
-              disabled={busy || (!subject.trim() && !body.trim())}
-              className="px-3 py-1.5 text-sm rounded border disabled:opacity-50"
-            >
-              Send test to me
-            </button>
-          </div>
-        </EditorForm>
-
-        <div>
-          <h3 className="text-sm font-medium mb-1">Preview</h3>
-          <p className="text-xs text-muted-foreground mb-2">
-            Rendered with sample values, through the same path as a real send.
-          </p>
-          <div className="border rounded p-3 text-sm">
-            <p className="font-medium mb-2">{preview.subject}</p>
-            {/* Safe: renderEmail runs the body through DOMPurify. */}
-            <div dangerouslySetInnerHTML={{ __html: preview.html }} />
-          </div>
-        </div>
-
-        {versions.length > 0 ? (
-          <div>
-            <h3 className="text-sm font-medium mb-1">History</h3>
-            <div className="border rounded divide-y">
-              {versions.map((v) => (
-                <div key={v.id} className="flex items-center gap-3 p-2 text-xs">
-                  <span className="font-medium shrink-0">v{v.versionNumber}</span>
-                  <span className="min-w-0 flex-1 truncate">{v.subject}</span>
-                  <span className="text-muted-foreground shrink-0">
-                    {new Date(v.createdAt).toLocaleDateString()} · {v.author}
-                  </span>
-                  <EditorForm method="post" {...formProps} className="shrink-0">
-                    <input type="hidden" name="intent" value="rollback" />
-                    <input type="hidden" name="key" value={templateKey} />
-                    <input type="hidden" name="versionId" value={v.id} />
-                    {inPlace && <input type="hidden" name="stay" value="1" />}
-                    <button
-                      type="submit"
-                      className="inline-flex items-center gap-1 underline"
-                      title="Restore this version as a new one"
-                    >
-                      <RotateCcw className="w-3 h-3" /> Restore
-                    </button>
-                  </EditorForm>
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : null}
-      </div>
     </Modal>
   );
 }
