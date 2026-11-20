@@ -40,7 +40,7 @@ import { ReceiptKeyError } from "../../lib/receipts.server";
 import { action as upload } from "../expenses.upload";
 import { loader as exportLoader } from "../expenses.export";
 import { loader as receiptLoader } from "../expenses.receipt";
-import { parseExpenseFilters, parseScope } from "../filters";
+import { parseExpenseFilters, parseScope } from "../../lib/filters";
 
 const viewer = { userId: "u1", isCore: true, isStaff: true, ownedCardIds: [] };
 

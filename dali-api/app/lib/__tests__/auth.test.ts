@@ -4,9 +4,6 @@ vi.mock("~/lib/audit", () => ({
   logAuditEvent: vi.fn(),
 }));
 vi.mock("~/lib/db.server");
-// The BetterAuth coexistence fallback in computeAuth lazy-imports these two.
-// Mocking them keeps the BetterAuth instance out of this unit test and lets us
-// drive the flag + session state directly.
 vi.mock("~/lib/betterauth-compat.server", () => ({
   resolveBetterAuthAuth: vi.fn(),
 }));
@@ -15,29 +12,14 @@ import { prisma } from "~/lib/db.server";
 import { bumpLastActive, lastActiveThrottleSize, requireAuth, resetLastActiveThrottle } from "~/lib/auth";
 import { logAuditEvent } from "~/lib/audit";
 import { resolveBetterAuthAuth } from "~/lib/betterauth-compat.server";
-import {
-  hashSessionId,
-  ROLLING_TTL_MS,
-  ABSOLUTE_TTL_MS,
-  ROLL_MIN_INTERVAL_MS,
-} from "~/lib/session.server";
 
 const mockResolveBetterAuthAuth =
   resolveBetterAuthAuth as unknown as ReturnType<typeof vi.fn>;
 const mockLogAuditEvent =
   logAuditEvent as unknown as ReturnType<typeof vi.fn>;
 
-// A 43-char base64url string — the shape looksLikeWellFormedSessionId accepts,
-// i.e. a plausible-but-stale session id (benign, not logged).
-const WELL_FORMED_SID = "A".repeat(43);
-
 const mockPrisma = prisma as unknown as {
-  session: {
-    create: ReturnType<typeof vi.fn>;
-    findUnique: ReturnType<typeof vi.fn>;
-    update: ReturnType<typeof vi.fn>;
-    updateMany: ReturnType<typeof vi.fn>;
-  };
+  session: Record<string, ReturnType<typeof vi.fn>>;
   $executeRaw: ReturnType<typeof vi.fn>;
 };
 
@@ -47,296 +29,104 @@ function presenceBumpsFor(): string[] {
   return mockPrisma.$executeRaw.mock.calls.map((args: unknown[]) => String(args[1]));
 }
 
-function makeSessionRow(overrides: Partial<{
-  id: string;
-  userId: string;
-  grantId: string | null;
-  lastUsedAt: Date;
-  expiresAt: Date;
-  absoluteExpiresAt: Date;
-  revokedAt: Date | null;
-  user: {
-    id: string;
-    daliEmail: string | null;
-    dartmouthEmail: string | null;
-    netId: string | null;
-    firstName: string;
-    lastName: string;
-  };
-}> = {}) {
-  const userId = overrides.userId ?? "user-1";
-  return {
-    id: overrides.id ?? hashSessionId("raw-1"),
-    userId,
-    grantId: overrides.grantId ?? null,
-    createdAt: new Date(),
-    lastUsedAt: overrides.lastUsedAt ?? new Date(),
-    expiresAt: overrides.expiresAt ?? new Date(Date.now() + ROLLING_TTL_MS),
-    absoluteExpiresAt:
-      overrides.absoluteExpiresAt ?? new Date(Date.now() + ABSOLUTE_TTL_MS),
-    revokedAt: overrides.revokedAt ?? null,
-    userAgent: null,
-    ip: null,
-    user: overrides.user ?? {
-      id: userId,
-      daliEmail: "u@dali.dartmouth.edu",
-      dartmouthEmail: null,
-      netId: null,
-      firstName: "U",
-      lastName: "Ser",
-    },
-  };
+function sessionQueries(): number {
+  return Object.values(mockPrisma.session).reduce((n, fn) => n + fn.mock.calls.length, 0);
 }
+
+const BA_AUTH = {
+  user: { sub: "ba-user", email: "ada@example.edu", type: "member" },
+  sessionId: "auth-session-1",
+};
 
 beforeEach(() => {
   vi.clearAllMocks();
   resetLastActiveThrottle();
-  mockPrisma.session ??= {
+  mockPrisma.session = {
     create: vi.fn(),
     findUnique: vi.fn(),
     update: vi.fn(),
     updateMany: vi.fn(),
-  } as any;
-  mockPrisma.session.update.mockResolvedValue({});
-  // Default: no BetterAuth session, so tests exercise the legacy leg.
+  };
   mockResolveBetterAuthAuth.mockResolvedValue(null);
 });
 
 describe("requireAuth", () => {
-  it("returns no_session when no cookie and no header", async () => {
-    const req = new Request("http://localhost");
-    const result = await requireAuth(req);
+  it("returns no_session when there is no cookie and no header", async () => {
+    const result = await requireAuth(new Request("http://localhost"));
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toBe("no_session");
+    expect(mockLogAuditEvent).not.toHaveBeenCalled();
   });
 
-  it("returns not_found when the session row is missing", async () => {
-    mockPrisma.session.findUnique.mockResolvedValue(null);
+  it("authenticates a BetterAuth cookie session", async () => {
+    mockResolveBetterAuthAuth.mockResolvedValue(BA_AUTH);
     const req = new Request("http://localhost", {
-      headers: { Cookie: "__dali_sid=ghost" },
+      headers: { Cookie: "dali.session_token=abc" },
     });
-    const result = await requireAuth(req);
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.reason).toBe("not_found");
-  });
-
-  it("returns revoked when the session has a revokedAt timestamp", async () => {
-    mockPrisma.session.findUnique.mockResolvedValue(
-      makeSessionRow({ revokedAt: new Date() }),
-    );
-    const req = new Request("http://localhost", {
-      headers: { Cookie: "__dali_sid=raw-1" },
-    });
-    const result = await requireAuth(req);
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.reason).toBe("revoked");
-  });
-
-  it("returns expired when expiresAt has passed", async () => {
-    mockPrisma.session.findUnique.mockResolvedValue(
-      makeSessionRow({ expiresAt: new Date(Date.now() - 1000) }),
-    );
-    const req = new Request("http://localhost", {
-      headers: { Cookie: "__dali_sid=raw-1" },
-    });
-    const result = await requireAuth(req);
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.reason).toBe("expired");
-  });
-
-  it("returns expired when absoluteExpiresAt has passed", async () => {
-    mockPrisma.session.findUnique.mockResolvedValue(
-      makeSessionRow({
-        // rolling not yet expired but absolute cap has passed
-        expiresAt: new Date(Date.now() + 1000),
-        absoluteExpiresAt: new Date(Date.now() - 1000),
-      }),
-    );
-    const req = new Request("http://localhost", {
-      headers: { Cookie: "__dali_sid=raw-1" },
-    });
-    const result = await requireAuth(req);
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.reason).toBe("expired");
-  });
-
-  it("succeeds with a valid cookie session and preserves auth.user.sub", async () => {
-    mockPrisma.session.findUnique.mockResolvedValue(makeSessionRow());
-    const req = new Request("http://localhost", {
-      headers: { Cookie: "__dali_sid=raw-1" },
-    });
-    const result = await requireAuth(req);
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.user.sub).toBe("user-1");
-      expect(result.user.email).toBe("u@dali.dartmouth.edu");
-      expect(result.user.type).toBe("member");
-    }
-  });
-
-  it("accepts a Bearer header when no cookie is present", async () => {
-    mockPrisma.session.findUnique.mockResolvedValue(makeSessionRow());
-    const req = new Request("http://localhost", {
-      headers: { Authorization: "Bearer raw-1" },
-    });
-    const result = await requireAuth(req);
-    expect(result.ok).toBe(true);
-  });
-
-  it("prefers the cookie over a Bearer header when both are present", async () => {
-    mockPrisma.session.findUnique.mockImplementation(async ({ where }: any) => {
-      // Only the cookie's hash should match
-      if (where.id === hashSessionId("cookie-raw")) {
-        return makeSessionRow({
-          id: hashSessionId("cookie-raw"),
-          userId: "user-cookie",
-        });
-      }
-      return null;
-    });
-    const req = new Request("http://localhost", {
-      headers: {
-        Cookie: "__dali_sid=cookie-raw",
-        Authorization: "Bearer header-raw",
-      },
-    });
-    const result = await requireAuth(req);
-    expect(result.ok).toBe(true);
-    if (result.ok) expect(result.user.sub).toBe("user-cookie");
-  });
-
-  it("looks up sessions by sha256(raw), never the raw value", async () => {
-    mockPrisma.session.findUnique.mockResolvedValue(makeSessionRow());
-    const req = new Request("http://localhost", {
-      headers: { Cookie: "__dali_sid=raw-1" },
-    });
-    await requireAuth(req);
-    expect(mockPrisma.session.findUnique).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { id: hashSessionId("raw-1") },
-      }),
-    );
-  });
-
-  it("rolls the session when lastUsedAt is older than ROLL_MIN_INTERVAL_MS", async () => {
-    mockPrisma.session.findUnique.mockResolvedValue(
-      makeSessionRow({
-        lastUsedAt: new Date(Date.now() - ROLL_MIN_INTERVAL_MS - 1000),
-      }),
-    );
-    const req = new Request("http://localhost", {
-      headers: { Cookie: "__dali_sid=raw-1" },
-    });
-    const result = await requireAuth(req);
-    expect(result.ok).toBe(true);
-    expect(mockPrisma.session.update).toHaveBeenCalledTimes(1);
-    const args = mockPrisma.session.update.mock.calls[0][0];
-    expect(args.where.id).toBe(hashSessionId("raw-1"));
-  });
-
-  it("skips the session-roll write when lastUsedAt is recent", async () => {
-    mockPrisma.session.findUnique.mockResolvedValue(
-      makeSessionRow({ lastUsedAt: new Date() }),
-    );
-    const req = new Request("http://localhost", {
-      headers: { Cookie: "__dali_sid=raw-1" },
-    });
-    const result = await requireAuth(req);
-    expect(result.ok).toBe(true);
-    expect(mockPrisma.session.update).not.toHaveBeenCalled();
-  });
-
-  it("derives auth.user.type as member, dartmouth, or partner based on user columns", async () => {
-    mockPrisma.session.findUnique.mockResolvedValue(
-      makeSessionRow({
-        user: {
-          id: "user-1",
-          daliEmail: null,
-          dartmouthEmail: null,
-          netId: "abc123",
-          firstName: "Net",
-          lastName: "Id",
-        },
-      }),
-    );
-    const req = new Request("http://localhost", {
-      headers: { Cookie: "__dali_sid=raw-1" },
-    });
-    const result = await requireAuth(req);
-    expect(result.ok).toBe(true);
-    if (result.ok) expect(result.user.type).toBe("dartmouth");
-  });
-});
-
-describe("requireAuth — BetterAuth coexistence (Phase 1)", () => {
-
-  it("authenticates via a BetterAuth session when the flag is on and legacy has none", async () => {
-    mockResolveBetterAuthAuth.mockResolvedValue({
-      user: { sub: "ba-user", email: "grad@dartmouth.edu", type: "dartmouth" },
-      sessionId: "auth-session-1",
-    });
-    const req = new Request("http://localhost"); // no legacy cookie/bearer
     const result = await requireAuth(req);
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.user.sub).toBe("ba-user");
-      expect(result.user.type).toBe("dartmouth");
       expect(result.sessionId).toBe("auth-session-1");
     }
   });
 
-  it("falls back to the legacy failure when the flag is on but no BetterAuth session exists", async () => {
-    mockResolveBetterAuthAuth.mockResolvedValue(null);
-    const req = new Request("http://localhost");
+  it("authenticates a BetterAuth bearer token", async () => {
+    mockResolveBetterAuthAuth.mockResolvedValue(BA_AUTH);
+    const req = new Request("http://localhost", {
+      headers: { Authorization: "Bearer ba-token" },
+    });
     const result = await requireAuth(req);
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.reason).toBe("no_session");
+    expect(result.ok).toBe(true);
+    expect(mockLogAuditEvent).not.toHaveBeenCalled();
   });
 
-  it("never consults BetterAuth when a valid legacy session is present", async () => {
-    mockPrisma.session.findUnique.mockResolvedValue(makeSessionRow());
+  it("no longer accepts a legacy __dali_sid cookie and never queries the legacy table", async () => {
     const req = new Request("http://localhost", {
       headers: { Cookie: "__dali_sid=raw-1" },
     });
     const result = await requireAuth(req);
-    expect(result.ok).toBe(true);
-    if (result.ok) expect(result.user.sub).toBe("user-1");
-    expect(mockResolveBetterAuthAuth).not.toHaveBeenCalled();
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe("no_session");
+    expect(sessionQueries()).toBe(0);
+  });
+
+  it("no longer accepts a legacy opaque bearer and never queries the legacy table", async () => {
+    const req = new Request("http://localhost", {
+      headers: { Authorization: "Bearer legacy-opaque-id" },
+    });
+    const result = await requireAuth(req);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toBe("not_found");
+      expect(result.response.status).toBe(401);
+    }
+    expect(sessionQueries()).toBe(0);
+  });
+
+  it("returns no_session when BetterAuth resolution throws and there is no credential", async () => {
+    mockResolveBetterAuthAuth.mockRejectedValue(new Error("db down"));
+    const result = await requireAuth(new Request("http://localhost"));
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe("no_session");
   });
 });
 
 describe("requireAuth — presence heartbeat", () => {
-  it("bumps lastActiveAt for a legacy session", async () => {
-    mockPrisma.session.findUnique.mockResolvedValue(makeSessionRow());
-    const req = new Request("http://localhost", {
-      headers: { Cookie: "__dali_sid=raw-1" },
-    });
-    await requireAuth(req);
-    expect(presenceBumpsFor()).toEqual(["user-1"]);
-  });
-
   it("bumps lastActiveAt for a BetterAuth session", async () => {
-    // The cutover regression: the BetterAuth leg returned a valid auth without
-    // ever writing presence, so status dots and Admin's "Live now" tile went
-    // dark for everyone the moment the flag was flipped on.
-    mockResolveBetterAuthAuth.mockResolvedValue({
-      user: { sub: "ba-user", email: "u@dali.dartmouth.edu", type: "member" },
-      sessionId: "auth-session-1",
-    });
-    const req = new Request("http://localhost");
-    const result = await requireAuth(req);
+    mockResolveBetterAuthAuth.mockResolvedValue(BA_AUTH);
+    const result = await requireAuth(new Request("http://localhost"));
     expect(result.ok).toBe(true);
     expect(presenceBumpsFor()).toEqual(["ba-user"]);
   });
 
   it("does NOT bump lastActiveAt while an admin is impersonating", async () => {
     mockResolveBetterAuthAuth.mockResolvedValue({
-      user: { sub: "target-user", email: "u@dali.dartmouth.edu", type: "member" },
+      user: { sub: "target-user", email: "ada@example.edu", type: "member" },
       sessionId: "auth-session-1",
       impersonatedBy: "admin-user",
     });
-    const req = new Request("http://localhost");
-    const result = await requireAuth(req);
+    const result = await requireAuth(new Request("http://localhost"));
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.impersonatedBy).toBe("admin-user");
     expect(presenceBumpsFor()).toEqual([]);
@@ -390,26 +180,7 @@ describe("bumpLastActive throttle", () => {
 });
 
 describe("requireAuth — credential-miss audit logging", () => {
-  it("does NOT log auth.token.invalid when a Bearer misses legacy but succeeds via BetterAuth", async () => {
-    // The regression that flooded the audit log after cutover: a BetterAuth
-    // bearer is never a legacy session id, so it always misses lookupSession
-    // first — but the request still authenticates, so nothing should be logged.
-    mockPrisma.session.findUnique.mockResolvedValue(null);
-    mockResolveBetterAuthAuth.mockResolvedValue({
-      user: { sub: "ba-user", email: "u@dartmouth.edu", type: "dartmouth" },
-      sessionId: "auth-session-1",
-    });
-    const req = new Request("http://localhost", {
-      headers: { Authorization: "Bearer ba-token" },
-    });
-    const result = await requireAuth(req);
-    expect(result.ok).toBe(true);
-    expect(mockLogAuditEvent).not.toHaveBeenCalled();
-  });
-
-  it("logs auth.token.invalid when a Bearer is rejected by BOTH backends", async () => {
-    mockPrisma.session.findUnique.mockResolvedValue(null);
-    mockResolveBetterAuthAuth.mockResolvedValue(null);
+  it("logs auth.token.invalid when a bearer does not resolve", async () => {
     const req = new Request("http://localhost", {
       headers: { Authorization: "Bearer nope" },
     });
@@ -421,25 +192,11 @@ describe("requireAuth — credential-miss audit logging", () => {
     });
   });
 
-  it("does NOT log for a well-formed but stale cookie (benign post-rotation miss)", async () => {
-    mockPrisma.session.findUnique.mockResolvedValue(null);
+  it("does not log for a stale cookie", async () => {
     const req = new Request("http://localhost", {
-      headers: { Cookie: `__dali_sid=${WELL_FORMED_SID}` },
-    });
-    const result = await requireAuth(req);
-    expect(result.ok).toBe(false);
-    expect(mockLogAuditEvent).not.toHaveBeenCalled();
-  });
-
-  it("logs auth.token.malformed for a malformed cookie value", async () => {
-    mockPrisma.session.findUnique.mockResolvedValue(null);
-    const req = new Request("http://localhost", {
-      headers: { Cookie: "__dali_sid=short" },
+      headers: { Cookie: "dali.session_token=stale" },
     });
     await requireAuth(req);
-    expect(mockLogAuditEvent).toHaveBeenCalledWith({
-      action: "auth.token.malformed",
-      request: req,
-    });
+    expect(mockLogAuditEvent).not.toHaveBeenCalled();
   });
 });

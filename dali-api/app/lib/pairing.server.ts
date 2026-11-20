@@ -38,7 +38,6 @@ export function generateRawCode(): string {
   return randomBytes(32).toString("base64url");
 }
 
-// sha256(raw) → base64url. Same scheme as hashSessionId / OneTimeToken.tokenHash.
 export function hashCode(raw: string): string {
   return createHash("sha256").update(raw).digest("base64url");
 }

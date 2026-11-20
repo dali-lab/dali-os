@@ -2,7 +2,7 @@ import { Download } from "lucide-react";
 import { buttonClasses } from "~/components/ui/Button";
 import { DateField } from "~/components/ui/DateField";
 import { FilterField, FilterGroup, FilterPill, FilterToggleRow, FiltersPopover } from "~/components/ui/filter-panel";
-import { FILTER_KEYS } from "../routes/filters";
+import { FILTER_KEYS } from "../lib/filters";
 import type { ExpenseStatusValue } from "../lib/status";
 import { exportHref } from "./export-link";
 import type { CardOption, CategoryOption } from "./types";

@@ -90,12 +90,10 @@ const HUSK_BUSINESS_RELATIONS = [
 // Auth-substrate relations re-parented from a husk to its survivor on merge.
 // Prisma delegate name → they all key off `userId`.
 const REPARENT_DELEGATES = [
-  "session",
   "oAuthSession",
   "authSession",
   "account",
   "passkey",
-  "oneTimeToken",
   "devicePairing",
   "oAuthGrant",
   "gmailIntegration",

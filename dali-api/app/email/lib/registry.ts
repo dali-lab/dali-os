@@ -575,3 +575,15 @@ export function educationKey(slot: string): EmailTemplateKey {
   if (!isEmailTemplateKey(key)) throw new Error(`unknown education email slot: ${slot}`);
   return key;
 }
+
+export function sampleWith(key: EmailTemplateKey, overrides: unknown): Record<string, string> {
+  const def = emailTemplateDef(key);
+  const out = { ...def.sample };
+  if (!overrides || typeof overrides !== "object") return out;
+  for (const [name, value] of Object.entries(overrides)) {
+    if ((def.variables as readonly string[]).includes(name) && typeof value === "string" && value.length <= 200) {
+      out[name] = value;
+    }
+  }
+  return out;
+}

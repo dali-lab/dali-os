@@ -1,5 +1,5 @@
-import type { ExpenseFilters, ExpenseScope } from "../lib/expenses.server";
-import type { ExpenseStatusValue } from "../lib/status";
+import type { ExpenseFilters, ExpenseScope } from "./expenses.server";
+import type { ExpenseStatusValue } from "./status";
 
 const STATUSES: ExpenseStatusValue[] = ["DRAFT", "SUBMITTED", "RETURNED", "APPROVED", "PAID"];
 const SCOPES: ExpenseScope[] = ["mine", "approvals", "all"];
