@@ -1,8 +1,7 @@
 import type { Route } from "./+types/oauth.revoke";
-import { revokeSession, hashSessionId } from "~/lib/session.server";
 import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
-import { clearSessionCookie, parseSessionId } from "~/lib/cookies";
+import { clearSessionCookie, parseBearerHeader } from "~/lib/cookies";
 import { withCors, handlePreflight, preflightLoader } from "~/lib/cors";
 import { safeJson } from "~/lib/safe-json";
 
@@ -12,8 +11,7 @@ export async function action({ request }: Route.ActionArgs) {
   const preflight = handlePreflight(request);
   if (preflight) return preflight;
 
-  // Cookie or Bearer first, then fall back to body `token`.
-  let token: string | undefined = parseSessionId(request) ?? undefined;
+  let token: string | undefined = parseBearerHeader(request) ?? undefined;
 
   if (!token) {
     const contentType = request.headers.get("Content-Type") ?? "";
@@ -28,27 +26,21 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   if (token) {
-    const legacy = await prisma.session.findUnique({
-      where: { id: hashSessionId(token) },
-      select: { userId: true, grantId: true, revokedAt: true },
-    });
-    await revokeSession(token);
     const current = await prisma.authSession.findUnique({
       where: { token },
       select: { id: true, userId: true, grantId: true },
     });
     if (current) await prisma.authSession.deleteMany({ where: { id: current.id } });
-    const session = current ?? (legacy && !legacy.revokedAt ? legacy : null);
-    if (session) {
+    if (current) {
       await logAuditEvent({
         action: "session.revoke",
-        userId: session.userId,
-        targetId: session.userId,
+        userId: current.userId,
+        targetId: current.userId,
         metadata: {
           scope: "one",
           count: 1,
           via: "oauth.revoke",
-          ...(session.grantId ? { grantId: session.grantId } : {}),
+          ...(current.grantId ? { grantId: current.grantId } : {}),
         },
         request,
       });

@@ -2,14 +2,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   findSession: vi.fn(),
-  revoke: vi.fn(),
   audit: vi.fn(),
   baUser: vi.fn(),
   signOut: vi.fn(),
 }));
 
 vi.mock("~/lib/db.server", () => ({ prisma: { session: { findUnique: mocks.findSession } } }));
-vi.mock("~/lib/session.server", () => ({ hashSessionId: (s: string) => `h:${s}`, revokeSession: mocks.revoke }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: mocks.audit }));
 vi.mock("~/lib/betterauth-compat.server", () => ({ getBetterAuthUser: mocks.baUser }));
 vi.mock("~/lib/betterauth.server", () => ({ auth: { api: { signOut: mocks.signOut } } }));
@@ -36,11 +34,12 @@ describe("logout", () => {
     expect(mocks.audit).toHaveBeenCalledWith(expect.objectContaining({ action: "logout", userId: "u-ada" }));
   });
 
-  it("attributes a legacy session logout and skips BetterAuth lookup", async () => {
-    mocks.findSession.mockResolvedValue({ userId: "u-legacy" });
-    await run("__dali_sid=abc");
-    expect(mocks.audit).toHaveBeenCalledWith(expect.objectContaining({ userId: "u-legacy" }));
-    expect(mocks.baUser).not.toHaveBeenCalled();
+  it("ignores a legacy __dali_sid cookie, never queries the legacy table and clears the cookie", async () => {
+    mocks.baUser.mockResolvedValue(null);
+    const res = (await run("__dali_sid=abc")) as Response;
+    expect(mocks.findSession).not.toHaveBeenCalled();
+    expect(mocks.audit).toHaveBeenCalledWith(expect.objectContaining({ userId: null }));
+    expect(res.headers.getSetCookie().some((c) => c.startsWith("__dali_sid=;"))).toBe(true);
   });
 
   it("logs null when there is no session, and still redirects when lookup throws", async () => {

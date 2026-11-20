@@ -27,15 +27,6 @@ async function main() {
     console.log(`════ ${userId}  ${user ? `${user.firstName} ${user.lastName}` : "(user not found)"}`);
     if (!user) continue;
 
-    const sessions = await prisma.session.findMany({
-      where: { userId },
-      orderBy: { createdAt: "desc" },
-      select: { createdAt: true },
-    });
-    console.log(
-      `  sessions: ${sessions.length}${sessions.length ? `  (latest ${sessions[0].createdAt.toISOString()}, oldest ${sessions.at(-1)!.createdAt.toISOString()})` : ""}`,
-    );
-
     const apps = await prisma.application.findMany({
       where: { userId },
       include: {

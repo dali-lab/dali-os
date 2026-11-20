@@ -22,11 +22,6 @@ vi.mock("~/lib/roles", () => ({
   isDomainLead: vi.fn(),
   isProjectMember: vi.fn(),
 }));
-vi.mock("~/lib/session.server", () => ({
-  lookupSession: vi.fn().mockResolvedValue(null),
-  rollSession: vi.fn(),
-  hashSessionId: (s: string) => s,
-}));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 
 import { requireAuth } from "~/lib/auth";

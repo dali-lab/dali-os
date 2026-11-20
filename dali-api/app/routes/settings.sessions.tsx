@@ -48,18 +48,9 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   if (intent === "revoke-others") {
-    // Legacy sessions aren't listed any more, but one on another device would
-    // otherwise survive "sign out everywhere else".
-    const [current, legacy] = await Promise.all([
-      prisma.authSession.deleteMany({
-        where: { userId: auth.user.sub, NOT: { id: auth.sessionId } },
-      }),
-      prisma.session.updateMany({
-        where: { userId: auth.user.sub, revokedAt: null, NOT: { id: auth.sessionId } },
-        data: { revokedAt: new Date() },
-      }),
-    ]);
-    const count = current.count + legacy.count;
+    const { count } = await prisma.authSession.deleteMany({
+      where: { userId: auth.user.sub, NOT: { id: auth.sessionId } },
+    });
     await logSessionRevoke(auth.user.sub, "others", count, request);
     return redirect("/settings/security");
   }

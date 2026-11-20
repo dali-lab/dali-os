@@ -1,25 +1,13 @@
-// Tests for Phase 4: BetterAuth coexistence in authenticateMcpRequest and
-// mintBetterAuthSession. All external I/O is mocked.
-
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 // ── Hoisted mocks (must come before any imports that trigger module execution) ─
 
-const mockLookupSession = vi.hoisted(() => vi.fn());
-const mockRollSession = vi.hoisted(() => vi.fn());
 const mockGetSession = vi.hoisted(() => vi.fn());
 const mockCreateSession = vi.hoisted(() => vi.fn());
 const mockOAuthGrantFindUnique = vi.hoisted(() => vi.fn());
 const mockDALIMemberFindUnique = vi.hoisted(() => vi.fn());
 const mockOAuthGrantUpdate = vi.hoisted(() => vi.fn());
-const mockAuthSessionFindUnique = vi.hoisted(() => vi.fn());
-const mockSessionDeleteMany = vi.hoisted(() => vi.fn());
-
-
-vi.mock("~/lib/session.server", () => ({
-  lookupSession: mockLookupSession,
-  rollSession: mockRollSession,
-}));
+const mockSessionFindUnique = vi.hoisted(() => vi.fn());
 
 vi.mock("~/lib/betterauth.server", () => ({
   auth: {
@@ -37,15 +25,14 @@ vi.mock("~/lib/db.server", () => ({
       update: mockOAuthGrantUpdate,
     },
     dALIMember: { findUnique: mockDALIMemberFindUnique },
-    authSession: { findUnique: mockAuthSessionFindUnique },
-    session: { deleteMany: mockSessionDeleteMany },
+    session: { findUnique: mockSessionFindUnique },
   },
 }));
 
 vi.mock("~/lib/rate-limit", () => ({ getClientIp: () => "203.0.113.9" }));
 
 vi.mock("~/lib/cookies", () => ({
-  parseSessionId: (req: Request) => req.headers.get("Authorization")?.replace("Bearer ", "") ?? null,
+  parseBearerHeader: (req: Request) => req.headers.get("Authorization")?.replace("Bearer ", "") ?? null,
 }));
 
 // ── Import subjects after mocks ───────────────────────────────────────────────
@@ -66,15 +53,6 @@ function makeRequest(token = TOKEN): Request {
     headers: { Authorization: `Bearer ${token}` },
   });
 }
-
-const MOCK_USER = {
-  id: USER_ID,
-  daliEmail: "u@dali.dartmouth.edu",
-  dartmouthEmail: null,
-  netId: null,
-  firstName: "U",
-  lastName: "Ser",
-};
 
 const MOCK_GRANT = {
   id: GRANT_ID,
@@ -98,23 +76,11 @@ const MOCK_BA_SESSION = {
 
 // ── Test helpers ──────────────────────────────────────────────────────────────
 
-function setupLegacyMiss() {
-  // Legacy lookupSession returns null — token not in bespoke Session table.
-  mockLookupSession.mockResolvedValue(null);
-}
-
-function setupValidGrant() {
-  mockOAuthGrantFindUnique.mockResolvedValue(MOCK_GRANT);
-  mockOAuthGrantUpdate.mockResolvedValue({});
-  mockDALIMemberFindUnique.mockResolvedValue(null); // not consulted unless requireMembership
-}
-
 // ── authenticateMcpRequest tests ──────────────────────────────────────────────
 
 describe("authenticateMcpRequest — BetterAuth path", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    setupLegacyMiss();
     mockOAuthGrantUpdate.mockResolvedValue({});
   });
 
@@ -223,153 +189,31 @@ describe("authenticateMcpRequest — BetterAuth path", () => {
     expect(body.error.message).toContain("invalid_token");
   });
 
-  it("legacy path wins when a bespoke session exists", async () => {
-    // Override: legacy session IS found this time
-    const legacySession = {
-      id: "hashed-legacy",
-      userId: USER_ID,
-      grantId: GRANT_ID,
-      revokedAt: null,
-      expiresAt: new Date(Date.now() + 1_000_000),
-      absoluteExpiresAt: new Date(Date.now() + 1_000_000),
-      lastUsedAt: new Date(),
-      user: MOCK_USER,
-    };
-    mockLookupSession.mockResolvedValue(legacySession);
-    mockRollSession.mockResolvedValue(undefined);
+  it("never consults the legacy session table", async () => {
+    mockGetSession.mockResolvedValue(MOCK_BA_SESSION);
     mockOAuthGrantFindUnique.mockResolvedValue(MOCK_GRANT);
 
-    const res = await authenticateMcpRequest(makeRequest());
-    expect(res.ok).toBe(true);
-    // BetterAuth should NOT have been consulted
-    expect(mockGetSession).not.toHaveBeenCalled();
-  });
-});
+    await authenticateMcpRequest(makeRequest());
+    await authenticateMcpRequest(makeRequest("legacy-opaque-id"));
 
-// ── Legacy token bridge ───────────────────────────────────────────────────────
-
-describe("authenticateMcpRequest — legacy token bridge", () => {
-  const LEGACY_TOKEN = "legacy-raw-token";
-  const legacySession = () => ({
-    id: "hashed-legacy",
-    userId: USER_ID,
-    grantId: GRANT_ID,
-    revokedAt: null as Date | null,
-    expiresAt: new Date(Date.now() + 1_000_000),
-    absoluteExpiresAt: new Date(Date.now() + 1_000_000),
-    lastUsedAt: new Date(),
-    user: MOCK_USER,
-  });
-  const bridgeRequest = () =>
-    new Request("https://example.com/mcp", {
-      headers: { Authorization: `Bearer ${LEGACY_TOKEN}`, "User-Agent": "claude-code/test" },
-    });
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-    setupValidGrant();
-    mockLookupSession.mockResolvedValue(legacySession());
-    mockRollSession.mockResolvedValue(undefined);
-    mockAuthSessionFindUnique.mockResolvedValue(null);
-    mockCreateSession.mockResolvedValue({ id: "ba-1", token: LEGACY_TOKEN, expiresAt: new Date() });
-    mockSessionDeleteMany.mockResolvedValue({ count: 1 });
+    expect(mockSessionFindUnique).not.toHaveBeenCalled();
   });
 
-  it("moves the session to BetterAuth under the same token and deletes the legacy row", async () => {
-    const res = await authenticateMcpRequest(bridgeRequest());
+  it("rejects a legacy opaque token that BetterAuth does not know", async () => {
+    mockGetSession.mockResolvedValue(null);
 
-    expect(res.ok).toBe(true);
-    expect(mockCreateSession).toHaveBeenCalledTimes(1);
-    const [userId, , override, overrideAll] = mockCreateSession.mock.calls[0];
-    expect(userId).toBe(USER_ID);
-    expect(override).toMatchObject({
-      token: LEGACY_TOKEN,
-      grantId: GRANT_ID,
-      ipAddress: "203.0.113.9",
-      userAgent: "claude-code/test",
-    });
-    expect(overrideAll).toBe(true);
-    expect(mockSessionDeleteMany).toHaveBeenCalledWith({ where: { id: "hashed-legacy" } });
-    expect(mockRollSession).not.toHaveBeenCalled();
-  });
-
-  it("skips the mint but still deletes the legacy row when the token was already bridged", async () => {
-    mockAuthSessionFindUnique.mockResolvedValue({ id: "ba-1" });
-
-    const res = await authenticateMcpRequest(bridgeRequest());
-
-    expect(res.ok).toBe(true);
-    expect(mockAuthSessionFindUnique).toHaveBeenCalledWith({
-      where: { token: LEGACY_TOKEN },
-      select: { id: true },
-    });
-    expect(mockCreateSession).not.toHaveBeenCalled();
-    expect(mockSessionDeleteMany).toHaveBeenCalledWith({ where: { id: "hashed-legacy" } });
-  });
-
-  it("keeps the legacy session when the mint fails and still serves the request", async () => {
-    mockCreateSession.mockRejectedValue(new Error("db hiccup"));
-    vi.spyOn(console, "error").mockImplementation(() => {});
-
-    const res = await authenticateMcpRequest(bridgeRequest());
-
-    expect(res.ok).toBe(true);
-    expect(mockSessionDeleteMany).not.toHaveBeenCalled();
-    expect(mockRollSession).toHaveBeenCalledTimes(1);
-  });
-
-  it("does not bridge a session whose grant was revoked", async () => {
-    mockOAuthGrantFindUnique.mockResolvedValue({ ...MOCK_GRANT, revokedAt: new Date() });
-
-    const res = await authenticateMcpRequest(bridgeRequest());
+    const res = await authenticateMcpRequest(makeRequest("legacy-opaque-id"));
 
     expect(res.ok).toBe(false);
-    expect(mockCreateSession).not.toHaveBeenCalled();
-    expect(mockSessionDeleteMany).not.toHaveBeenCalled();
+    expect((res as { ok: false; response: Response }).response.status).toBe(401);
+    expect(mockSessionFindUnique).not.toHaveBeenCalled();
   });
 
-  it("does not bridge a session for a removed member", async () => {
-    mockOAuthGrantFindUnique.mockResolvedValue({
-      ...MOCK_GRANT,
-      client: { name: CLIENT_NAME, requireMembership: true },
-    });
-    mockDALIMemberFindUnique.mockResolvedValue(null);
-
-    const res = await authenticateMcpRequest(bridgeRequest());
-
+  it("returns missing_token without a bearer", async () => {
+    const res = await authenticateMcpRequest(new Request("https://example.com/mcp"));
     expect(res.ok).toBe(false);
-    expect(mockCreateSession).not.toHaveBeenCalled();
-  });
-
-  it("does not bridge a revoked legacy session", async () => {
-    mockLookupSession.mockResolvedValue({ ...legacySession(), revokedAt: new Date() });
-
-    const res = await authenticateMcpRequest(bridgeRequest());
-
-    expect(res.ok).toBe(false);
-    expect(mockCreateSession).not.toHaveBeenCalled();
-    expect(mockSessionDeleteMany).not.toHaveBeenCalled();
-  });
-
-  it("does not bridge a non-MCP legacy session", async () => {
-    mockLookupSession.mockResolvedValue({ ...legacySession(), grantId: null });
-
-    const res = await authenticateMcpRequest(bridgeRequest());
-
-    expect(res.ok).toBe(false);
-    expect(mockCreateSession).not.toHaveBeenCalled();
-  });
-
-  it("resolves the bridged token through BetterAuth on the next request", async () => {
-    await authenticateMcpRequest(bridgeRequest());
-    mockLookupSession.mockResolvedValue(null);
-    mockGetSession.mockResolvedValue(MOCK_BA_SESSION);
-
-    const res = await authenticateMcpRequest(bridgeRequest());
-
-    expect(res.ok).toBe(true);
-    expect(mockGetSession).toHaveBeenCalledTimes(1);
-    expect(mockCreateSession).toHaveBeenCalledTimes(1);
+    const body = await (res as { ok: false; response: Response }).response.json();
+    expect(body.error.message).toContain("missing_token");
   });
 });
 
