@@ -2,8 +2,9 @@ import { APPLICATION_TZ } from "~/lib/timezone";
 import { extractPlaceholders } from "~/lib/template-variables";
 
 export type DecisionEmailDates = {
-  /** The hire's start term code: the applicant's pick, else the cycle's term. */
+  /** The hire's start term code, from `effectiveStartTermId`. */
   startTermCode: string | null;
+  offersStartTerms?: boolean;
   offerRespondBy: Date | null;
   waitlistRespondBy: Date | null;
 };
@@ -52,7 +53,9 @@ export function decisionEmailVarsProblem(
   const used = new Set(templateTexts.flatMap((t) => extractPlaceholders(t)));
 
   if (type === "Accepted" && used.has("startTerm") && !dates.startTermCode) {
-    return "The Accepted email uses {{startTerm}}, but this cycle has no term. Pick one on the Setup tab first.";
+    return dates.offersStartTerms
+      ? "The Accepted email uses {{startTerm}}, but this applicant has no start term. Set one on the Decisions tab first."
+      : "The Accepted email uses {{startTerm}}, but this cycle has no term. Pick one on the Setup tab first.";
   }
 
   const deadline = respondByFor(type, dates);

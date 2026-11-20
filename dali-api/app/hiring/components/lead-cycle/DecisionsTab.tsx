@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Eye } from "lucide-react";
 import { cn } from "~/lib/cn";
-import { Tooltip } from "~/components/ui/floating";
+import { Select, Tooltip } from "~/components/ui/floating";
+import { filterPillClass } from "~/components/ui/floating/styles";
 import { useOsChrome } from "~/components/os-chrome";
 import { buttonClasses } from "~/components/ui/Button";
 import { useToast } from "~/components/ui/toast";
@@ -18,6 +19,8 @@ import type { TemplateSlot } from "~/hiring/lib/email-variables";
 import { type DecisionSlice, DECISION_SLICES } from "~/hiring/lib/decision-slices";
 import type { PendingDecision } from "~/hiring/lib/lead-cycle-types";
 import type { LeadCycleData } from "~/hiring/lib/lead-cycle.server";
+import { effectiveStartTermId, eligibleStartTerms, type StartTermOption } from "~/hiring/lib/start-terms";
+import { extractPlaceholders } from "~/lib/template-variables";
 
 async function postRelease(id: string): Promise<string | null> {
   try {
@@ -79,6 +82,32 @@ export function usePendingDecisions(initial: PendingDecision[]) {
     }
   }
 
+  async function setStartTerm(d: PendingDecision, termId: string) {
+    const applicationId = d.domainApplication.application.id;
+    try {
+      const res = await fetch(`/api/hiring/decisions/${d.id}/start-term`, {
+        method: "POST",
+        credentials: "include",
+        body: new URLSearchParams({ termId }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(body.error ?? `Couldn't set the start term (HTTP ${res.status}).`);
+        return;
+      }
+      const startTermId: string | null = body.startTermId ?? null;
+      setPendingDecisions((prev) =>
+        prev.map((p) =>
+          p.domainApplication.application.id === applicationId
+            ? { ...p, domainApplication: { ...p.domainApplication, application: { ...p.domainApplication.application, startTermId } } }
+            : p,
+        ),
+      );
+    } catch {
+      toast.error("Couldn't reach the server.");
+    }
+  }
+
   async function finalizeDecisions(ids: string[]) {
     if (finalizing || ids.length === 0) return;
     setFinalizing(true);
@@ -114,6 +143,7 @@ export function usePendingDecisions(initial: PendingDecision[]) {
     confirmReleaseOne,
     releaseMany,
     finalizeDecisions,
+    setStartTerm,
   };
 }
 
@@ -124,8 +154,10 @@ export type DecisionListContext = {
   tab: string;
   confidentialityRequired: LeadCycleData["confidentialityRequired"];
   hiringEmails: Record<string, { subject: string; body: string }>;
-  termOptions: { id: string; code: string }[];
   termId: string | null;
+  startTermIds: string[];
+  /** Every term; empty on cycles whose decisions carry no start term (Lab members). */
+  startTermCandidates: StartTermOption[];
   offerRespondBy: Date | string | null;
   waitlistRespondBy: Date | string | null;
   activeRoundInterviewRoundId: string | null | undefined;
@@ -138,7 +170,7 @@ export function DecisionList({ kind, decisions, ctx }: { kind: DecisionSlice; de
   const {
     pendingDecisions, releasing, releasingAll, setReleasingAll, finalizing,
     previewDecisionId, setPreviewDecisionId, domainFilter, setDomainFilter, typeFilter, setTypeFilter,
-    confirmReleaseOne, releaseMany, finalizeDecisions,
+    confirmReleaseOne, releaseMany, finalizeDecisions, setStartTerm,
   } = decisions;
 
   if (ctx.confidentialityRequired) {
@@ -157,6 +189,19 @@ export function DecisionList({ kind, decisions, ctx }: { kind: DecisionSlice; de
       (kind !== "invites" || (d.interviewRoundId ?? FIRST_INTERVIEW_ROUND_ID) === ctx.activeRoundInterviewRoundId),
   );
   const isBound = (d: PendingDecision) => !!ctx.hiringEmails[slotFor(d)];
+  const termById = new Map(ctx.startTermCandidates.map((t) => [t.id, t]));
+  const cycleTermSortKey = ctx.termId ? (termById.get(ctx.termId)?.sortKey ?? null) : null;
+  const codeFor = (startTermId: string | null) => {
+    const id = effectiveStartTermId({ startTermId }, { termId: ctx.termId, startTermIds: ctx.startTermIds });
+    return id ? (termById.get(id)?.code ?? null) : null;
+  };
+  const startTermCodeOf = (d: PendingDecision) => codeFor(d.domainApplication.application.startTermId);
+  const missingStartTerm = (d: PendingDecision) => {
+    if (d.type !== "Accepted" || ctx.startTermCandidates.length === 0) return false;
+    const email = ctx.hiringEmails[slotFor(d)];
+    if (!email || !extractPlaceholders(`${email.subject} ${email.body}`).includes("startTerm")) return false;
+    return startTermCodeOf(d) === null;
+  };
   const domainNameOf = (d: PendingDecision) => d.domainApplication.domain?.name ?? "";
   const availableDomains = Array.from(new Set(scoped.map(domainNameOf))).sort();
   const availableTypes = Array.from(new Set(scoped.map((d) => d.type as string))).sort();
@@ -168,8 +213,13 @@ export function DecisionList({ kind, decisions, ctx }: { kind: DecisionSlice; de
   });
   const drafts = filteredDecisions.filter((d) => d.stage === "Draft");
   const finals = filteredDecisions.filter((d) => d.stage === "Final");
-  const releasable = finals.filter(isBound);
-  const skipped = finals.length - releasable.length;
+  const releasable = finals.filter((d) => isBound(d) && !missingStartTerm(d));
+  const skippedNoEmail = finals.filter((d) => !isBound(d)).length;
+  const skippedNoTerm = finals.filter(missingStartTerm).length;
+  const skippedNote = [
+    skippedNoEmail > 0 && `${skippedNoEmail} skipped, no email written`,
+    skippedNoTerm > 0 && `${skippedNoTerm} skipped, no start term`,
+  ].filter(Boolean).join(". ");
   const releaseAll = async () => {
     if (releasingAll) return;
     const ids = releasable.map((d) => d.id);
@@ -209,6 +259,7 @@ export function DecisionList({ kind, decisions, ctx }: { kind: DecisionSlice; de
       );
     }
     const hasBinding = isBound(d);
+    const noTerm = missingStartTerm(d);
     return (
       <>
         <Tooltip content="Preview email">
@@ -216,12 +267,15 @@ export function DecisionList({ kind, decisions, ctx }: { kind: DecisionSlice; de
             <Eye className="h-4 w-4" />
           </button>
         </Tooltip>
-        <Tooltip content={!hasBinding ? `Write this decision's email on Setup first.` : null} variant="rich">
+        <Tooltip
+          content={!hasBinding ? `Write this decision's email on Setup first.` : noTerm ? "Set a start term first." : null}
+          variant="rich"
+        >
           <span>
             <button
               type="button"
               onClick={() => confirmReleaseOne(d)}
-              disabled={releasing === d.id || releasingAll || !hasBinding}
+              disabled={releasing === d.id || releasingAll || !hasBinding || noTerm}
               className={buttonClasses("primary", "sm")}
             >
               {releasing === d.id ? "Releasing…" : "Release"}
@@ -260,7 +314,7 @@ export function DecisionList({ kind, decisions, ctx }: { kind: DecisionSlice; de
               </button>
             )}
             {finals.length > 0 && (
-              <Tooltip content={skipped > 0 ? `${skipped} skipped, no email written` : null}>
+              <Tooltip content={skippedNote || null}>
                 <span>
                   <button
                     type="button"
@@ -311,6 +365,15 @@ export function DecisionList({ kind, decisions, ctx }: { kind: DecisionSlice; de
                   </span>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
+                  {d.type === "Accepted" && ctx.startTermCandidates.length > 0 && (
+                    <StartTermSelect
+                      decision={d}
+                      defaultCode={codeFor(null)}
+                      missing={missingStartTerm(d)}
+                      options={eligibleStartTerms(ctx.startTermCandidates, cycleTermSortKey)}
+                      onChange={(termId) => setStartTerm(d, termId)}
+                    />
+                  )}
                   {kind !== "invites" && <Pill dot={typeTone(d.type)}>{d.type}</Pill>}
                   {d.stage === "Draft" && <Pill>Draft</Pill>}
                   {rowActions(d)}
@@ -327,10 +390,7 @@ export function DecisionList({ kind, decisions, ctx }: { kind: DecisionSlice; de
           email={ctx.hiringEmails[slotFor(previewed)] ?? null}
           slot={slotFor(previewed)}
           dates={{
-            startTermCode:
-              previewed.domainApplication.application.startTerm?.code ??
-              ctx.termOptions.find((t) => t.id === ctx.termId)?.code ??
-              null,
+            startTermCode: startTermCodeOf(previewed),
             offerRespondBy: ctx.offerRespondBy ? new Date(ctx.offerRespondBy) : null,
             waitlistRespondBy: ctx.waitlistRespondBy ? new Date(ctx.waitlistRespondBy) : null,
           }}
@@ -338,6 +398,34 @@ export function DecisionList({ kind, decisions, ctx }: { kind: DecisionSlice; de
         />
       )}
     </>
+  );
+}
+
+function StartTermSelect({
+  decision,
+  defaultCode,
+  missing,
+  options,
+  onChange,
+}: {
+  decision: PendingDecision;
+  defaultCode: string | null;
+  missing: boolean;
+  options: StartTermOption[];
+  onChange: (termId: string) => void;
+}) {
+  const own = decision.domainApplication.application.startTermId ?? "";
+  return (
+    <Select
+      ariaLabel={`Start term for ${decision.domainApplication.application.user.firstName}`}
+      value={own}
+      onChange={onChange}
+      options={[
+        { value: "", label: defaultCode ? `Cycle default (${defaultCode})` : "No start term" },
+        ...options.map((t) => ({ value: t.id, label: t.code })),
+      ]}
+      buttonClassName={cn(filterPillClass(), "h-7 w-36 text-sm", missing ? "text-os-red" : !own && "text-os-grey")}
+    />
   );
 }
 

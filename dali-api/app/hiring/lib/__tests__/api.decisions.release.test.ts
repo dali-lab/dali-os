@@ -106,6 +106,7 @@ function setupApplicantContext(
     cycleTermCode?: string | null;
     offerRespondBy?: Date | null;
     waitlistRespondBy?: Date | null;
+    startTermIds?: string[];
   } = {},
 ) {
   const domainName = opts.domainName === undefined ? "Engineering" : opts.domainName;
@@ -115,9 +116,12 @@ function setupApplicantContext(
     application: {
       userId: "applicant-user-id",
       applicationCycleId: CYCLE_ID,
+      startTermId: opts.startTermCode ? `t-${opts.startTermCode}` : null,
       startTerm: opts.startTermCode ? { code: opts.startTermCode } : null,
       applicationCycle: {
         applicants: "Students",
+        termId: opts.cycleTermCode ? `t-${opts.cycleTermCode}` : null,
+        startTermIds: opts.startTermIds ?? [],
         term: opts.cycleTermCode ? { code: opts.cycleTermCode } : null,
         offerRespondBy: opts.offerRespondBy ?? null,
         waitlistRespondBy: opts.waitlistRespondBy ?? null,
@@ -295,7 +299,7 @@ describe("POST /api/hiring/decisions/:id/release", () => {
       application: {
         userId: "applicant-user-id",
         applicationCycleId: CYCLE_ID,
-        applicationCycle: { applicants: "Students" },
+        applicationCycle: { applicants: "Students", startTermIds: [] },
         user: {
           firstName: "Grace",
           dartmouthEmail: null,
@@ -606,6 +610,41 @@ describe("POST /api/hiring/decisions/:id/release — {{startTerm}} and {{respond
     const res = await release();
     expect(res.status).toBe(409);
     expect((await res.json()).error).toMatch(/\{\{startTerm\}\}/);
+  });
+
+  it("refuses an Accepted letter quoting {{startTerm}} when the cycle offers a choice the applicant never made", async () => {
+    setupAuth();
+    setupFinalDecision("Accepted");
+    setupApplicantContext({ startTermCode: null, cycleTermCode: "26F", startTermIds: ["t-27W", "t-27S"], offerRespondBy: OFFER_BY });
+    templates({ subject: "Welcome", body: "Starting in {{startTerm}}." });
+
+    const res = await release();
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toMatch(/this applicant has no start term/);
+    expect(mockPrisma.decision.create).not.toHaveBeenCalled();
+    expect(mockEnqueue).not.toHaveBeenCalled();
+  });
+
+  it("uses the cycle's single offered start term, not its own term, when the applicant has no pick", async () => {
+    setupAuth();
+    setupFinalDecision("Accepted");
+    setupApplicantContext({ startTermCode: null, cycleTermCode: "26F", startTermIds: ["t-27W"], offerRespondBy: OFFER_BY });
+    (mockPrisma as any).term = { findUnique: vi.fn().mockResolvedValue({ code: "27W" }) };
+    templates({ subject: "Welcome", body: "Starting in {{startTerm}}." });
+
+    const res = await release();
+    expect(res.status).toBe(201);
+    expect(sentEmail().bodyHtml).toContain("Starting in 27W.");
+  });
+
+  it("keeps a stored start term the cycle never offered, such as a deferral", async () => {
+    setupAuth();
+    setupFinalDecision("Accepted");
+    setupApplicantContext({ startTermCode: "27X", cycleTermCode: "26F", startTermIds: ["t-27W", "t-27S"], offerRespondBy: OFFER_BY });
+    templates({ subject: "Welcome", body: "Starting in {{startTerm}}." });
+
+    await release();
+    expect(sentEmail().bodyHtml).toContain("Starting in 27X.");
   });
 
   it("refuses a Waitlisted release quoting {{respondBy}} with no waitlist date, even with an offer date", async () => {

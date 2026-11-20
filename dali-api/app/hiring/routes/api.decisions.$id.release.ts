@@ -17,6 +17,7 @@ import {
   decisionEmailVarsProblem,
 } from "~/hiring/lib/decision-email-vars";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
+import { startTermCodeFor } from "~/hiring/lib/start-terms.server";
 
 export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
@@ -74,6 +75,8 @@ export async function action({ request, params }: Route.ActionArgs) {
               timeline: true,
               offerRespondBy: true,
               waitlistRespondBy: true,
+              termId: true,
+              startTermIds: true,
               term: { select: { code: true } },
             },
           },
@@ -129,7 +132,9 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const cycle = domainApp.application.applicationCycle;
   const emailDates = {
-    startTermCode: domainApp.application.startTerm?.code ?? cycle.term?.code ?? null,
+    startTermCode:
+      decision.type === "Accepted" ? await startTermCodeFor(domainApp.application, cycle) : null,
+    offersStartTerms: cycle.startTermIds.length > 0,
     offerRespondBy: cycle.offerRespondBy ?? null,
     waitlistRespondBy: cycle.waitlistRespondBy ?? null,
   };

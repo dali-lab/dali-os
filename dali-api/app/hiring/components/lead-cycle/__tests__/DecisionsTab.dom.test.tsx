@@ -28,8 +28,9 @@ const ctx = (over: Partial<DecisionListContext> = {}): DecisionListContext => ({
   tab: "decisions",
   confidentialityRequired: null,
   hiringEmails: { "decision:Accepted": { subject: "s", body: "b" } },
-  termOptions: [],
   termId: null,
+  startTermIds: [],
+  startTermCandidates: [],
   offerRespondBy: null,
   waitlistRespondBy: null,
   activeRoundInterviewRoundId: null,
@@ -40,6 +41,39 @@ const ctx = (over: Partial<DecisionListContext> = {}): DecisionListContext => ({
 function Lists({ initial, kind, context }: { initial: PendingDecision[]; kind: "invites" | "finalize" | "outcomes"; context: DecisionListContext }) {
   const decisions = usePendingDecisions(initial);
   return <DecisionList kind={kind} decisions={decisions} ctx={context} />;
+}
+
+const TERMS = [
+  { id: "t-26f", code: "26F", sortKey: 20264 },
+  { id: "t-27w", code: "27W", sortKey: 20271 },
+  { id: "t-27s", code: "27S", sortKey: 20272 },
+];
+const choiceCtx = (over: Partial<DecisionListContext> = {}) =>
+  ctx({
+    termId: "t-26f",
+    startTermIds: ["t-27w", "t-27s"],
+    startTermCandidates: TERMS,
+    hiringEmails: { "decision:Accepted": { subject: "Welcome", body: "Starting in {{startTerm}}." } },
+    ...over,
+  });
+const withApp = (id: string, startTermId: string | null) =>
+  decision(id, {
+    domainApplication: {
+      domain: { name: "Design" },
+      application: { id: `app-${id}`, startTermId, user: { firstName: "Ada", lastName: "Lovelace" }, startTerm: null },
+    },
+  });
+
+function ListsWithSetter({ initial, context, termId }: { initial: PendingDecision[]; context: DecisionListContext; termId: string }) {
+  const decisions = usePendingDecisions(initial);
+  return (
+    <>
+      <button type="button" onClick={() => decisions.setStartTerm(initial[0]!, termId)}>
+        set term
+      </button>
+      <DecisionList kind="outcomes" decisions={decisions} ctx={context} />
+    </>
+  );
 }
 
 const fetchMock = vi.fn();
@@ -73,6 +107,49 @@ describe("DecisionList", () => {
 
   it("disables release for a decision whose email is not written", () => {
     const { container } = renderDom(<Lists initial={[decision("f1")]} kind="outcomes" context={ctx({ hiringEmails: {} })} />);
+    expect(getButton(container, "Release").disabled).toBe(true);
+  });
+
+  it("holds back an acceptance with no start term when the cycle offers a choice", () => {
+    const { container } = renderDom(<Lists initial={[withApp("f1", null)]} kind="outcomes" context={choiceCtx()} />);
+    expect(getButton(container, "Release").disabled).toBe(true);
+    expect(container.textContent).toContain("Release all (0)");
+    expect(container.textContent).toContain("No start term");
+  });
+
+  it("releases an acceptance whose applicant picked a start term", () => {
+    const { container } = renderDom(<Lists initial={[withApp("f1", "t-27s")]} kind="outcomes" context={choiceCtx()} />);
+    expect(getButton(container, "Release").disabled).toBe(false);
+    expect(container.textContent).toContain("Release all (1)");
+  });
+
+  it("does not hold back an acceptance whose email doesn't quote {{startTerm}}", () => {
+    const context = choiceCtx({ hiringEmails: { "decision:Accepted": { subject: "Welcome", body: "Hi {{firstName}}" } } });
+    const { container } = renderDom(<Lists initial={[withApp("f1", null)]} kind="outcomes" context={context} />);
+    expect(getButton(container, "Release").disabled).toBe(false);
+  });
+
+  it("shows no start term picker on a cycle without start terms (Lab members)", () => {
+    const { container } = renderDom(<Lists initial={[withApp("f1", null)]} kind="outcomes" context={ctx()} />);
+    expect(container.textContent).not.toContain("No start term");
+    expect(container.textContent).not.toContain("Cycle default");
+  });
+
+  it("sets a start term and then lets the acceptance release", async () => {
+    fetchMock.mockResolvedValue({ ok: true, json: () => Promise.resolve({ startTermId: "t-27w" }) });
+    const { container } = renderDom(<ListsWithSetter initial={[withApp("f1", null)]} context={choiceCtx()} termId="t-27w" />);
+    await act(async () => getButton(container, "set term").click());
+    expect(fetchMock).toHaveBeenCalledWith("/api/hiring/decisions/f1/start-term", expect.objectContaining({ method: "POST", credentials: "include" }));
+    expect(String(fetchMock.mock.calls[0][1].body)).toBe("termId=t-27w");
+    expect(getButton(container, "Release").disabled).toBe(false);
+    expect(container.textContent).toContain("Release all (1)");
+  });
+
+  it("toasts the server error and keeps the release held when setting a start term fails", async () => {
+    fetchMock.mockResolvedValue({ ok: false, status: 400, json: () => Promise.resolve({ error: "Unknown term" }) });
+    const { container } = renderDom(<ListsWithSetter initial={[withApp("f1", null)]} context={choiceCtx()} termId="t-nope" />);
+    await act(async () => getButton(container, "set term").click());
+    expect(toastError).toHaveBeenCalledWith("Unknown term");
     expect(getButton(container, "Release").disabled).toBe(true);
   });
 

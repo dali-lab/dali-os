@@ -227,7 +227,8 @@ export function SetupTab({
         hiringEmails={data.hiringEmails ?? {}}
         canEdit={!!data.viewerIsCore}
         dates={{
-          startTermCode: data.termOptions?.find((t) => t.id === cycle.termId)?.code ?? null,
+          startTermCode:
+            data.startTermCandidates?.find((t) => t.id === (cycle.startTermIds?.[0] ?? cycle.termId))?.code ?? null,
           offerRespondBy: cycle.offerRespondBy ? new Date(cycle.offerRespondBy) : null,
           waitlistRespondBy: cycle.waitlistRespondBy ? new Date(cycle.waitlistRespondBy) : null,
         }}

@@ -19,6 +19,7 @@ import { Checkbox } from "~/components/ui/Checkbox";
 import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 import { effectiveStartTermId, eligibleStartTerms } from "~/hiring/lib/start-terms";
+import { setApplicationStartTerm } from "~/hiring/lib/start-terms.server";
 import { resolvePhotoUrl } from "~/lib/photo";
 import {
   sendOnboardingReminders,
@@ -115,7 +116,7 @@ async function loadOnboardingRows(args: {
   // cycle's own term), so it can no longer be derived from the cycle list.
   const [cycleRows, termRows] = await Promise.all([
     prisma.applicationCycle.findMany({
-      select: { id: true, name: true, termId: true },
+      select: { id: true, name: true, termId: true, startTermIds: true },
       orderBy: { createdAt: "desc" },
     }),
     prisma.term.findMany({ select: { id: true, code: true, sortKey: true } }),
@@ -193,10 +194,11 @@ async function loadOnboardingRows(args: {
     const key = `${u.id}:${domainKey}:${cycle.id}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    // Their own pick, else the term their cycle ran in — the assumption the
-    // board made before start terms existed, so pre-feature rows don't move.
     const cycleTermId = cycleById.get(cycle.id)?.termId ?? null;
-    const startTermId = effectiveStartTermId(app, { termId: cycleTermId });
+    const startTermId = effectiveStartTermId(app, {
+      termId: cycleTermId,
+      startTermIds: cycleById.get(cycle.id)?.startTermIds ?? [],
+    });
     rawRows.push({
       userId: u.id,
       name: [u.firstName, u.lastName].filter(Boolean).join(" ") || u.daliEmail || u.id,
@@ -360,70 +362,21 @@ export async function action({ request }: Route.ActionArgs) {
     return Response.json({ ok: true, figmaInvited: invited });
   }
 
-  // Move one hire's start term, or clear it back to the cycle's own. Keyed on
-  // (user, cycle) rather than an application id so the board never has to hand
-  // one to the client.
-  //
-  // Deliberately NOT restricted to the cycle's offered startTermIds: that set is
-  // what applicants were given to choose from, and a deferral is an operator
-  // decision taken afterward, often to a term the cycle never advertised. The
-  // floor still holds — a start can move later, never earlier than the hiring.
   if (intent === "setStartTerm") {
     const userId = String(form.get("userId") ?? "");
     const cycleId = String(form.get("cycleId") ?? "");
-    const termId = String(form.get("termId") ?? "");
     if (!userId || !cycleId) {
       return Response.json({ error: "Missing userId or cycleId" }, { status: 400 });
     }
-
-    const application = await prisma.application.findUnique({
-      where: { userId_applicationCycleId: { userId, applicationCycleId: cycleId } },
-      select: { id: true, applicationCycle: { select: { term: { select: { sortKey: true } } } } },
-    });
-    if (!application) {
-      return Response.json({ error: "No application for that cycle" }, { status: 404 });
-    }
-
-    if (termId === "") {
-      await prisma.application.update({
-        where: { id: application.id },
-        data: { startTermId: null },
-      });
-      await logAuditEvent({
-        action: "application.start-term",
-        userId: auth.user.sub,
-        targetId: application.id,
-        metadata: { cycleId, applicantUserId: userId, startTermId: null },
-        request,
-      });
-      return Response.json({ ok: true, startTermId: null });
-    }
-
-    const term = await prisma.term.findUnique({
-      where: { id: termId },
-      select: { sortKey: true },
-    });
-    if (!term) return Response.json({ error: "Unknown term" }, { status: 400 });
-    const floor = application.applicationCycle.term?.sortKey ?? null;
-    if (floor != null && term.sortKey < floor) {
-      return Response.json(
-        { error: "A start term can't be before the term the cycle ran in." },
-        { status: 400 },
-      );
-    }
-
-    await prisma.application.update({
-      where: { id: application.id },
-      data: { startTermId: termId },
-    });
-    await logAuditEvent({
-      action: "application.start-term",
-      userId: auth.user.sub,
-      targetId: application.id,
-      metadata: { cycleId, applicantUserId: userId, startTermId: termId },
+    const result = await setApplicationStartTerm({
+      userId,
+      cycleId,
+      termId: String(form.get("termId") ?? ""),
+      actorId: auth.user.sub,
       request,
     });
-    return Response.json({ ok: true, startTermId: termId });
+    if (!result.ok) return Response.json({ error: result.error }, { status: result.status });
+    return Response.json({ ok: true, startTermId: result.startTermId });
   }
 
   if (intent === "remind") {
@@ -564,7 +517,7 @@ function StartTermCell({
           {
             value: "",
             label: row.startTermCode && row.cycleTermSortKey != null
-              ? `Cycle's term (${row.startTermCode})`
+              ? `Cycle default (${row.startTermCode})`
               : "Not set",
           },
           ...options.map((t) => ({ value: t.id, label: t.code })),
