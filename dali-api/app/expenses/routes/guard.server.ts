@@ -1,8 +1,5 @@
-import { redirect } from "react-router";
-import { redirectToLogin } from "~/lib/login-next";
-import { impersonationAllowsWrites, isImpersonating, isNonMember, requireAuth } from "~/lib/auth";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
-import { getUserRoles } from "~/lib/roles";
+import { impersonationAllowsWrites, isImpersonating } from "~/lib/auth";
+import { guardMemberFeature } from "~/lib/feature-guard.server";
 import { ExpenseError } from "../lib/errors";
 import { loadExpenseViewer } from "../lib/viewer.server";
 import { expenseAccessDenial, type ExpenseViewer } from "../lib/access";
@@ -18,24 +15,21 @@ export async function guardExpenses(
   request: Request,
   opts: { write: boolean; page: boolean },
 ): Promise<Guarded> {
-  const auth = await requireAuth(request);
-  if (!auth.ok) {
-    return { ok: false, response: opts.page ? redirectToLogin(request) : Response.json({ ok: false, error: "Sign in again to continue." }, { status: 401 }) };
-  }
-  const roles = await getUserRoles(auth.user.sub, request);
-  const denial = expenseAccessDenial({
-    isLabMemberOrAlum: !(await isNonMember(auth, request)),
-    isAlumni: roles.isAlumni,
-    readOnlyImpersonation: opts.write && isImpersonating(auth) && !impersonationAllowsWrites(),
+  const guard = await guardMemberFeature(request, {
+    flag: "expenses",
+    page: opts.page,
+    json: (error) => ({ ok: false, error }),
+    unauthorizedMessage: "Sign in again to continue.",
+    blockedMessage: "Expenses can't be changed while viewing as someone else.",
+    denial: ({ auth, roles, isMember }) => {
+      const denial = expenseAccessDenial({
+        isLabMemberOrAlum: isMember,
+        isAlumni: roles.isAlumni,
+        readOnlyImpersonation: opts.write && isImpersonating(auth) && !impersonationAllowsWrites(),
+      });
+      return denial === "impersonated_write" ? "blocked" : denial;
+    },
   });
-  if (denial === "non_member") {
-    return { ok: false, response: opts.page ? redirect("/portal") : Response.json({ ok: false, error: "Forbidden" }, { status: 403 }) };
-  }
-  if (denial === "alumni" || !(await isFeatureEnabled("expenses", auth.user.sub, roles, request))) {
-    return { ok: false, response: new Response("Not found", { status: 404 }) };
-  }
-  if (denial === "impersonated_write") {
-    return { ok: false, response: Response.json({ ok: false, error: "Expenses can't be changed while viewing as someone else." }, { status: 403 }) };
-  }
-  return { ok: true, viewer: await loadExpenseViewer(auth.user.sub, request) };
+  if (!guard.ok) return guard;
+  return { ok: true, viewer: await loadExpenseViewer(guard.userId, request) };
 }
