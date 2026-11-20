@@ -1,6 +1,9 @@
+const NUMERIC = /^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i;
+
 function escapeCell(raw: unknown): string {
   if (raw === null || raw === undefined) return "";
-  const s = String(raw);
+  let s = String(raw);
+  if (typeof raw !== "number" && /^[=+\-@\t\r]/.test(s) && !NUMERIC.test(s)) s = `'${s}`;
   if (/[",\r\n]/.test(s)) {
     return `"${s.replace(/"/g, '""')}"`;
   }

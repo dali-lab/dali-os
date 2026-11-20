@@ -14,7 +14,8 @@ vi.mock("~/lib/mobile-auth.server", async (importOriginal) => ({
 }));
 const flag = vi.fn();
 vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: (...a: unknown[]) => flag(...a) }));
-vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn().mockResolvedValue({}) }));
+const getUserRoles = vi.fn();
+vi.mock("~/lib/roles", () => ({ getUserRoles: (...a: unknown[]) => getUserRoles(...a) }));
 const getUploadPost = vi.fn();
 vi.mock("~/lib/s3.server", () => ({ getUploadPost: (...a: unknown[]) => getUploadPost(...a) }));
 const svc = vi.hoisted(() => ({
@@ -77,6 +78,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   requireMobileUser.mockResolvedValue({ ok: true, userId: "u1", auth: {} });
   flag.mockResolvedValue(true);
+  getUserRoles.mockResolvedValue({ isLabMemberOrAlum: true, isAlumni: false });
   svc.loadExpenseViewer.mockResolvedValue(viewer);
   getUploadPost.mockImplementation(async (key: string) => ({ url: "https://bucket", fields: { key } }));
 });
@@ -94,6 +96,35 @@ describe("gating", () => {
     ]);
     expect(results.map((r) => r.status)).toEqual([404, 404, 404, 404, 404, 404]);
     expect(svc.createFromReceipts).not.toHaveBeenCalled();
+  });
+
+  it("lets a current member through", async () => {
+    svc.listExpenses.mockResolvedValue([]);
+    expect((await call(listLoader, req("GET"))).status).toBe(200);
+  });
+
+  it("denies alumni with the same 404 shape on reads and writes", async () => {
+    getUserRoles.mockResolvedValue({ isLabMemberOrAlum: true, isAlumni: true });
+    const results = await Promise.all([call(listLoader, req("GET")), call(createAction, req("POST", { receiptKeys: ["k"] }))]);
+    expect(results.map((r) => r.status)).toEqual([404, 404]);
+    expect(await results[0]!.json()).toEqual({ error: "Not found" });
+    expect(svc.listExpenses).not.toHaveBeenCalled();
+    expect(svc.createFromReceipts).not.toHaveBeenCalled();
+  });
+
+  it("denies someone who is not a lab member", async () => {
+    getUserRoles.mockResolvedValue({ isLabMemberOrAlum: false, isAlumni: false });
+    expect((await call(listLoader, req("GET"))).status).toBe(404);
+  });
+
+  it("denies writes while impersonating but still allows reads", async () => {
+    requireMobileUser.mockResolvedValue({ ok: true, userId: "u1", auth: { impersonatedBy: "admin1" } });
+    const write = await call(createAction, req("POST", { receiptKeys: ["k"] }));
+    expect(write.status).toBe(403);
+    expect(await write.json()).toEqual({ error: "Expenses can't be changed while viewing as someone else." });
+    expect(svc.createFromReceipts).not.toHaveBeenCalled();
+    svc.listExpenses.mockResolvedValue([]);
+    expect((await call(listLoader, req("GET"))).status).toBe(200);
   });
 
   it("passes the member guard's response through", async () => {

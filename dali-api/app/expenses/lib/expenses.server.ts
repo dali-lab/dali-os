@@ -5,6 +5,7 @@ import { deleteObjects, getDownloadUrl, getObjectBytes, getObjectStream, headObj
 import { canFileOnCard, canViewExpense, expenseTabs, type ExpenseViewer } from "./access";
 import { suggestCategory, type CategorySuggestion } from "./categories";
 import { runChecks, type Check, type CheckReceipt } from "./checks";
+import { auditExpense } from "./audit.server";
 import { ExpenseError } from "./errors";
 import { extractReceipts, type ExtractedReceipt, type ReceiptExtraction } from "./extract.server";
 import { centsToDecimalString, formatCents, parseMoneyToCents } from "./money";
@@ -363,6 +364,7 @@ export async function createFromReceipts(actor: ExpenseViewer, keys: string[], o
     if (isUniqueViolation(e)) throw new ExpenseError("conflict", "One of those receipts is already on an expense.");
     throw e;
   }
+  await auditExpense(actor, "expense.create", created.id, { receipts: files.length, paidWith, cardId });
   return toDetail(await load(created.id), { urls: false });
 }
 
@@ -425,6 +427,7 @@ export async function createNoReceipt(actor: ExpenseViewer, fields: NoReceiptFie
     },
     select: { id: true },
   });
+  await auditExpense(actor, "expense.create", created.id, { noReceipt: true, paidWith, cardId, chargeId: chargeId ?? null });
   return toDetail(await load(created.id), { urls: false });
 }
 
@@ -487,7 +490,10 @@ export async function updateExpense(actor: ExpenseViewer, id: string, patch: Upd
     data.cardId = cardId;
   }
 
-  if (Object.keys(data).length > 0) await guardedUpdate(e, data);
+  if (Object.keys(data).length > 0) {
+    await guardedUpdate(e, data);
+    await auditExpense(actor, "expense.update", id, { fields: keys, coding: action === "update_coding" });
+  }
   return toDetail(await load(id), { urls: false });
 }
 
@@ -501,6 +507,7 @@ export async function submitExpense(actor: ExpenseViewer, id: string) {
     decidedAt: null,
     decisionNote: null,
   });
+  await auditExpense(actor, "expense.submit", id, { paidWith: e.paidWith, cardId: e.cardId });
   const recipients = await approverUserIds(e);
   const submitter = `${e.submitter.firstName} ${e.submitter.lastName}`.trim();
   await notifySafely({
@@ -516,6 +523,7 @@ export async function withdrawExpense(actor: ExpenseViewer, id: string) {
   const e = await loadVisible(actor, id);
   authorize(e, "withdraw", actor);
   await guardedUpdate(e, { status: "DRAFT", submittedAt: null, approverId: null, decidedAt: null, decisionNote: null });
+  await auditExpense(actor, "expense.withdraw", id);
   return toDetail(await load(id), { urls: false });
 }
 
@@ -524,6 +532,7 @@ export async function deleteDraft(actor: ExpenseViewer, id: string): Promise<voi
   authorize(e, "delete", actor);
   const r = await prisma.expense.deleteMany({ where: { id, status: "DRAFT" } });
   if (r.count !== 1) throw new ExpenseError("conflict", "This expense just changed. Reload and try again.");
+  await auditExpense(actor, "expense.delete", id, { merchant: e.merchant, receipts: e.receipts.length });
   await deleteObjects(e.receipts.map((x) => x.s3Key)).catch(() => undefined);
 }
 
@@ -561,6 +570,7 @@ export async function decideExpense(actor: ExpenseViewer, id: string, input: Dec
     await guardedUpdate(e, data);
   }
 
+  await auditExpense(actor, "expense.decide", id, { decision: input.decision, reviewOnly: action === "approve" && e.paidWith === "STAFF_CARD", note });
   await notifySafely({
     eventType: action === "approve" ? "expense.approved" : "expense.returned",
     createdByUserId: actor.userId,
@@ -578,6 +588,7 @@ export async function markPaid(actor: ExpenseViewer, id: string) {
   const e = await loadVisible(actor, id);
   authorize(e, "mark_paid", actor);
   await guardedUpdate(e, { status: "PAID", paidAt: new Date() });
+  await auditExpense(actor, "expense.paid", id);
   if (actor.userId !== e.submitterId) {
     await notifySafely({
       eventType: "expense.paid",

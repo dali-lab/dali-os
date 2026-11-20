@@ -76,6 +76,18 @@ describe("fetchLinkPreview deadline", () => {
     expect(destroyed.length).toBeGreaterThan(0);
   });
 
+  it("refuses a redirect to a private host without requesting it", async () => {
+    hoisted.get.mockReset();
+    hoisted.get.mockImplementation((_url: URL, _opts: unknown, cb: (res: unknown) => void) => {
+      const req = Object.assign(new EventEmitter(), { destroy: () => {} });
+      const res = Object.assign(new EventEmitter(), { statusCode: 302, headers: { location: "http://169.254.169.254/latest" }, resume: () => {} });
+      queueMicrotask(() => cb(res));
+      return req;
+    });
+    expect(await fetchLinkPreview("https://example.com/a")).toBeNull();
+    expect(hoisted.get).toHaveBeenCalledTimes(1);
+  });
+
   it("returns null for a malformed Location header instead of throwing", async () => {
     hoisted.get.mockImplementation((_url: URL, _opts: unknown, cb: (res: unknown) => void) => {
       const req = Object.assign(new EventEmitter(), { destroy: () => {} });

@@ -344,6 +344,20 @@ export const AUDIT_ACTIONS = [
   "listserv.config",
   "banner.save",
   "banner.delete",
+  "expense.create",
+  "expense.update",
+  "expense.submit",
+  "expense.withdraw",
+  "expense.delete",
+  "expense.decide",
+  "expense.paid",
+  "expense.card.create",
+  "expense.card.update",
+  "expense.card.archive",
+  "expense.category.create",
+  "expense.category.update",
+  "expense.category.archive",
+  "expense.statement.import",
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

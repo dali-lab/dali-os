@@ -25,6 +25,7 @@ const svc = vi.hoisted(() => ({
   listCharges: vi.fn(),
 }));
 const viewerMod = vi.hoisted(() => ({ loadExpenseViewer: vi.fn() }));
+const rolesMod = vi.hoisted(() => ({ getUserRoles: vi.fn() }));
 const s3 = vi.hoisted(() => ({
   isS3Configured: vi.fn(() => true),
   getUploadPost: vi.fn(async (key: string) => ({ url: "https://s3.test", fields: { key } })),
@@ -38,6 +39,7 @@ const exp = vi.hoisted(() => ({ exportExpensesCsv: vi.fn(), exportExpensesPdf: v
 
 vi.mock("~/expenses/lib/expenses.server", () => svc);
 vi.mock("~/expenses/lib/viewer.server", () => viewerMod);
+vi.mock("~/lib/roles", () => rolesMod);
 vi.mock("~/expenses/lib/export.server", () => exp);
 vi.mock("~/lib/s3.server", () => s3);
 
@@ -65,6 +67,7 @@ const call = (name: string, args: Record<string, unknown>) => tool(name).run(ctx
 beforeEach(() => {
   vi.clearAllMocks();
   viewerMod.loadExpenseViewer.mockResolvedValue(viewer);
+  rolesMod.getUserRoles.mockResolvedValue({ isLabMemberOrAlum: true, isAlumni: false });
   s3.isS3Configured.mockReturnValue(true);
 });
 
@@ -106,6 +109,37 @@ describe("tool definitions", () => {
     expect(ok("list_expenses", { scope: "everyone" })).toBe(false);
     expect(ok("import_card_statement", { cardId: "c", key: "k", mapping: { date: "d" } })).toBe(false);
     expect(ok("manage_expense_card", { action: "create", last4: "12345" })).toBe(false);
+  });
+});
+
+describe("access", () => {
+  const every: [string, Record<string, unknown>][] = [
+    ["list_expenses", {}],
+    ["get_expense", { expenseId: "e1" }],
+    ["create_expense_receipt_upload", { contentType: "image/jpeg", fileName: "a.jpg" }],
+    ["manage_expense", { action: "submit", expenseId: "e1" }],
+    ["decide_expense", { expenseId: "e1", decision: "approve" }],
+    ["list_expense_categories", {}],
+    ["list_expense_cards", {}],
+    ["export_expenses", { format: "csv" }],
+  ];
+
+  it("lets a current member through", async () => {
+    svc.listExpenses.mockResolvedValue([]);
+    await expect(call("list_expenses", {})).resolves.toEqual({ expenses: [] });
+  });
+
+  it.each([
+    ["alumni", { isLabMemberOrAlum: true, isAlumni: true }],
+    ["non-members", { isLabMemberOrAlum: false, isAlumni: false }],
+  ])("refuses %s on every tool without touching the services", async (_n, roles) => {
+    rolesMod.getUserRoles.mockResolvedValue(roles);
+    for (const [name, args] of every) {
+      await expect(call(name, args), name).rejects.toBeInstanceOf(McpForbiddenError);
+    }
+    expect(svc.listExpenses).not.toHaveBeenCalled();
+    expect(svc.listCategories).not.toHaveBeenCalled();
+    expect(s3.getUploadPost).not.toHaveBeenCalled();
   });
 });
 
