@@ -463,7 +463,7 @@ function MemberLayoutRoute() {
       <NavPreloader favorites={favorites} recents={recents} />
       <BannerHost scope="all" />
       <LaunchWelcome firstName={user.firstName || user.email.split('@')[0]} hasCalendarLink={hasCalendarLink} shouldShowTour={shouldShowTour} />
-      {alumniInvite ? <AlumniGameInvite variant={alumniInvite} firstName={user.firstName ?? ''} /> : null}
+      {alumniInvite ? <AlumniGameInvite firstName={user.firstName ?? ''} /> : null}
       <TimeZonePrompt userTimeZone={userTimeZone} userTimeZoneIsExplicit={userTimeZoneIsExplicit} dismissedZone={tzDismissedZone} />
       </ActivitiesProvider>
     </FeatureFlagsProvider>

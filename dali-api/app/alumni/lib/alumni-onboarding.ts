@@ -1,6 +1,6 @@
 import { AUTH_TILES, type AuthTile } from "~/components/auth/auth-tiles";
 
-export type AlumniInvite = "choice" | "onboarding" | "game";
+export type AlumniInvite = "choice";
 
 export const ONBOARDING_STEPS = 3;
 export const WALL_SIZE = 18;

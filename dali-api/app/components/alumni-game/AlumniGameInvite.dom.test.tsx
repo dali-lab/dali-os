@@ -14,7 +14,7 @@ function Where() {
   return createElement("span", { "data-testid": "where" }, useLocation().pathname);
 }
 
-function mount(variant?: "game" | "onboarding" | "choice") {
+function mount() {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -23,7 +23,7 @@ function mount(variant?: "game" | "onboarding" | "choice") {
       createElement(
         MemoryRouter,
         null,
-        createElement(AlumniGameInvite, { firstName: "Ada", variant }),
+        createElement(AlumniGameInvite, { firstName: "Ada" }),
         createElement(Where),
       ),
     ),
@@ -48,39 +48,30 @@ const pressText = (text: string) =>
   });
 
 describe("AlumniGameInvite", () => {
-  it("sends the game variant into the pixel lab", () => {
+  it("greets the alum by name and explains both paths", () => {
     mount();
-    expect(document.body.textContent).toContain("pixel version of the lab");
-    press("Walk the pixel lab");
-    expect(where()).toBe("/alumni/welcome");
-  });
-
-  it("sends the onboarding variant to the stepped flow, with no game mention", () => {
-    mount("onboarding");
     expect(document.body.textContent).toContain("Welcome back, Ada");
-    expect(document.body.textContent).not.toContain("pixel");
-    press("Finish my profile");
-    expect(where()).toBe("/alumni/onboarding");
+    expect(document.body.textContent).toContain("pixel version of the lab");
   });
 
-  it("offers both paths in the choice variant", () => {
-    mount("choice");
+  it("offers both paths", () => {
+    mount();
     pressText("Fill it in");
     expect(where()).toBe("/alumni/onboarding");
     act(() => root.unmount());
     container.remove();
-    mount("choice");
+    mount();
     pressText("Walk the pixel lab");
     expect(where()).toBe("/alumni/welcome");
   });
 
   it("stays quiet for the rest of the session after Later", () => {
-    mount("choice");
+    mount();
     press("Later");
     expect(document.body.textContent).not.toContain("Fill it in");
     act(() => root.unmount());
     container.remove();
-    mount("onboarding");
-    expect(document.body.textContent).not.toContain("Finish my profile");
+    mount();
+    expect(document.body.textContent).not.toContain("Fill it in");
   });
 });
