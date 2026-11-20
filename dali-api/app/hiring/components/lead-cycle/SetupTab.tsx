@@ -226,6 +226,11 @@ export function SetupTab({
         description="The email each released decision sends."
         hiringEmails={data.hiringEmails ?? {}}
         canEdit={!!data.viewerIsCore}
+        dates={{
+          startTermCode: data.termOptions?.find((t) => t.id === cycle.termId)?.code ?? null,
+          offerRespondBy: cycle.offerRespondBy ? new Date(cycle.offerRespondBy) : null,
+          waitlistRespondBy: cycle.waitlistRespondBy ? new Date(cycle.waitlistRespondBy) : null,
+        }}
         slots={[
           ...DECISION_EMAIL_SLOTS.filter(
             (slot) => hasInterviews || slot.type !== "InvitedToInterview",
