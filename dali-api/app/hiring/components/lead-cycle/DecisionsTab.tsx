@@ -19,6 +19,17 @@ import { type DecisionSlice, DECISION_SLICES } from "~/hiring/lib/decision-slice
 import type { PendingDecision } from "~/hiring/lib/lead-cycle-types";
 import type { LeadCycleData } from "~/hiring/lib/lead-cycle.server";
 
+async function postRelease(id: string): Promise<string | null> {
+  try {
+    const res = await fetch(`/api/hiring/decisions/${id}/release`, { method: "POST", credentials: "include" });
+    if (res.ok) return null;
+    const body = await res.json().catch(() => ({}));
+    return body.error ?? `Couldn't release (HTTP ${res.status}).`;
+  } catch {
+    return "Couldn't reach the server.";
+  }
+}
+
 export function usePendingDecisions(initial: PendingDecision[]) {
   const toast = useToast();
   const dialog = useDialog();
@@ -47,9 +58,25 @@ export function usePendingDecisions(initial: PendingDecision[]) {
     )
       return;
     setReleasing(d.id);
-    await fetch(`/api/hiring/decisions/${d.id}/release`, { method: "POST", credentials: "include" });
-    setPendingDecisions((prev) => prev.filter((p) => p.id !== d.id));
+    const error = await postRelease(d.id);
+    if (error) toast.error(error);
+    else setPendingDecisions((prev) => prev.filter((p) => p.id !== d.id));
     setReleasing(null);
+  }
+
+  async function releaseMany(ids: string[]) {
+    const released = new Set<string>();
+    const errors: string[] = [];
+    for (const id of ids) {
+      const error = await postRelease(id);
+      if (error) errors.push(error);
+      else released.add(id);
+    }
+    setPendingDecisions((prev) => prev.filter((p) => !released.has(p.id)));
+    if (errors.length > 0) {
+      const reasons = Array.from(new Set(errors)).join(" ");
+      toast.error(`Released ${released.size} of ${ids.length}. ${errors.length} couldn't be released: ${reasons}`);
+    }
   }
 
   async function finalizeDecisions(ids: string[]) {
@@ -85,6 +112,7 @@ export function usePendingDecisions(initial: PendingDecision[]) {
     typeFilter,
     setTypeFilter,
     confirmReleaseOne,
+    releaseMany,
     finalizeDecisions,
   };
 }
@@ -108,9 +136,9 @@ export function DecisionList({ kind, decisions, ctx }: { kind: DecisionSlice; de
   const os = useOsChrome();
   const dialog = useDialog();
   const {
-    pendingDecisions, setPendingDecisions, releasing, releasingAll, setReleasingAll, finalizing,
+    pendingDecisions, releasing, releasingAll, setReleasingAll, finalizing,
     previewDecisionId, setPreviewDecisionId, domainFilter, setDomainFilter, typeFilter, setTypeFilter,
-    confirmReleaseOne, finalizeDecisions,
+    confirmReleaseOne, releaseMany, finalizeDecisions,
   } = decisions;
 
   if (ctx.confidentialityRequired) {
@@ -166,12 +194,11 @@ export function DecisionList({ kind, decisions, ctx }: { kind: DecisionSlice; de
     )
       return;
     setReleasingAll(true);
-    for (const id of ids) {
-      await fetch(`/api/hiring/decisions/${id}/release`, { method: "POST", credentials: "include" });
+    try {
+      await releaseMany(ids);
+    } finally {
+      setReleasingAll(false);
     }
-    const releasedIds = new Set(ids);
-    setPendingDecisions((prev) => prev.filter((p) => !releasedIds.has(p.id)));
-    setReleasingAll(false);
   };
   const rowActions = (d: PendingDecision) => {
     if (d.stage === "Draft") {

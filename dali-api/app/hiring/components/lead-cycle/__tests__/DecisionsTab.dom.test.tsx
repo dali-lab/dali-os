@@ -85,6 +85,57 @@ describe("DecisionList", () => {
     expect(container.textContent).not.toContain("Ada Lovelace");
   });
 
+  it("keeps a decision in the list and toasts the server error when its release is refused", async () => {
+    confirm.mockResolvedValue(true);
+    fetchMock.mockResolvedValue({ ok: false, status: 409, json: () => Promise.resolve({ error: "Set the offer response date first." }) });
+    const { container } = renderDom(<Lists initial={[decision("f1")]} kind="outcomes" context={ctx()} />);
+    await act(async () => getButton(container, "Release").click());
+    expect(toastError).toHaveBeenCalledWith("Set the offer response date first.");
+    expect(container.textContent).toContain("Ada Lovelace");
+  });
+
+  it("keeps a decision in the list when the release request can't reach the server", async () => {
+    confirm.mockResolvedValue(true);
+    fetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
+    const { container } = renderDom(<Lists initial={[decision("f1")]} kind="outcomes" context={ctx()} />);
+    await act(async () => getButton(container, "Release").click());
+    expect(toastError).toHaveBeenCalledWith("Couldn't reach the server.");
+    expect(container.textContent).toContain("Ada Lovelace");
+  });
+
+  it("removes only the decisions that released and names why the rest didn't", async () => {
+    confirm.mockResolvedValue(true);
+    fetchMock.mockImplementation((url: string) =>
+      Promise.resolve(
+        url.includes("/r1/")
+          ? { ok: true }
+          : { ok: false, status: 409, json: () => Promise.resolve({ error: "Set the offer response date first." }) },
+      ),
+    );
+    const initial = [
+      decision("r1", { type: "Rejected", domainApplication: { domain: { name: "Design" }, application: { user: { firstName: "Bea", lastName: "Byte" }, startTerm: null } } }),
+      decision("a1"),
+      decision("a2", { domainApplication: { domain: { name: "Design" }, application: { user: { firstName: "Cy", lastName: "Coder" }, startTerm: null } } }),
+    ];
+    const context = ctx({ hiringEmails: { "decision:Accepted": { subject: "s", body: "b" }, "decision:Rejected": { subject: "s", body: "b" } } });
+    const { container } = renderDom(<Lists initial={initial} kind="outcomes" context={context} />);
+    await act(async () => getButton(container, "Release all (3)").click());
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(container.textContent).not.toContain("Bea Byte");
+    expect(container.textContent).toContain("Ada Lovelace");
+    expect(container.textContent).toContain("Cy Coder");
+    expect(toastError).toHaveBeenCalledWith("Released 1 of 3. 2 couldn't be released: Set the offer response date first.");
+  });
+
+  it("releases all without an error toast when every release succeeds", async () => {
+    confirm.mockResolvedValue(true);
+    fetchMock.mockResolvedValue({ ok: true });
+    const { container } = renderDom(<Lists initial={[decision("a1")]} kind="outcomes" context={ctx()} />);
+    await act(async () => getButton(container, "Release all (1)").click());
+    expect(toastError).not.toHaveBeenCalled();
+    expect(container.textContent).not.toContain("Ada Lovelace");
+  });
+
   it("uses the stronger warning when an acceptance would close an open sibling application", async () => {
     confirm.mockResolvedValue(false);
     const d = decision("f1", { openSiblingDomains: [{ name: "Web", closeDate: null }] });
