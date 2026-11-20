@@ -56,8 +56,7 @@ test.describe('portal home dashboard', () => {
   }) => {
     await loginAs({ netId: 'f007al1' });
     await page.goto('/portal');
-    // Asserted on text, not on a heading role: the redesigned home (the
-    // education-redesign-v2 flag) titles its cards with a span.
+    // Asserted on text, not on a heading role: the home titles its cards with a span.
     await expect(page.getByText('Apply to DALI').first()).toBeVisible();
     // The education card always links into the catalog. The rail's own
     // Education row is a button, so this can only match the card.

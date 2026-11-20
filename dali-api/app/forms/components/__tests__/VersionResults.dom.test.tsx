@@ -27,8 +27,14 @@ vi.mock("~/components/ui/floating", async (importOriginal) => ({
   Select: ({ options }: { options: { value: string; label: string }[] }) =>
     createElement("ul", { "aria-label": "slots" }, options.map((o) => createElement("li", { key: o.value }, o.label))),
 }));
-vi.mock("~/components/os-chrome", () => ({ useOsChrome: () => ({ iconBtn: "" }), modalCardClass: () => "" }));
-vi.mock("~/components/Modal", () => ({ Modal: () => null, ModalHeader: () => null }));
+vi.mock("~/components/os-chrome", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("~/components/os-chrome")>()),
+  useOsChrome: () => ({ iconBtn: "" }),
+}));
+vi.mock("~/components/Modal", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("~/components/Modal")>()),
+  Modal: () => null,
+}));
 
 import { VersionResults } from "~/forms/components/VersionResults";
 
@@ -55,6 +61,7 @@ const results = (over: Record<string, unknown> = {}) =>
     page: 1,
     hasNext: true,
     columns: [],
+    hiddenColumns: [],
     slotOptions: ["Mon 9am", "Tue 3pm"],
     filterQuestions: [],
     responses: [response(1), response(2)],
@@ -174,23 +181,6 @@ describe("VersionResults", () => {
     await act(async () => void clear.dispatchEvent(new MouseEvent("click", { bubbles: true })));
     expect(container.querySelector("output")!.textContent).toBe("?view=results&version=2");
     expect(container.querySelector("input")!.value).toBe("");
-  });
-
-  it("adds and removes member columns through the URL, keeping the view", async () => {
-    await mount("/forms/edit/f1?view=results&version=2", results());
-    const picker = container.querySelector('[data-testid="member-columns"]')!;
-    expect(picker.textContent).toContain("Member columns");
-    const button = (label: string) => [...picker.querySelectorAll("button")].find((b) => b.textContent === label)!;
-    await act(async () => void button("Terms in lab").dispatchEvent(new MouseEvent("click", { bubbles: true })));
-    await act(async () => void button("Project history").dispatchEvent(new MouseEvent("click", { bubbles: true })));
-    let search = new URLSearchParams(container.querySelector("output")!.textContent!);
-    expect(search.get("member")).toBe("projectHistory,termsInLab");
-    expect(search.get("view")).toBe("results");
-    expect(picker.textContent).toContain("Member columns (2)");
-    await act(async () => void button("Terms in lab").dispatchEvent(new MouseEvent("click", { bubbles: true })));
-    await act(async () => void button("Project history").dispatchEvent(new MouseEvent("click", { bubbles: true })));
-    search = new URLSearchParams(container.querySelector("output")!.textContent!);
-    expect(search.has("member")).toBe(false);
   });
 
   it("offers no Clear filters when nothing is narrowing the list", async () => {

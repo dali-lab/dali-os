@@ -31,7 +31,6 @@ export type AiTask =
   | "resumeExtract"
   | "receiptExtract"
   | "releaseNotes"
-  | "projectTldr"
   | "alumniChat";
 
 type ModelTier = "sonnet" | "haiku";
@@ -46,7 +45,6 @@ export const AI_TASKS: Record<AiTask, { tier: ModelTier; effort?: Effort; prefer
   meetingNotes: { tier: "sonnet", effort: "low" },
   email: { tier: "sonnet", effort: "low", prefer: "dartmouth" },
   releaseNotes: { tier: "sonnet", effort: "low", prefer: "dartmouth" },
-  projectTldr: { tier: "haiku", effort: "low", prefer: "dartmouth" },
   // In-character chat replies for the alumni lab game; cheap and chatty.
   alumniChat: { tier: "haiku", effort: "low", prefer: "dartmouth" },
 };
