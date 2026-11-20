@@ -1,14 +1,14 @@
 import { impersonationAllowsWrites, isImpersonating } from "~/lib/auth";
 import { guardMemberFeature } from "~/lib/feature-guard.server";
-import { ExpenseError } from "../lib/errors";
+import { isHttpError } from "~/lib/http-error";
 import { loadExpenseViewer } from "../lib/viewer.server";
 import { expenseAccessDenial, type ExpenseViewer } from "../lib/access";
 
 export type Guarded = { ok: true; viewer: ExpenseViewer } | { ok: false; response: Response };
 
 export function failure(e: unknown): Response {
-  if (e instanceof ExpenseError) return Response.json({ ok: false, error: e.message }, { status: e.status });
-  throw e;
+  if (!isHttpError(e)) throw e;
+  return Response.json({ ok: false, error: e.message }, { status: e.status });
 }
 
 export async function guardExpenses(

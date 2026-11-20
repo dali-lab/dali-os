@@ -47,7 +47,12 @@ import { ExpenseError } from "~/expenses/lib/errors";
 import { FEATURE_FLAGS } from "~/lib/feature-flags";
 import { validateInput } from "~/lib/mcp-input";
 import type { McpCtx } from "~/mcp/registry";
-import { McpForbiddenError, McpInvalidError, McpNotFoundError } from "~/mcp/errors";
+import { mapToolError } from "~/mcp/errors";
+
+const FORBIDDEN = -32003;
+const NOT_FOUND = -32004;
+const INVALID = -32602;
+const code = (p: Promise<unknown>) => p.then(() => null, (e) => mapToolError(e)?.code ?? null);
 import { EXPENSES_TOOLS } from "..";
 
 const ctx: McpCtx = {
@@ -135,7 +140,7 @@ describe("access", () => {
   ])("refuses %s on every tool without touching the services", async (_n, roles) => {
     rolesMod.getUserRoles.mockResolvedValue(roles);
     for (const [name, args] of every) {
-      await expect(call(name, args), name).rejects.toBeInstanceOf(McpForbiddenError);
+      expect(await code(call(name, args), name)).toBe(FORBIDDEN);
     }
     expect(svc.listExpenses).not.toHaveBeenCalled();
     expect(svc.listCategories).not.toHaveBeenCalled();
@@ -152,12 +157,12 @@ describe("list_expenses", () => {
   });
 
   it("rejects a bad date", async () => {
-    await expect(call("list_expenses", { to: "yesterday" })).rejects.toBeInstanceOf(McpInvalidError);
+    expect(await code(call("list_expenses", { to: "yesterday" }))).toBe(INVALID);
   });
 
   it("maps a scope the viewer lacks to forbidden", async () => {
     svc.listExpenses.mockRejectedValue(new ExpenseError("forbidden", "Only Core can see every expense."));
-    await expect(call("list_expenses", { scope: "all" })).rejects.toBeInstanceOf(McpForbiddenError);
+    expect(await code(call("list_expenses", { scope: "all" }))).toBe(FORBIDDEN);
   });
 });
 
@@ -170,7 +175,7 @@ describe("get_expense", () => {
 
   it("hides an expense the caller can't see as not found", async () => {
     svc.getExpense.mockRejectedValue(new ExpenseError("not_found", "Expense not found."));
-    await expect(call("get_expense", { expenseId: "x" })).rejects.toBeInstanceOf(McpNotFoundError);
+    expect(await code(call("get_expense", { expenseId: "x" }))).toBe(NOT_FOUND);
   });
 });
 
@@ -183,12 +188,12 @@ describe("create_expense_receipt_upload", () => {
   });
 
   it("rejects HEIC and other types", async () => {
-    await expect(call("create_expense_receipt_upload", { contentType: "image/heic", fileName: "a.heic" })).rejects.toBeInstanceOf(McpInvalidError);
+    expect(await code(call("create_expense_receipt_upload", { contentType: "image/heic", fileName: "a.heic" }))).toBe(INVALID);
   });
 
   it("fails clearly when storage is off", async () => {
     s3.isS3Configured.mockReturnValue(false);
-    await expect(call("create_expense_receipt_upload", { contentType: "image/png", fileName: "a.png" })).rejects.toBeInstanceOf(McpInvalidError);
+    expect(await code(call("create_expense_receipt_upload", { contentType: "image/png", fileName: "a.png" }))).toBe(INVALID);
   });
 });
 
@@ -201,16 +206,16 @@ describe("manage_expense", () => {
   });
 
   it("create without receipts or noReceipt is rejected", async () => {
-    await expect(call("manage_expense", { action: "create" })).rejects.toBeInstanceOf(McpInvalidError);
+    expect(await code(call("manage_expense", { action: "create" }))).toBe(INVALID);
   });
 
   it("create with another user's receipt key maps forbidden", async () => {
     svc.createFromReceipts.mockRejectedValue(new ExpenseError("forbidden", "That receipt upload isn't yours."));
-    await expect(call("manage_expense", { action: "create", receiptKeys: ["uploads/expense-receipts/u2/x"] })).rejects.toBeInstanceOf(McpForbiddenError);
+    expect(await code(call("manage_expense", { action: "create", receiptKeys: ["uploads/expense-receipts/u2/x"] }))).toBe(FORBIDDEN);
   });
 
   it("create with noReceipt needs a reason and files without receipts", async () => {
-    await expect(call("manage_expense", { action: "create", noReceipt: true })).rejects.toBeInstanceOf(McpInvalidError);
+    expect(await code(call("manage_expense", { action: "create", noReceipt: true }))).toBe(INVALID);
     svc.createNoReceipt.mockResolvedValue({ id: "e2" });
     await call("manage_expense", { action: "create", noReceipt: true, noReceiptReason: "Lost it", total: "20", chargeId: "ch1" });
     expect(svc.createNoReceipt).toHaveBeenCalledWith(viewer, { totalCents: 2000 }, "Lost it", "ch1");
@@ -242,7 +247,7 @@ describe("manage_expense", () => {
   });
 
   it("rejects an amount that is not a decimal string", async () => {
-    await expect(call("manage_expense", { action: "update", expenseId: "e1", total: "twelve" })).rejects.toBeInstanceOf(McpInvalidError);
+    expect(await code(call("manage_expense", { action: "update", expenseId: "e1", total: "twelve" }))).toBe(INVALID);
   });
 
   it("routes each lifecycle action to its service function", async () => {
@@ -262,9 +267,9 @@ describe("manage_expense", () => {
 
   it("maps service rejections: forbidden, conflict", async () => {
     svc.markPaid.mockRejectedValue(new ExpenseError("forbidden", "no"));
-    await expect(call("manage_expense", { action: "mark_paid", expenseId: "e1" })).rejects.toBeInstanceOf(McpForbiddenError);
+    expect(await code(call("manage_expense", { action: "mark_paid", expenseId: "e1" }))).toBe(FORBIDDEN);
     svc.submitExpense.mockRejectedValue(new ExpenseError("invalid_status" as never, "Can't submit."));
-    await expect(call("manage_expense", { action: "submit", expenseId: "e1" })).rejects.toBeInstanceOf(McpInvalidError);
+    expect(await code(call("manage_expense", { action: "submit", expenseId: "e1" }))).toBe(INVALID);
   });
 });
 
@@ -276,13 +281,13 @@ describe("decide_expense", () => {
   });
 
   it("requires a note to return", async () => {
-    await expect(call("decide_expense", { expenseId: "e1", decision: "return", note: "  " })).rejects.toBeInstanceOf(McpInvalidError);
+    expect(await code(call("decide_expense", { expenseId: "e1", decision: "return", note: "  " }))).toBe(INVALID);
     expect(svc.decideExpense).not.toHaveBeenCalled();
   });
 
   it("maps self approval to forbidden", async () => {
     svc.decideExpense.mockRejectedValue(new ExpenseError("self_approval", "You can't approve your own expense."));
-    await expect(call("decide_expense", { expenseId: "e1", decision: "approve" })).rejects.toBeInstanceOf(McpForbiddenError);
+    expect(await code(call("decide_expense", { expenseId: "e1", decision: "approve" }))).toBe(FORBIDDEN);
   });
 });
 
@@ -317,7 +322,7 @@ describe("categories and cards", () => {
     await expect(call("manage_expense_card", { action: "create", nickname: "Lab" })).rejects.toThrow(/last4, ownerId/);
     await expect(call("manage_expense_card", { action: "archive" })).rejects.toThrow(/cardId/);
     svc.createCard.mockRejectedValue(new ExpenseError("forbidden", "Only Core can change cards and categories."));
-    await expect(call("manage_expense_card", { action: "create", nickname: "Lab", last4: "1234", ownerId: "u9" })).rejects.toBeInstanceOf(McpForbiddenError);
+    expect(await code(call("manage_expense_card", { action: "create", nickname: "Lab", last4: "1234", ownerId: "u9" }))).toBe(FORBIDDEN);
   });
 
   it("manage_expense_category create, update, archive", async () => {
@@ -334,7 +339,7 @@ describe("categories and cards", () => {
   it("manage_expense_category requires fields and maps forbidden", async () => {
     await expect(call("manage_expense_category", { action: "create" })).rejects.toThrow(/label/);
     svc.archiveCategory.mockRejectedValue(new ExpenseError("forbidden", "Only Core"));
-    await expect(call("manage_expense_category", { action: "archive", categoryId: "k1" })).rejects.toBeInstanceOf(McpForbiddenError);
+    expect(await code(call("manage_expense_category", { action: "archive", categoryId: "k1" }))).toBe(FORBIDDEN);
   });
 });
 
@@ -349,13 +354,13 @@ describe("statements", () => {
   });
 
   it("create_card_statement_upload rejects a member who doesn't own the card", async () => {
-    await expect(call("create_card_statement_upload", { cardId: "c1", fileName: "march.csv" })).rejects.toBeInstanceOf(McpForbiddenError);
+    expect(await code(call("create_card_statement_upload", { cardId: "c1", fileName: "march.csv" }))).toBe(FORBIDDEN);
   });
 
   it("create_card_statement_upload allows Core and rejects non-csv names", async () => {
     viewerMod.loadExpenseViewer.mockResolvedValue({ ...viewer, isCore: true });
     await expect(call("create_card_statement_upload", { cardId: "c1", fileName: "march.csv" })).resolves.toBeTruthy();
-    await expect(call("create_card_statement_upload", { cardId: "c1", fileName: "march.xlsx" })).rejects.toBeInstanceOf(McpInvalidError);
+    expect(await code(call("create_card_statement_upload", { cardId: "c1", fileName: "march.xlsx" }))).toBe(INVALID);
   });
 
   it("import_card_statement reads the upload, imports, then deletes it", async () => {
@@ -369,9 +374,9 @@ describe("statements", () => {
   });
 
   it("import_card_statement rejects another user's key without reading it", async () => {
-    await expect(
-      call("import_card_statement", { cardId: "c1", key: "uploads/expense-statements/u2/abc.csv", mapping: { date: "a", merchant: "b", amount: "c" } }),
-    ).rejects.toBeInstanceOf(McpForbiddenError);
+    expect(
+      await code(call("import_card_statement", { cardId: "c1", key: "uploads/expense-statements/u2/abc.csv", mapping: { date: "a", merchant: "b", amount: "c" } })),
+    ).toBe(FORBIDDEN);
     expect(s3.headObject).not.toHaveBeenCalled();
     expect(s3.deleteObject).not.toHaveBeenCalled();
   });
@@ -380,13 +385,13 @@ describe("statements", () => {
     s3.headObject.mockResolvedValue({ sizeBytes: 10, contentType: "text/csv" });
     s3.getObjectBytes.mockResolvedValue({ body: Buffer.from("x") });
     svc.importStatement.mockRejectedValue(new ExpenseError("forbidden", "Only the card owner or Core can import a statement."));
-    await expect(call("import_card_statement", { cardId: "c1", key: ownKey, mapping: { date: "a", merchant: "b", amount: "c" } })).rejects.toBeInstanceOf(McpForbiddenError);
+    expect(await code(call("import_card_statement", { cardId: "c1", key: ownKey, mapping: { date: "a", merchant: "b", amount: "c" } }))).toBe(FORBIDDEN);
     expect(s3.deleteObject).toHaveBeenCalledWith(ownKey);
   });
 
   it("import_card_statement reports a missing upload as invalid", async () => {
     s3.headObject.mockResolvedValue(null);
-    await expect(call("import_card_statement", { cardId: "c1", key: ownKey, mapping: { date: "a", merchant: "b", amount: "c" } })).rejects.toBeInstanceOf(McpInvalidError);
+    expect(await code(call("import_card_statement", { cardId: "c1", key: ownKey, mapping: { date: "a", merchant: "b", amount: "c" } }))).toBe(INVALID);
   });
 
   it("list_card_charges returns decimals and passes filters", async () => {
@@ -399,7 +404,7 @@ describe("statements", () => {
 
   it("list_card_charges maps a non-owner to forbidden", async () => {
     svc.listCharges.mockRejectedValue(new ExpenseError("forbidden", "Only the card owner or Core can see a card's charges."));
-    await expect(call("list_card_charges", { cardId: "c1" })).rejects.toBeInstanceOf(McpForbiddenError);
+    expect(await code(call("list_card_charges", { cardId: "c1" }))).toBe(FORBIDDEN);
   });
 });
 
@@ -425,7 +430,7 @@ describe("export_expenses", () => {
 
   it("writes nothing when the scope is forbidden", async () => {
     exp.exportExpensesCsv.mockRejectedValue(new ExpenseError("forbidden", "Only Core can see every expense."));
-    await expect(call("export_expenses", { format: "csv", scope: "all" })).rejects.toBeInstanceOf(McpForbiddenError);
+    expect(await code(call("export_expenses", { format: "csv", scope: "all" }))).toBe(FORBIDDEN);
     expect(s3.putObject).not.toHaveBeenCalled();
   });
 });

@@ -1,7 +1,7 @@
 import type { Route } from "./+types/expenses.upload";
-import { createReceiptUpload, ReceiptKeyError } from "../lib/receipts.server";
+import { createReceiptUpload } from "../lib/receipts.server";
 import { MAX_RECEIPT_FILES } from "../components/receipt-upload";
-import { guardExpenses } from "./guard.server";
+import { failure, guardExpenses } from "./guard.server";
 
 export async function action({ request }: Route.ActionArgs) {
   if (request.method !== "POST") return Response.json({ ok: false, error: "Method not allowed" }, { status: 405 });
@@ -20,7 +20,6 @@ export async function action({ request }: Route.ActionArgs) {
     const uploads = await Promise.all((types as string[]).map((t) => createReceiptUpload(guard.viewer.userId, t)));
     return Response.json({ ok: true, uploads });
   } catch (e) {
-    if (e instanceof ReceiptKeyError) return Response.json({ ok: false, error: e.message }, { status: 400 });
-    throw e;
+    return failure(e);
   }
 }
