@@ -5,7 +5,7 @@ vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
 vi.mock("~/lib/login-next", () => ({ redirectToLogin: vi.fn(() => new Response(null, { status: 302 })) }));
 vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn() }));
 vi.mock("~/lib/read-only-roles.server", () => ({ readOnlyRoles: vi.fn() }));
-vi.mock("~/lib/alumni-onboarding.server", () => ({
+vi.mock("~/alumni/lib/alumni-onboarding.server", () => ({
   loadOnboarding: vi.fn(),
   finishOnboarding: vi.fn(),
   saveAbout: vi.fn(),
@@ -14,8 +14,8 @@ vi.mock("~/lib/alumni-onboarding.server", () => ({
   saveStudy: vi.fn(),
   saveWorkSlot: vi.fn(),
 }));
-vi.mock("~/lib/alumni-history.server", () => ({ reportHistoryCorrection: vi.fn() }));
-vi.mock("~/lib/contact-email.server", () => ({
+vi.mock("~/alumni/lib/alumni-history.server", () => ({ reportHistoryCorrection: vi.fn() }));
+vi.mock("~/members/lib/contact-email.server", () => ({
   listContactEmailOptions: vi.fn(),
   runContactEmailIntent: vi.fn(),
 }));
@@ -45,7 +45,7 @@ import { requireAuth } from "~/lib/auth";
 import { getUserRoles } from "~/lib/roles";
 import { readOnlyRoles } from "~/lib/read-only-roles.server";
 import { BadRequestError } from "~/lib/http-error";
-import { listContactEmailOptions, runContactEmailIntent } from "~/lib/contact-email.server";
+import { listContactEmailOptions, runContactEmailIntent } from "~/members/lib/contact-email.server";
 import {
   finishOnboarding,
   loadOnboarding,
@@ -54,8 +54,8 @@ import {
   saveHometown,
   saveStudy,
   saveWorkSlot,
-} from "~/lib/alumni-onboarding.server";
-import { reportHistoryCorrection } from "~/lib/alumni-history.server";
+} from "~/alumni/lib/alumni-onboarding.server";
+import { reportHistoryCorrection } from "~/alumni/lib/alumni-history.server";
 import { ProfileValidationError } from "~/members/lib/profile-update.server";
 import { action, loader } from "../alumni.onboarding";
 

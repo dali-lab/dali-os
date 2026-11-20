@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("~/lib/resource-hub.server", () => ({ requireResourceHubViewer: vi.fn() }));
+vi.mock("~/resource-hub/lib/resource-hub.server", () => ({ requireResourceHubViewer: vi.fn() }));
 vi.mock("~/lib/link-preview.server", () => ({ fetchLinkPreview: vi.fn() }));
 
-import { requireResourceHubViewer } from "~/lib/resource-hub.server";
+import { requireResourceHubViewer } from "~/resource-hub/lib/resource-hub.server";
 import { fetchLinkPreview } from "~/lib/link-preview.server";
 import { _resetForTests } from "~/lib/rate-limit";
 import { action } from "~/routes/api.link-preview";

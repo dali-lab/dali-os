@@ -54,7 +54,7 @@ import {
   sendFreshAlumniInvite,
   sendLaunchInvite,
   FRESH_LINK_COOLDOWN_MS,
-} from "~/lib/alumni-invite.server";
+} from "~/alumni/lib/alumni-invite.server";
 
 beforeEach(() => {
   rows = [];

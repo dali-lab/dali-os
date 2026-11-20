@@ -27,7 +27,7 @@ vi.mock("~/lib/layout-reads.server", () => ({
   layoutRoles: vi.fn(),
 }));
 vi.mock("~/lib/feature-flags.server", () => ({ resolveFeatureFlags: vi.fn() }));
-vi.mock("~/lib/alumni-onboarding.server", () => ({ alumniInviteFor: vi.fn() }));
+vi.mock("~/alumni/lib/alumni-onboarding.server", () => ({ alumniInviteFor: vi.fn() }));
 vi.mock("~/lib/activities.server", () => ({ resolveActiveActivitiesForUser: vi.fn() }));
 vi.mock("~/lib/server-timing", () => ({
   timed: (_request: Request, _name: string, run: () => unknown) => run(),
@@ -40,7 +40,7 @@ import { getActiveCycles } from "~/hiring/lib/cycles";
 import { layoutAppGate, layoutFavorites, layoutFormGate, layoutRoles } from "~/lib/layout-reads.server";
 import { loadShellUser } from "~/lib/shell-user.server";
 import { resolveFeatureFlags } from "~/lib/feature-flags.server";
-import { alumniInviteFor } from "~/lib/alumni-onboarding.server";
+import { alumniInviteFor } from "~/alumni/lib/alumni-onboarding.server";
 import { resolveActiveActivitiesForUser } from "~/lib/activities.server";
 import { publicDocRedirectForPath } from "~/lib/public-doc.server";
 import { redirectToLogin } from "~/lib/login-next";

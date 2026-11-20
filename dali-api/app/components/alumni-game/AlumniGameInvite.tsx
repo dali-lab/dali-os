@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { Modal } from "~/components/Modal";
 import { Button } from "~/components/ui/Button";
-import type { AlumniInvite } from "~/lib/alumni-onboarding";
+import type { AlumniInvite } from "~/alumni/lib/alumni-onboarding";
 
 const DISMISS_KEY = "dalios-alumni-game-invite-dismissed-v1";
 

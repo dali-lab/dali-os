@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("~/lib/db.server", () => ({ prisma: { resourceHubPage: { findMany: vi.fn(), create: vi.fn() } } }));
-vi.mock("~/lib/resource-hub.server", () => ({ hubDomainOptions: vi.fn(), ledDomainIds: vi.fn(), requireResourceHubViewer: vi.fn() }));
+vi.mock("~/resource-hub/lib/resource-hub.server", () => ({ hubDomainOptions: vi.fn(), ledDomainIds: vi.fn(), requireResourceHubViewer: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
-import { hubDomainOptions, ledDomainIds, requireResourceHubViewer } from "~/lib/resource-hub.server";
+import { hubDomainOptions, ledDomainIds, requireResourceHubViewer } from "~/resource-hub/lib/resource-hub.server";
 import { action, loader } from "~/routes/resource-hub";
 
 const db = vi.mocked(prisma, true);

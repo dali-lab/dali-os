@@ -6,7 +6,7 @@ const db = vi.hoisted(() => ({
 const hub = vi.hoisted(() => ({ resourceHubViewer: vi.fn(), ledDomainIds: vi.fn() }));
 
 vi.mock("~/lib/db.server", () => ({ prisma: db }));
-vi.mock("~/lib/resource-hub.server", () => hub);
+vi.mock("~/resource-hub/lib/resource-hub.server", () => hub);
 
 import { searchResourceHubs } from "../resource-hub-search.server";
 

@@ -37,7 +37,7 @@ import {
 } from '~/lib/layout-reads.server'
 import { resolveFeatureFlags } from '~/lib/feature-flags.server'
 import { AlumniGameInvite } from '~/components/alumni-game/AlumniGameInvite'
-import { alumniInviteFor } from '~/lib/alumni-onboarding.server'
+import { alumniInviteFor } from '~/alumni/lib/alumni-onboarding.server'
 import { FeatureFlagsProvider } from '~/components/FeatureFlags'
 import { resolveActiveActivitiesForUser } from '~/lib/activities.server'
 import { ActivitiesProvider } from '~/components/activities/ActivitiesProvider'

@@ -1,5 +1,5 @@
 import type { Route } from "./+types/api.link-preview";
-import { requireResourceHubViewer } from "~/lib/resource-hub.server";
+import { requireResourceHubViewer } from "~/resource-hub/lib/resource-hub.server";
 import { fetchLinkPreview } from "~/lib/link-preview.server";
 import { limitLinkPreviews } from "~/lib/link-preview-limit.server";
 

@@ -1,6 +1,6 @@
 import type { Prisma } from "~/generated/prisma/client";
 import { prisma } from "~/lib/db.server";
-import { ledDomainIds, resourceHubViewer } from "~/lib/resource-hub.server";
+import { ledDomainIds, resourceHubViewer } from "~/resource-hub/lib/resource-hub.server";
 import { buildUrl, rankResults, type SearchResult } from "~/lib/search";
 
 type Like = { contains: string; mode: "insensitive" };

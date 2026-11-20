@@ -29,7 +29,7 @@ import {
 import { ensureBlocks } from "./legacy/pm-to-blocknote";
 import { ydocToBlocks } from "./read";
 import { deriveBlogPreview } from "~/blog/lib/blog-preview";
-import { canEditResourceHub } from "~/lib/resource-hub.server";
+import { canEditResourceHub } from "~/resource-hub/lib/resource-hub.server";
 
 export interface CollabSource {
   // Initial content for a brand-new room (no CollabDocument row yet). Returns
