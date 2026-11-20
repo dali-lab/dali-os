@@ -8,7 +8,6 @@
 import { prisma } from "~/lib/db.server";
 import { fullName } from "~/lib/display";
 import { getUserRoles, isLabMemberOrAlum } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { getUploadPost, headObject, isS3Configured } from "~/lib/s3.server";
 import { fileMatchesAccept, uploadCapForKey } from "~/lib/file-validation";
 import {
@@ -160,14 +159,11 @@ export const MANAGE_GALLERY_POST_DEF = {
   requiredScope: "mcp:write" as const,
 };
 
-// The web route's gate: members and alumni, behind the `community` flag.
+// The web route's gate: members and alumni.
 export async function galleryViewerFor(ctx: McpCtx): Promise<GalleryViewer> {
   const { id } = ctx.user;
   if (!(await isLabMemberOrAlum(id, ctx.request))) throw new McpForbiddenError();
   const roles = await getUserRoles(id, ctx.request);
-  if (!(await isFeatureEnabled("community", id, roles, ctx.request))) {
-    throw new McpForbiddenError("The gallery is not available");
-  }
   return { id, core: roles.isCore, name: fullName(ctx.user) || ctx.user.daliEmail || "" };
 }
 

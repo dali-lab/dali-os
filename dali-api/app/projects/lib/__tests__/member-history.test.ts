@@ -2,7 +2,6 @@ import { describe, it, expect } from "vitest";
 import {
   currentRoleText,
   hiredRolesText,
-  parseMemberColumns,
   projectHistoryText,
   termsInLabText,
   type MemberHistory,
@@ -133,19 +132,5 @@ describe("hiredRolesText", () => {
         ],
       }),
     ).toBe("Engineering (P2), Design (P1)");
-  });
-});
-
-describe("parseMemberColumns", () => {
-  it("keeps known columns in display order and drops anything else", () => {
-    expect(parseMemberColumns(new URLSearchParams("member=currentRole,nope,projectHistory,hiredRoles"))).toEqual([
-      "hiredRoles",
-      "projectHistory",
-      "currentRole",
-    ]);
-  });
-
-  it("is empty without the param", () => {
-    expect(parseMemberColumns(new URLSearchParams(""))).toEqual([]);
   });
 });

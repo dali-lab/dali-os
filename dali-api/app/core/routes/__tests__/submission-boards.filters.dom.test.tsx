@@ -43,11 +43,6 @@ vi.mock("~/projects/lib/form-slots", () => ({
 vi.mock("~/projects/lib/submission-view.server", () => ({
   buildSubmissionView: vi.fn(),
 }));
-vi.mock("~/projects/components/SlotAdvancedSettingsModal", () => ({
-  SlotAdvancedSettingsModal: () => null,
-}));
-const flags = vi.hoisted(() => ({ responseTable: false }));
-vi.mock("~/components/FeatureFlags", () => ({ useFeatureFlag: () => flags.responseTable }));
 vi.mock("~/components/ui/toast", () => ({
   useToast: () => Object.assign(vi.fn(), { error: vi.fn(), success: vi.fn(), info: vi.fn() }),
 }));
@@ -132,11 +127,6 @@ async function mount(board: (typeof BOARDS)[number], entry: string = board.path)
 const picker = () =>
   document.querySelector<HTMLButtonElement>("button[aria-label='Filter by term']");
 
-const advancedSettings = () =>
-  Array.from(document.querySelectorAll("button")).find((b) =>
-    b.textContent?.includes("Advanced settings"),
-  );
-
 const domainPicker = () =>
   document.querySelector<HTMLButtonElement>("button[aria-label='Filter by domain']");
 
@@ -159,7 +149,6 @@ async function pick(label: string, trigger = picker) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  flags.responseTable = false;
   vi.mocked(requireAuth).mockResolvedValue({
     ok: true,
     user: { sub: "u1" },
@@ -231,15 +220,13 @@ describe.each(BOARDS)("$name term picker", (board) => {
     });
   });
 
-  it("offers All terms, which reads every cycle and hides Advanced settings", async () => {
+  it("offers All terms, which reads every cycle", async () => {
     await mount(board);
-    expect(advancedSettings()).toBeTruthy();
     await pick("All terms");
     expect(picker()?.textContent).toContain("All terms");
     expect(vi.mocked(buildSubmissionView).mock.lastCall?.[0]).toMatchObject({
       cycleIds: ["cycle-t-26f", "cycle-t-26s"],
     });
-    expect(advancedSettings()).toBeUndefined();
   });
 });
 
@@ -285,38 +272,6 @@ describe.each(BOARDS)("$name domain filter", (board) => {
     expect(domainPicker()?.textContent).toContain("Engineering");
     expect(text()).not.toContain("Ada Example");
     expect(text()).toContain("Grace Example");
-  });
-});
-
-describe("Level Up row links", () => {
-  const levelUpBoard = BOARDS.find((b) => b.name === "Level Up")!;
-  const memberLink = () =>
-    Array.from(document.querySelectorAll<HTMLAnchorElement>("a")).find(
-      (a) => a.textContent === "Ada Example",
-    );
-
-  beforeEach(() => {
-    vi.mocked(getSlotBinding).mockResolvedValue(BINDING as never);
-    vi.mocked(buildSubmissionView).mockResolvedValue({
-      rows: [row("ada", "Ada Example", ["d-design"])],
-      tableColumns: [],
-    } as never);
-  });
-
-  it("carry the current term to the member's page", async () => {
-    await mount(levelUpBoard);
-    expect(memberLink()?.getAttribute("href")).toBe("/core/level-up/ada?term=t-26f");
-  });
-
-  it("carry a picked term to the member's page", async () => {
-    await mount(levelUpBoard);
-    await pick("26S");
-    expect(memberLink()?.getAttribute("href")).toBe("/core/level-up/ada?term=t-26s");
-  });
-
-  it("carry All terms to the member's page", async () => {
-    await mount(levelUpBoard, `${levelUpBoard.path}?term=${ALL_TERMS}`);
-    expect(memberLink()?.getAttribute("href")).toBe("/core/level-up/ada?term=all");
   });
 });
 
@@ -386,9 +341,8 @@ describe.each(BOARDS)("$name search and column filters in the URL", (board) => {
   });
 });
 
-describe.each(BOARDS)("$name with the response table", (board) => {
+describe.each(BOARDS)("$name response table", (board) => {
   beforeEach(() => {
-    flags.responseTable = true;
     vi.mocked(getSlotBinding).mockResolvedValue({ ...BINDING, gateAudience: "Members" } as never);
     vi.mocked(buildSubmissionView).mockResolvedValue({
       rows: [
@@ -410,9 +364,8 @@ describe.each(BOARDS)("$name with the response table", (board) => {
       (b) => b.textContent === "Ada Example",
     );
 
-  it("says which form it collects with in place of Advanced settings", async () => {
+  it("says which form it collects with", async () => {
     await mount(board);
-    expect(advancedSettings()).toBeUndefined();
     expect(text()).toContain("Collecting with Staffing form");
     expect(text()).toContain("Open");
     expect(text()).toContain("Locks the app for returning members");

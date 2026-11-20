@@ -1,20 +1,12 @@
 import { expenseAccessDenial } from "~/expenses/lib/access";
-import { ExpenseError } from "~/expenses/lib/errors";
 import { getUserRoles } from "~/lib/roles";
 import { centsToDecimalString, parseMoneyToCents } from "~/expenses/lib/money";
 import { loadExpenseViewer } from "~/expenses/lib/viewer.server";
 import type { ExpenseViewer } from "~/expenses/lib/access";
 import type { McpCtx } from "../../registry";
-import { McpForbiddenError, McpInvalidError, McpNotFoundError } from "../../errors";
+import { McpForbiddenError, McpInvalidError } from "../../errors";
 
 export const EXPENSES_FLAG = "expenses" as const;
-
-export function toMcpError(err: unknown): unknown {
-  if (!(err instanceof ExpenseError)) return err;
-  if (err.status === 403) return new McpForbiddenError(err.message);
-  if (err.status === 404) return new McpNotFoundError(err.message);
-  return new McpInvalidError(err.message);
-}
 
 export async function requireExpenseAccess(ctx: McpCtx): Promise<void> {
   const roles = await getUserRoles(ctx.user.id, ctx.request);
@@ -24,11 +16,7 @@ export async function requireExpenseAccess(ctx: McpCtx): Promise<void> {
 
 export async function withViewer<T>(ctx: McpCtx, fn: (viewer: ExpenseViewer) => Promise<T>): Promise<T> {
   await requireExpenseAccess(ctx);
-  try {
-    return await fn(await loadExpenseViewer(ctx.user.id, ctx.request));
-  } catch (err) {
-    throw toMcpError(err);
-  }
+  return fn(await loadExpenseViewer(ctx.user.id, ctx.request));
 }
 
 /** Replaces every `fooCents` number with a `foo` decimal string, deeply. */

@@ -1,3 +1,4 @@
+import { HttpError } from "~/lib/http-error";
 import type { PageKind, WorkspaceType } from "~/generated/prisma/client";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { canEditProject } from "~/lib/project-access";
@@ -12,12 +13,9 @@ export type RenamablePage = {
   kind: PageKind;
 };
 
-export class PageRenameError extends Error {
-  constructor(
-    message: string,
-    public status: number,
-  ) {
-    super(message);
+export class PageRenameError extends HttpError {
+  constructor(message: string, status: number) {
+    super(status, message);
     this.name = "PageRenameError";
   }
 }

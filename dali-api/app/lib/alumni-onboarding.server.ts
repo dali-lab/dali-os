@@ -15,25 +15,14 @@ import {
   type OpenToChoices,
 } from "~/lib/alumni-onboarding";
 
-export async function alumniInviteFor(
-  userId: string,
-  isAlumni: boolean,
-  flags: { "alumni-onboarding": boolean; "alumni-game": boolean },
-): Promise<AlumniInvite | null> {
+export async function alumniInviteFor(userId: string, isAlumni: boolean): Promise<AlumniInvite | null> {
   if (!isAlumni) return null;
-  if (flags["alumni-onboarding"]) {
-    const row = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { alumniOnboardedAt: true },
-    });
-    if (!row || row.alumniOnboardedAt !== null) return null;
-    return flags["alumni-game"] ? "choice" : "onboarding";
-  }
-  if (flags["alumni-game"]) {
-    const avatar = await prisma.pixelAvatar.findUnique({ where: { userId }, select: { userId: true } });
-    return avatar === null ? "game" : null;
-  }
-  return null;
+  const row = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { alumniOnboardedAt: true },
+  });
+  if (!row || row.alumniOnboardedAt !== null) return null;
+  return "choice";
 }
 
 export type WorkSlot = { id: string; position: string; company: string; location: string | null; year: number | null };

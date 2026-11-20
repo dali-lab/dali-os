@@ -6,16 +6,19 @@ import { createMemoryRouter, RouterProvider } from "react-router";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-vi.mock("~/components/ui/floating", () => ({
+vi.mock("~/components/ui/floating", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("~/components/ui/floating")>()),
   Tooltip: ({ children }: { children: React.ReactNode }) => children,
   Select: () => null,
   MultiSelect: () => null,
   Popover: () => null,
 }));
-vi.mock("~/components/os-chrome", () => ({ useOsChrome: () => ({ iconBtn: "" }), modalCardClass: () => "" }));
+vi.mock("~/components/os-chrome", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("~/components/os-chrome")>()),
+  useOsChrome: () => ({ iconBtn: "" }),
+}));
 vi.mock("~/components/Modal", () => ({
   Modal: ({ open, children }: { open: boolean; children: React.ReactNode }) => (open ? children : null),
-  ModalHeader: ({ subtitle }: { subtitle?: string }) => createElement("p", { "data-testid": "subtitle" }, subtitle),
   MODAL_TITLE_CLASS: "",
   ModalFooter: ({ children }: { children: React.ReactNode }) => children,
 }));
@@ -53,6 +56,7 @@ async function open(over: Record<string, unknown> = {}) {
     page: 1,
     hasNext: false,
     columns: [],
+    hiddenColumns: [],
     slotOptions: [],
     filterQuestions: [],
     responses: [response(over)],
@@ -106,7 +110,7 @@ describe("VersionResults delete and edited marker", () => {
   it("marks an edited response in the table and the detail", async () => {
     await open({ edited: true });
     expect(container.querySelector("td")!.parentElement!.textContent).toContain("Edited");
-    expect(container.querySelector('[data-testid="subtitle"]')!.textContent).toContain("Edited");
+    expect(container.textContent!.match(/Edited/g)!.length).toBeGreaterThanOrEqual(2);
   });
 
   it("shows no marker on an untouched response", async () => {

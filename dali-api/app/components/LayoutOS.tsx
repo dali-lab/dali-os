@@ -220,15 +220,11 @@ export function LayoutOS({
     isAlumni,
     isNewMember,
   }
-  // The `community` flag adds the Community area and moves Community into it, so
-  // every nav matcher below has to be handed the same map.
+  // Every nav matcher below has to be handed the same map.
   const navFlags = {
-    community: useFeatureFlag('community'),
     'onboarding-journeys': useFeatureFlag('onboarding-journeys'),
     'resource-hub': useFeatureFlag('resource-hub'),
     'refer-a-partner': useFeatureFlag('refer-a-partner'),
-    'core-taskboard': useFeatureFlag('core-taskboard'),
-    'alumni-game': useFeatureFlag('alumni-game'),
     expenses: useFeatureFlag('expenses'),
     paperwork: useFeatureFlag('paperwork'),
   }

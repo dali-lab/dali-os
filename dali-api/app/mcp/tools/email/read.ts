@@ -5,7 +5,7 @@ import { folderQuery, mailFolder } from "~/email/lib/folders";
 import { parseFeedCursor } from "~/email/lib/feed";
 import { htmlToText } from "~/email/lib/ai-prompts";
 import { getMailboxToken, getThread, listLabels, MailboxError } from "~/email/lib/gmail-mailbox.server";
-import { getThreadLink } from "~/email/lib/mail-index.server";
+import { loadThreadAnnotations } from "~/email/lib/thread-annotations.server";
 import type { McpCtx } from "../../registry";
 import { McpInvalidError } from "../../errors";
 import { labelNamer, mcpMailAccount, mcpMailAccounts, UNTRUSTED_NOTE, withGmail } from "./shared";
@@ -148,27 +148,15 @@ export async function runGetMailThread(ctx: McpCtx, args: Record<string, unknown
     const [messages, labels] = await Promise.all([getThread(token, threadId), listLabels(token)]);
     return { messages, labels };
   });
-  const [comments, drafts, link] = await Promise.all([
-    prisma.mailComment.findMany({
-      where: { accountId: account.id, threadId },
-      orderBy: { createdAt: "asc" },
-      include: { author: { select: { firstName: true, lastName: true } } },
-    }),
+  const [{ comments, linkedUser }, drafts] = await Promise.all([
+    loadThreadAnnotations(account, threadId),
     prisma.mailDraft.findMany({
       where: { accountId: account.id, threadId, ...draftVisibleTo(ctx.user.id) },
       orderBy: { updatedAt: "desc" },
       include: { createdBy: { select: { firstName: true, lastName: true } } },
     }),
-    account.kind === "Shared" ? getThreadLink(account.id, threadId) : null,
   ]);
-  let applicantLink: { name: string; source: string } | null = null;
-  if (link && "userId" in link) {
-    const user = await prisma.user.findUnique({
-      where: { id: link.userId },
-      select: { firstName: true, lastName: true },
-    });
-    if (user) applicantLink = { name: fullName(user), source: link.source };
-  }
+  const applicantLink = linkedUser ? { name: fullName(linkedUser), source: linkedUser.source } : null;
   const name = labelNamer(labels);
   return {
     subject: messages[0]?.subject ?? "",

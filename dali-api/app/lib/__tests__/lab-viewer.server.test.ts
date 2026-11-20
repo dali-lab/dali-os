@@ -75,23 +75,23 @@ describe("requireLabViewer", () => {
   });
 
   it("lets a current member through with auth, user, userId and roles", async () => {
-    const out = await requireLabViewer(req, { flag: "community" });
+    const out = await requireLabViewer(req, { flag: "release-notes" });
     expect(out.userId).toBe("u1");
     expect(out.user).toBe(user);
     expect(out.roles.isLabMemberOrAlum).toBe(true);
     expect(mocks.getUserRoles).toHaveBeenCalledWith("u1", req);
-    expect(mocks.isFeatureEnabled).toHaveBeenCalledWith("community", "u1", out.roles, req);
+    expect(mocks.isFeatureEnabled).toHaveBeenCalledWith("release-notes", "u1", out.roles, req);
   });
 
   it("lets alumni with a member row through", async () => {
     mocks.getUserRoles.mockResolvedValue(roles({ isAlumni: true }));
-    const out = await requireLabViewer(req, { flag: "community", allow: labMemberOrCore });
+    const out = await requireLabViewer(req, { flag: "release-notes", allow: labMemberOrCore });
     expect(out.userId).toBe("u1");
   });
 
   it("404s a member when the flag is off", async () => {
     mocks.isFeatureEnabled.mockResolvedValue(false);
-    const res = await thrown(requireLabViewer(req, { flag: "community" }));
+    const res = await thrown(requireLabViewer(req, { flag: "release-notes" }));
     expect(res.status).toBe(404);
   });
 
@@ -102,7 +102,7 @@ describe("requireLabViewer", () => {
 
   it("404s when allow rejects, before checking the flag", async () => {
     mocks.getUserRoles.mockResolvedValue(roles({ isLabMemberOrAlum: false }));
-    const res = await thrown(requireLabViewer(req, { flag: "community", allow: labMemberOrCore }));
+    const res = await thrown(requireLabViewer(req, { flag: "release-notes", allow: labMemberOrCore }));
     expect(res.status).toBe(404);
     expect(mocks.isFeatureEnabled).not.toHaveBeenCalled();
   });

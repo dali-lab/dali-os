@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   requireCommunityViewer: vi.fn(),
-  requireLabViewer: vi.fn(),
   checkRateLimit: vi.fn(),
   resolveJobLink: vi.fn(),
   storeLogo: vi.fn(),
@@ -10,7 +9,6 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("~/community/lib/community.server", () => ({ requireCommunityViewer: mocks.requireCommunityViewer }));
-vi.mock("~/lib/lab-viewer.server", () => ({ requireLabViewer: mocks.requireLabViewer }));
 vi.mock("~/lib/rate-limit", () => ({ checkRateLimit: mocks.checkRateLimit }));
 vi.mock("~/community/lib/job-link.server", async () => ({
   resolveJobLink: mocks.resolveJobLink,
@@ -30,7 +28,6 @@ const req = (url: string) => {
 beforeEach(() => {
   vi.resetAllMocks();
   mocks.requireCommunityViewer.mockResolvedValue({ user: { sub: "u1" }, core: false });
-  mocks.requireLabViewer.mockResolvedValue({});
   mocks.checkRateLimit.mockReturnValue(null);
 });
 
@@ -40,13 +37,6 @@ describe("POST resolve-link", () => {
     mocks.requireCommunityViewer.mockRejectedValue(denied);
     await expect(action({ request: req("https://x.com") })).rejects.toBe(denied);
     expect(mocks.resolveJobLink).not.toHaveBeenCalled();
-  });
-
-  it("requires the alumni-opportunities flag", async () => {
-    const denied = new Response("Not found", { status: 404 });
-    mocks.requireLabViewer.mockRejectedValue(denied);
-    await expect(action({ request: req("https://x.com") })).rejects.toBe(denied);
-    expect(mocks.requireLabViewer).toHaveBeenCalledWith(expect.any(Request), { flag: "alumni-opportunities" });
   });
 
   it("returns the rate limit response", async () => {

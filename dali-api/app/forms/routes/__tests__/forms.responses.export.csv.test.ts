@@ -18,15 +18,12 @@ vi.mock("~/forms/lib/version-responses.server", () => ({
   versionResponsesWhere: vi.fn(),
   memberColumnValues: vi.fn(),
 }));
-vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn() }));
-vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
 import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
 import { canBuildForm } from "~/forms/lib/form-access.server";
 import { memberColumnValues, versionResponsesWhere } from "~/forms/lib/version-responses.server";
 import { buildResponseGrid, responsesCsvRows, type FormAnswerRow } from "~/forms/lib/answer-rows.server";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { loader } from "~/forms/routes/forms.responses.$formId.export.csv";
 
 const db = prisma as unknown as {
@@ -85,8 +82,7 @@ describe("export.csv added columns", () => {
     } as never);
   });
 
-  it("exports the saved columns in order, renamed, without hidden ones, when the flag is on", async () => {
-    vi.mocked(isFeatureEnabled).mockResolvedValue(true);
+  it("exports the saved columns in order, renamed, without hidden ones", async () => {
     await call("version=2");
     expect(memberColumnValues).toHaveBeenCalledWith(["termsInLab"], ["u9"]);
     const [columns, responses] = vi.mocked(responsesCsvRows).mock.calls[0];
@@ -95,16 +91,6 @@ describe("export.csv added columns", () => {
       { key: "a", label: "Coming back?" },
     ]);
     expect(responses[0].rows).toEqual(member.rowsFor("u9"));
-  });
-
-  it("exports every question as asked when the flag is off", async () => {
-    vi.mocked(isFeatureEnabled).mockResolvedValue(false);
-    await call("version=2");
-    expect(memberColumnValues).toHaveBeenCalledWith([], ["u9"]);
-    expect(vi.mocked(responsesCsvRows).mock.calls[0][0]).toEqual([
-      { key: "a", label: "A" },
-      { key: "f", label: "F" },
-    ]);
   });
 });
 

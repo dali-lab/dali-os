@@ -3,7 +3,6 @@ import type { Route } from "./+types/core.milestones";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles, isCore } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { coreHandle } from "~/core/coreNav";
 import { localTodayUtcDay } from "~/projects/lib/timeline-days";
 import { loadMilestonesPage } from "~/core/lib/milestones-page.server";
@@ -25,10 +24,6 @@ async function gate(request: Request) {
   if (!auth.ok) return { response: redirectToLogin(request) } as const;
   if (!(await isCore(auth.user.sub, request))) return { response: redirect("/") } as const;
   const roles = await getUserRoles(auth.user.sub, request);
-  if (!(await isFeatureEnabled("core-taskboard", auth.user.sub, roles, request))) {
-    const embed = new URL(request.url).searchParams.has("embed");
-    return { response: redirect(embed ? "/core/staffing?embed=1" : "/core/staffing") } as const;
-  }
   return { userId: auth.user.sub, isAdmin: roles.isAdmin } as const;
 }
 

@@ -11,14 +11,12 @@ vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
   forbidden: vi.fn(() => new Response("Forbidden", { status: 403 })),
 }));
-vi.mock("~/lib/roles", () => ({ canManageStaffing: vi.fn(), getUserRoles: vi.fn() }));
-vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
+vi.mock("~/lib/roles", () => ({ canManageStaffing: vi.fn() }));
 vi.mock("~/forms/lib/public-form", () => ({ buildPublicForm: vi.fn(), submitStaffingFormFor: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { canManageStaffing } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { buildPublicForm, submitStaffingFormFor } from "~/forms/lib/public-form";
 import { action, loader } from "../api.staffing.responses";
 
@@ -35,7 +33,6 @@ beforeEach(() => {
   vi.resetAllMocks();
   vi.mocked(requireAuth).mockResolvedValue({ ok: true, user: { sub: "mgr" } } as never);
   vi.mocked(canManageStaffing).mockResolvedValue(true);
-  vi.mocked(isFeatureEnabled).mockResolvedValue(true);
   db.formSubmission.findMany.mockResolvedValue([{ userId: "m2" }]);
 });
 
@@ -43,12 +40,6 @@ describe("staffing responses access", () => {
   it("refuses someone who can't manage staffing", async () => {
     vi.mocked(canManageStaffing).mockResolvedValue(false);
     expect((await get("cycleId=c1&slot=intent-to-work&q=ada")).status).toBe(403);
-    expect((await post(BODY)).status).toBe(403);
-    expect(submitStaffingFormFor).not.toHaveBeenCalled();
-  });
-
-  it("refuses while the flag is off", async () => {
-    vi.mocked(isFeatureEnabled).mockResolvedValue(false);
     expect((await post(BODY)).status).toBe(403);
     expect(submitStaffingFormFor).not.toHaveBeenCalled();
   });

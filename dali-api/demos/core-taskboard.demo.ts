@@ -1,7 +1,6 @@
-import { expect, setFeatureFlag, test } from './lib/demo';
+import { expect, test } from './lib/demo';
 
 test('Core taskboard and term milestones', async ({ page, stage, loginAs }) => {
-  await setFeatureFlag('core-taskboard', true);
   await loginAs({ daliEmail: 'admin@dali.dartmouth.edu' });
   await expect(async () => {
     await page.goto('/core');

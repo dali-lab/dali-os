@@ -1,8 +1,7 @@
 import type { Route } from "./+types/expenses.export";
 import { csvResponse } from "~/lib/csv";
-import { ExpenseError } from "../lib/errors";
 import { exportExpensesCsv, exportExpensesPdf } from "../lib/export.server";
-import { guardExpenses } from "./guard.server";
+import { failure, guardExpenses } from "./guard.server";
 import { parseExpenseFilters, parseScope } from "../lib/filters";
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -31,7 +30,6 @@ export async function loader({ request }: Route.LoaderArgs) {
       },
     });
   } catch (e) {
-    if (e instanceof ExpenseError) return Response.json({ ok: false, error: e.message }, { status: e.status });
-    throw e;
+    return failure(e);
   }
 }

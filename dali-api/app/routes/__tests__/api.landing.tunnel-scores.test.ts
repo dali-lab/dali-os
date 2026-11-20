@@ -12,8 +12,9 @@ vi.mock("~/lib/tunnel-scores.server", () => ({
 }));
 
 import { requireMemberSession } from "~/lib/auth";
+import { _resetForTests } from "~/lib/rate-limit";
 import { logRun, readLeaderboard, recordScore } from "~/lib/tunnel-scores.server";
-import { action, loader } from "~/routes/api.landing.tunnel-scores";
+import { action, loader, TUNNEL_RUN_LIMIT } from "~/routes/api.landing.tunnel-scores";
 
 const URL = "http://os.test/api/landing/tunnel-scores";
 
@@ -25,6 +26,7 @@ function post(body: string, method = "POST") {
 
 beforeEach(() => {
   vi.resetAllMocks();
+  _resetForTests();
   vi.mocked(requireMemberSession).mockResolvedValue({ ok: true, auth: { user: { sub: "u1" } } } as never);
   vi.mocked(readLeaderboard).mockResolvedValue({ entries: [], you: null });
   vi.mocked(recordScore).mockResolvedValue({ entries: [], you: null, personalBest: true });
@@ -125,5 +127,29 @@ describe("the run log", () => {
     vi.mocked(requireMemberSession).mockResolvedValue({ ok: false, response: new Response(null, { status: 401 }) });
     await post(JSON.stringify({ score: 5 }));
     expect(logRun).not.toHaveBeenCalled();
+  });
+});
+
+describe("the run rate limit", () => {
+  it("answers 429 once a member passes the limit, without logging or recording", async () => {
+    for (let i = 0; i < TUNNEL_RUN_LIMIT.max; i++) expect((await post(JSON.stringify({ score: 1 }))).status).toBe(200);
+    vi.mocked(logRun).mockClear();
+    vi.mocked(recordScore).mockClear();
+    const res = await post(JSON.stringify({ score: 1 }));
+    expect(res.status).toBe(429);
+    expect(res.headers.get("Retry-After")).toBeTruthy();
+    expect(logRun).not.toHaveBeenCalled();
+    expect(recordScore).not.toHaveBeenCalled();
+  });
+
+  it("counts each member separately", async () => {
+    for (let i = 0; i < TUNNEL_RUN_LIMIT.max; i++) await post(JSON.stringify({ score: 1 }));
+    vi.mocked(requireMemberSession).mockResolvedValue({ ok: true, auth: { user: { sub: "u2" } } } as never);
+    expect((await post(JSON.stringify({ score: 1 }))).status).toBe(200);
+  });
+
+  it("does not count requests turned away before the limit check", async () => {
+    vi.mocked(requireMemberSession).mockResolvedValue({ ok: false, response: new Response(null, { status: 401 }) });
+    for (let i = 0; i < TUNNEL_RUN_LIMIT.max + 1; i++) expect((await post(JSON.stringify({ score: 1 }))).status).toBe(401);
   });
 });

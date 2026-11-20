@@ -1,8 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("~/lib/db.server", () => ({
-  prisma: { groupDefinition: { findUnique: vi.fn() }, page: { findMany: vi.fn() } },
-}));
 vi.mock("~/drive/lib/drive.server", () => ({
   loadDriveScope: vi.fn(),
   buildLinkedProcessMap: vi.fn(),
@@ -16,7 +13,6 @@ vi.mock("~/drive/lib/drive-roots.server", () => ({
   ensureAllRoots: vi.fn(),
 }));
 
-import { prisma } from "~/lib/db.server";
 import { loadDriveScope, buildLinkedProcessMap } from "~/drive/lib/drive.server";
 import { isImpersonating } from "~/lib/auth";
 import type { AuthSuccess } from "~/lib/auth";
@@ -27,7 +23,6 @@ import { loadSharedWithMe } from "~/drive/lib/drive-shared.server";
 import { favoriteSpaceItems, liftOrphans, loadDriveScopes } from "~/drive/lib/drive-scopes.server";
 import type { DriveItem } from "~/drive/lib/drive.server";
 
-const m = prisma as any;
 const VIEWER = { ok: true, user: { sub: "viewer" } } as unknown as AuthSuccess;
 
 const form = (id: string, parentFolderId: string | null): DriveItem => ({
@@ -102,8 +97,6 @@ describe("loadDriveScopes: process-root spaces", () => {
     folder("hiringForms", "hiringRoot"),
     folder("mentorRoot", null),
     doc("mentorNote", "mentorRoot"),
-    folder("legacyCore", null),
-    doc("legacyDoc", "legacyCore"),
     folder("general", null),
     doc("generalDoc", "general"),
   ];
@@ -138,8 +131,6 @@ describe("loadDriveScopes: process-root spaces", () => {
       ids: Object.values(ROOTS),
     });
     vi.mocked(getPageAccess).mockResolvedValue({ canView: true, canEdit: true, canComment: true });
-    m.groupDefinition.findUnique.mockResolvedValue({ id: "grp_core" });
-    m.page.findMany.mockResolvedValue([]);
   });
 
   it("lists the Core root's children at the top level and leaves the root out", async () => {
@@ -169,28 +160,7 @@ describe("loadDriveScopes: process-root spaces", () => {
 
   it("keeps every root, and its subtree, out of General", async () => {
     const scopes = await load();
-    expect(ids(scopes, "lab")).toEqual(["general", "generalDoc", "legacyCore", "legacyDoc"]);
-  });
-
-  it("still shows a not-yet-reparented Core-scoped top-level folder in Core, not General", async () => {
-    m.page.findMany.mockResolvedValue([
-      { id: "legacyCore", folderType: null },
-      { id: "coreRoot", folderType: "Root" },
-    ]);
-    const scopes = await load();
-    expect(ids(scopes, "core")).toEqual(["agreements", "coreNote", "legacyCore", "legacyDoc", "template"]);
-    expect(scopes.find((s) => s.id === "core")?.items.find((i) => i.id === "legacyCore")?.parentFolderId).toBeNull();
     expect(ids(scopes, "lab")).toEqual(["general", "generalDoc"]);
-  });
-
-  it("does not look for transitional folders for a non-Core viewer", async () => {
-    vi.mocked(getPageAccess).mockImplementation(async (_u: string, pageId: string) => ({
-      canView: pageId === "mentorRoot",
-      canEdit: false,
-      canComment: false,
-    }));
-    await load({ isCore: false });
-    expect(m.page.findMany).not.toHaveBeenCalled();
   });
 
   it("gives a viewer who cannot view a root no space for it, but still hides it from General", async () => {
@@ -295,7 +265,6 @@ describe("loadDriveScopes: Shared with me space", () => {
     vi.mocked(isImpersonating).mockReturnValue(false);
     vi.mocked(findAllRoots).mockResolvedValue({ byKey: {}, ids: [] } as any);
     vi.mocked(loadSharedWithMe).mockResolvedValue([]);
-    m.page.findMany.mockResolvedValue([]);
   });
 
   it("sits right after Favorites", async () => {
@@ -412,7 +381,6 @@ describe("loadDriveScopes: Favorites space", () => {
     vi.mocked(isImpersonating).mockReturnValue(false);
     vi.mocked(findAllRoots).mockResolvedValue({ byKey: {}, ids: [] } as any);
     vi.mocked(loadSharedWithMe).mockResolvedValue([]);
-    m.page.findMany.mockResolvedValue([]);
     vi.mocked(loadDriveScope).mockImplementation(async ({ scope }: any) => {
       if (scope.kind === "Member") return [item("mine-doc"), item("mine-other")];
       if (scope.kind === "Lab") return [item("lab-doc", "some-folder"), folder("some-folder", null)];
@@ -483,15 +451,12 @@ describe("loadDriveScopes: what starts without waiting for the Lab load", () => 
     vi.mocked(loadSharedWithMe).mockResolvedValue([]);
     vi.mocked(findAllRoots).mockResolvedValue({ byKey: ROOTS, ids: Object.values(ROOTS) });
     vi.mocked(getPageAccess).mockResolvedValue({ canView: true, canEdit: true, canComment: true });
-    m.groupDefinition.findUnique.mockResolvedValue({ id: "grp_core" });
-    m.page.findMany.mockResolvedValue([]);
   });
 
-  it("checks the roots and looks for legacy Core folders while the Lab load is pending", async () => {
+  it("checks the roots while the Lab load is pending", async () => {
     const pending = start();
     await vi.waitFor(() => {
       expect(getPageAccess).toHaveBeenCalledTimes(3);
-      expect(m.page.findMany).toHaveBeenCalled();
     });
     await finishLab([]);
     await pending;
@@ -564,13 +529,6 @@ describe("loadDriveScopes: what starts without waiting for the Lab load", () => 
     await finishLab([form("unfiled", null)]);
     const scopes = await pending;
     expect(scopes.find((s) => s.id === "lab")!.items[0]).toMatchObject({ id: "unfiled", favorited: true });
-  });
-
-  it("looks for legacy Core folders only for a Core viewer", async () => {
-    const pending = start({ isCore: false });
-    await finishLab([]);
-    await pending;
-    expect(m.groupDefinition.findUnique).not.toHaveBeenCalled();
   });
 
   it("builds spaces in registry order however the root checks finish", async () => {

@@ -17,7 +17,6 @@ import type { TimelineEvent, TimelineTerm } from "~/components/home/timeline/ter
 import { loadHomeEvents, loadTermProjects } from "~/members/lib/home-timeline.server";
 import { buttonClasses } from "~/components/ui/Button";
 import { readOnlyRoles } from "~/lib/read-only-roles.server";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { BirthdayLine, type BirthdayPerson } from "~/components/home/BirthdayLine";
 import SearchIcon from "~/components/home/landing/SearchIcon";
 import { isLandingBackgroundId, landingWeek } from "~/components/home/landing/backgrounds/schedule";
@@ -115,8 +114,7 @@ async function loadTimeline(
 }
 
 async function showsAlumniHome(userId: string, request: Request): Promise<boolean> {
-  const roles = await readOnlyRoles(userId, request);
-  return roles.isAlumni && (await isFeatureEnabled("alumni-home", userId, roles, request));
+  return (await readOnlyRoles(userId, request)).isAlumni;
 }
 
 async function loadBirthdaysToday(): Promise<BirthdayPerson[]> {

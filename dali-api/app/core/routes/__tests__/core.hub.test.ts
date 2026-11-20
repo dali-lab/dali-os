@@ -3,16 +3,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const m = vi.hoisted(() => ({
   requireAuth: vi.fn(),
   isCore: vi.fn(),
-  getUserRoles: vi.fn(),
-  isFeatureEnabled: vi.fn(),
   getOpenCycles: vi.fn(),
   isCoreCycleEligible: vi.fn(),
   loadCoreTaskboard: vi.fn(),
 }));
 vi.mock("~/lib/auth", () => ({ requireAuth: m.requireAuth }));
 vi.mock("~/lib/login-next", () => ({ redirectToLogin: () => new Response(null, { status: 302, headers: { Location: "/login" } }) }));
-vi.mock("~/lib/roles", () => ({ isCore: m.isCore, getUserRoles: m.getUserRoles }));
-vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: m.isFeatureEnabled }));
+vi.mock("~/lib/roles", () => ({ isCore: m.isCore }));
 vi.mock("~/hiring/lib/cycles", () => ({ getOpenCycles: m.getOpenCycles }));
 vi.mock("~/hiring/lib/core-hiring.server", () => ({ isCoreCycleEligible: m.isCoreCycleEligible }));
 vi.mock("~/core/lib/taskboard.server", () => ({ loadCoreTaskboard: m.loadCoreTaskboard }));
@@ -26,7 +23,6 @@ const location = (r: Response) => r.headers.get("Location");
 beforeEach(() => {
   vi.resetAllMocks();
   m.requireAuth.mockResolvedValue({ ok: true, user: { sub: "u1", firstName: "Ada", lastName: "Lovelace", email: "ada@example.edu" } });
-  m.getUserRoles.mockResolvedValue({ isCore: true });
   m.getOpenCycles.mockResolvedValue([]);
 });
 
@@ -44,17 +40,8 @@ describe("core hub loader", () => {
     expect(location(await run())).toBe("/core/apply");
   });
 
-  it("redirects Core to Staffing while the flag is off, keeping embed", async () => {
+  it("returns the board data to Core", async () => {
     m.isCore.mockResolvedValue(true);
-    m.isFeatureEnabled.mockResolvedValue(false);
-    expect(location(await run())).toBe("/core/staffing");
-    expect(location(await run("http://x/core?embed=1"))).toBe("/core/staffing?embed=1");
-    expect(m.isFeatureEnabled).toHaveBeenCalledWith("core-taskboard", "u1", { isCore: true }, expect.any(Request));
-  });
-
-  it("returns the board data to Core once the flag is on", async () => {
-    m.isCore.mockResolvedValue(true);
-    m.isFeatureEnabled.mockResolvedValue(true);
     m.loadCoreTaskboard.mockResolvedValue({ projectId: "core1", tasks: [], options: {} });
     expect(await run()).toEqual({
       projectId: "core1",

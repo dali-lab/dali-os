@@ -144,12 +144,20 @@ describe("pasting files", () => {
     expect(shape(editor).map((b) => b.type).slice(0, 2)).toEqual(["paragraph", "image"]);
   });
 
-  it("leaves the empty image block when the upload fails", async () => {
+  it("removes the placeholder block when the upload fails", async () => {
     const { editor } = editorWith([paragraph()], { upload: () => Promise.reject(new Error("Too big")) });
     editor.setTextCursorPosition(editor.document[0]!, "end");
     paste(editor, transfer({}, [png()]));
     await settle();
-    expect(shape(editor)[0]).toEqual({ type: "image", url: "" });
+    expect(editor.document.some((b) => b.type === "image")).toBe(false);
+  });
+
+  it("removes only the failed block when other content surrounds it", async () => {
+    const { editor } = editorWith([paragraph(text("first"))], { upload: () => Promise.reject(new Error("Too big")) });
+    editor.setTextCursorPosition(editor.document[0]!, "end");
+    paste(editor, transfer({}, [png()]));
+    await settle();
+    expect(shape(editor).map((b) => b.type)).toEqual(["paragraph"]);
   });
 
   it("falls back to the default paste on a surface without uploads", () => {

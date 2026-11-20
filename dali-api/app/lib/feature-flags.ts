@@ -56,34 +56,10 @@ export const FEATURE_FLAGS = [
       "A /release-notes page listing what shipped, with demo videos, and a \"What's new\" item in the account menu that shows a dot when there is something unread. Core also gets Communications > Release notes to write, review and publish entries. Ships off.",
   },
   {
-    key: "banners",
-    label: "Banners",
-    description:
-      "Communications > Banners: Core schedules full-screen banners shown when members open DALI OS or visit a page, with audience, frequency and a hide-for-today option. Turning this off also stops banners from showing. Ships off.",
-  },
-  {
     key: "infra-dashboard",
     label: "Infrastructure dashboard",
     description:
       "Admin → System → Infrastructure: a cross-project console pulling Fly.io + Neon inventory and usage (no dollar cost — usage only, with links out to each provider's billing) into one place, with scale / limit / provision / cleanup actions. Reads and safe reversible actions are Core; provisioning, quotas, and destructive actions are Admin-only. Ships off.",
-  },
-  {
-    key: "project-tldr-ai",
-    label: "Project AI TL;DR",
-    description:
-      "Adds an AI-written one-or-two-sentence summary of the project's work status beneath the status bar. Only shows when an AI provider is configured. Ships off.",
-  },
-  {
-    key: "education-redesign-v2",
-    label: "Education redesign",
-    description:
-      "Project-hub-style education catalog — a grid of cover cards with a per-offering emoji, a search field, and a Miniseries/Workshop type filter — on both /education (members) and /portal/education (applicants). Also switches the applicant portal home to conditional action cards (Apply to DALI, Apply to an offering, My applications, My courses) that link to the combined /portal/applications history. The offering emoji picker and the applications page ship regardless; this flag only gates the redesigned surfaces. Ships off.",
-  },
-  {
-    key: "community",
-    label: "Community",
-    description:
-      "The Community sidebar area: Community, Opportunities, Gallery and Stories. Stories opens /resources: a front page of member stories (Internal, or Public to also appear on dali.website) plus bookmark tabs, reference pages that Core/Admin create, edit and delete and every lab member reads. Ships off; without it Community stays under Lab and the other Community pages are not reachable.",
   },
   {
     key: "resource-hub",
@@ -98,12 +74,6 @@ export const FEATURE_FLAGS = [
       "Lets a member connect their own @dali.dartmouth.edu mailbox to the Email tab, next to project and shared inboxes. Only they can read it. Connecting requires agreeing to a risk notice first, and each agreement is recorded in the audit log. Turning this off hides connected personal inboxes without deleting the sign-in. Ships off.",
   },
   {
-    key: "work-history-import",
-    label: "Work history import",
-    description:
-      "Import jobs from a resume or LinkedIn export, and store a resume on the profile. Ships off.",
-  },
-  {
     key: "drive-slides",
     label: "Drive slide decks",
     description:
@@ -114,12 +84,6 @@ export const FEATURE_FLAGS = [
     label: "Onboarding journeys",
     description:
       "Self-paced onboarding at /journeys: per-domain journeys of modules on a prerequisite map, each with lesson pages, slides, an in-browser coding lab and a quiz, with progress saved per member. First-term members find Journeys pinned under Drive; everyone else finds it in the Lab area. Core and domain leads create journeys and share edit access per journey. Ships off.",
-  },
-  {
-    key: "core-taskboard",
-    label: "Core taskboard",
-    description:
-      "A kanban of Core's own tasks on the Core landing page at /core, with a Taskboard tab first in the Core area. Core members only. Turning this off sends /core back to Staffing and hides the tab; tasks already created stay. Ships off.",
   },
   {
     key: "refer-a-partner",
@@ -156,52 +120,10 @@ export const FEATURE_FLAGS = [
       "Present a deck with a presenter view, and let anyone with the deck open follow along on their own screen, with a way to browse on their own. Also polls and emoji reactions while presenting. Ships off.",
   },
   {
-    key: "mcp-block-edits",
-    label: "AI assistant block edits",
-    description:
-      "AI assistants connected over MCP can edit part of a page or blog post (a phrase, a block, a table row) instead of rewriting the whole body, and can point at text in a document people have open. Their edits light up the changed blocks for anyone watching. Ships off.",
-  },
-  {
-    key: "form-prefill",
-    label: "Forms: fill in from records",
-    description:
-      "Form questions can start filled in from what DALI OS already knows about the person filling them (their name and email, and for partners their organization and project). The answer stays editable. Also adds a \"Partners\" option to a form's sharing. Ships off.",
-  },
-  {
-    key: "form-response-views",
-    label: "Forms: add columns to results",
-    description:
-      "A + button on a form's results table adds columns about each respondent (hired roles, project history, terms in lab, current role). Added columns are saved on the form for everyone who can edit it and are included in the CSV. Replaces the Member columns dropdown. Ships off.",
-  },
-  {
-    key: "alumni-home",
-    label: "Alumni: Baker tower Home",
-    description:
-      "Alumni see Baker tower over the Green on Home, in Hanover's current season, by day or night, with the clock showing Hanover time. Ships off.",
-  },
-  {
     key: "project-band-header",
     label: "Project band header",
     description:
       "Project pages show a band header: the emoji, title, partner and terms, roles and team on the left and the cover image on the right. Off keeps the current header. Ships off.",
-  },
-  {
-    key: "alumni-game",
-    label: "Alumni: onboarding game",
-    description:
-      "New alumni are invited to build a pixel avatar, then finish their profile either on the profile page or by exploring a pixel DALI lab and chatting with Tim on an in-game phone. Ships off.",
-  },
-  {
-    key: "alumni-onboarding",
-    label: "Alumni: onboarding flow",
-    description:
-      "New alumni are invited on first sign-in to check their details, add a few interests and choose what they are open to, in three short steps. With the alumni onboarding game on too, the flow ends with a link into the pixel lab. Ships off.",
-  },
-  {
-    key: "alumni-opportunities",
-    label: "Alumni: Opportunities feed",
-    description:
-      "Community > Opportunities becomes a feed where alumni share jobs (a pasted link fills in the company and its logo) and anyone can ask for a coffee chat, with reactions and comments. Partner referrals show their progress and a post when one becomes a project. Off shows the coming soon page. Ships off.",
   },
   {
     key: "expenses",

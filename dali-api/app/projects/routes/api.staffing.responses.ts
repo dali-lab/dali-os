@@ -2,8 +2,7 @@ import type { Route } from "./+types/api.staffing.responses";
 import { prisma } from "~/lib/db.server";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { primaryEmail } from "~/lib/display";
-import { canManageStaffing, getUserRoles } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import { canManageStaffing } from "~/lib/roles";
 import { isSlot } from "~/projects/lib/form-slots";
 import { memberSearchWhere } from "~/projects/lib/member-search";
 import { buildPublicForm, submitStaffingFormFor } from "~/forms/lib/public-form";
@@ -20,8 +19,6 @@ async function gate(request: Request) {
   if (!auth.ok) return { response: auth.response };
   const userId = auth.user.sub;
   if (!(await canManageStaffing(userId))) return { response: forbidden(request) };
-  if (!(await isFeatureEnabled("form-response-views", userId, await getUserRoles(userId, request), request)))
-    return { response: forbidden(request) };
   return { userId };
 }
 

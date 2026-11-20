@@ -4,7 +4,6 @@ import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles } from "~/lib/roles";
 import { readOnlyRoles } from "~/lib/read-only-roles.server";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { BadRequestError } from "~/lib/http-error";
 import {
   finishOnboarding,
@@ -29,7 +28,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   const userId = auth.user.sub;
   const roles = await readOnlyRoles(userId, request);
   if (!roles.isAlumni) return redirect("/");
-  if (!(await isFeatureEnabled("alumni-onboarding", userId, roles, request))) return redirect("/");
 
   const [data, contactEmail] = await Promise.all([loadOnboarding(userId), listContactEmailOptions(userId)]);
   return { ...data, contactEmail };
@@ -43,7 +41,7 @@ export async function action({ request }: Route.ActionArgs) {
   if (!auth.ok) return Response.json({ error: "Sign in again to continue." }, { status: 401 });
   const userId = auth.user.sub;
   const roles = await getUserRoles(userId, request);
-  if (!roles.isAlumni || !(await isFeatureEnabled("alumni-onboarding", userId, roles, request))) {
+  if (!roles.isAlumni) {
     return Response.json({ error: "Not available." }, { status: 403 });
   }
 

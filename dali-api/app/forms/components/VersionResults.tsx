@@ -2,28 +2,18 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useFetcher, useSearchParams } from "react-router";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { PagerLinks } from "~/components/ui/Pager";
-import { Modal, ModalHeader } from "~/components/Modal";
 import type {
   ResponseRow,
   VersionResponses,
 } from "~/forms/lib/version-responses.server";
-import { modalCardClass } from "~/components/os-chrome";
 import { Button } from "~/components/ui/Button";
 import { useConfirmSubmit } from "~/components/ui/dialog";
 import { FormTracker } from "~/forms/components/FormTracker";
 import { ExportCsvLink } from "~/forms/components/ResultsControls";
 import { ResultsFilterBar, responseCountText, useAnswerFilters } from "~/forms/components/ResultsFilterBar";
 import type { TrackerCounts } from "~/forms/lib/form-tracker";
-import { MultiSelect } from "~/components/ui/floating";
-import { ChevronDown } from "lucide-react";
 import { ResponseTable, type ColumnControls } from "~/forms/components/ResponseTable";
 import { ResponseDrawer } from "~/forms/components/ResponseDrawer";
-import {
-  MEMBER_COLUMNS_PARAM,
-  MEMBER_HISTORY_COLUMNS,
-  parseMemberColumns,
-} from "~/projects/lib/member-history";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, {
@@ -67,42 +57,6 @@ function PartnerApplicationLink({ response }: { response: ResponseRow }) {
   );
 }
 
-function ResponseDetailBody({ response }: { response: ResponseRow }) {
-  return (
-    <div className="space-y-4">
-      <PartnerApplicationLink response={response} />
-      <dl className="flex flex-col gap-3">
-        {response.rows.map((row) => (
-          <div key={row.key}>
-            <dt className="text-xs font-medium text-muted-foreground mb-0.5">
-              {row.label}
-            </dt>
-            <dd className="text-sm text-foreground whitespace-pre-wrap">
-              {row.files?.length ? (
-                <span className="flex flex-col gap-1">
-                  {row.files.map((f) => (
-                    <a
-                      key={f.key}
-                      href={`/api/upload/raw?key=${encodeURIComponent(f.key)}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-os-accent hover:underline break-all"
-                    >
-                      {f.name}
-                    </a>
-                  ))}
-                </span>
-              ) : (
-                row.value || "—"
-              )}
-            </dd>
-          </div>
-        ))}
-      </dl>
-    </div>
-  );
-}
-
 function ResponseDelete({ response }: { response: ResponseRow }) {
   const fetcher = useFetcher<{ ok?: true; error?: string }>();
   const confirmSubmit = useConfirmSubmit();
@@ -132,38 +86,6 @@ function ResponseDelete({ response }: { response: ResponseRow }) {
       </Button>
       {error && <span className="text-xs text-destructive">{error}</span>}
     </fetcher.Form>
-  );
-}
-
-function MemberColumnsPicker() {
-  const [searchParams, setSearchParams] = useSearchParams();
-  return (
-    <MultiSelect
-      ariaLabel="Member columns"
-      values={parseMemberColumns(searchParams)}
-      options={MEMBER_HISTORY_COLUMNS.map((c) => ({ value: c.key, label: c.label }))}
-      onChange={(next) =>
-        setSearchParams(
-          (prev) => {
-            const params = new URLSearchParams(prev);
-            const keys = MEMBER_HISTORY_COLUMNS.map((c) => c.key).filter((k) => next.includes(k));
-            if (keys.length) params.set(MEMBER_COLUMNS_PARAM, keys.join(","));
-            else params.delete(MEMBER_COLUMNS_PARAM);
-            return params;
-          },
-          { replace: true, preventScrollReset: true },
-        )
-      }
-      chips={false}
-      renderTrigger={({ chosen }) => (
-        <>
-          <span className="truncate">
-            Member columns{chosen.length > 0 ? ` (${chosen.length})` : ""}
-          </span>
-          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-        </>
-      )}
-    />
   );
 }
 
@@ -208,7 +130,6 @@ export function VersionResults({
     responses,
   } = results;
   const [searchParams, setSearchParams] = useSearchParams();
-  const canAddColumns = useFeatureFlag("form-response-views");
   const columnControls = useResultColumns(results.hiddenColumns);
   const urlQuery = searchParams.get("q") ?? "";
   const slot = searchParams.get("slot") ?? "";
@@ -296,7 +217,6 @@ export function VersionResults({
                 size="sm"
                 containerClassName="w-full sm:w-64 min-w-[12rem]"
               />
-              {!canAddColumns && <MemberColumnsPicker />}
               <ExportCsvLink
                 formId={formId}
                 versionNumber={versionNumber}
@@ -385,7 +305,7 @@ export function VersionResults({
                 rowKey={(r) => r.id}
                 value={(r, key) => r.values.get(key) ?? ""}
                 onOpen={(r) => setOpenId(r.id)}
-                controls={canAddColumns ? columnControls : null}
+                controls={columnControls}
               />
             )}
           </div>
@@ -401,39 +321,15 @@ export function VersionResults({
         </>
       )}
 
-      {canAddColumns ? (
-        <ResponseDrawer
-          open={selected !== null}
-          onClose={() => setOpenId(null)}
-          title={selected?.name ?? ""}
-          subtitle={selected ? responseSubtitle(selected) : undefined}
-          fields={selected?.rows ?? []}
-          lead={selected && <PartnerApplicationLink response={selected} />}
-          footer={selected && <ResponseDelete response={selected} />}
-        />
-      ) : (
-        <Modal
-          open={selected !== null}
-          onClose={() => setOpenId(null)}
-          labelledBy="response-detail-title"
-          containerClassName={modalCardClass("max-w-2xl")}
-        >
-          {selected && (
-            <>
-              <ModalHeader
-                titleId="response-detail-title"
-                title={selected.name}
-                subtitle={responseSubtitle(selected)}
-                onClose={() => setOpenId(null)}
-              />
-              <ResponseDetailBody response={selected} />
-              <div className="mt-6">
-                <ResponseDelete response={selected} />
-              </div>
-            </>
-          )}
-        </Modal>
-      )}
+      <ResponseDrawer
+        open={selected !== null}
+        onClose={() => setOpenId(null)}
+        title={selected?.name ?? ""}
+        subtitle={selected ? responseSubtitle(selected) : undefined}
+        fields={selected?.rows ?? []}
+        lead={selected && <PartnerApplicationLink response={selected} />}
+        footer={selected && <ResponseDelete response={selected} />}
+      />
     </div>
   );
 }

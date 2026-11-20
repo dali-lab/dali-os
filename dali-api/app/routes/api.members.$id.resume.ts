@@ -10,8 +10,7 @@ import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db.server";
 import { claimAiQuota } from "~/lib/ai-quota.server";
 import { logAuditEvent } from "~/lib/audit";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
-import { getUserRoles, isAdmin } from "~/lib/roles";
+import { isAdmin } from "~/lib/roles";
 import { isAiEnabled } from "~/lib/ai.server";
 import { recordTokenUsage } from "~/lib/ai-usage.server";
 import { checkRateLimit } from "~/lib/rate-limit";
@@ -41,15 +40,9 @@ async function deleteQuietly(key: string): Promise<void> {
   }
 }
 
-async function flagOn(userId: string, request: Request): Promise<boolean> {
-  const roles = await getUserRoles(userId, request);
-  return isFeatureEnabled("work-history-import", userId, roles, request);
-}
-
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
-  if (!(await flagOn(auth.user.sub, request))) return notFound();
   if (auth.user.sub !== params.id && !(await isAdmin(auth.user.sub))) return notFound();
 
   const member = await prisma.user.findUnique({
@@ -170,7 +163,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (request.method !== "POST" && request.method !== "DELETE") {
     return Response.json({ error: "Method not allowed" }, { status: 405 });
   }
-  if (auth.user.sub !== params.id || !(await flagOn(auth.user.sub, request))) return notFound();
+  if (auth.user.sub !== params.id) return notFound();
 
   return request.method === "POST" ? upload(request, auth.user.sub) : remove(request, auth.user.sub);
 }

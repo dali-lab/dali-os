@@ -4,7 +4,6 @@ import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db.server";
 import { readOnlyRoles } from "~/lib/read-only-roles.server";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { loadQuestState } from "~/lib/alumni-game.server";
 import { isAvatarConfig } from "~/components/alumni-game/pixel-avatar";
 import { LabSceneView } from "~/components/alumni-game/LabSceneView";
@@ -17,7 +16,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   const userId = auth.user.sub;
   const roles = await readOnlyRoles(userId, request);
   if (!roles.isLabMemberOrAlum) return redirect("/");
-  if (!(await isFeatureEnabled("alumni-game", userId, roles, request))) return redirect("/");
 
   const row = await prisma.pixelAvatar.findUnique({
     where: { userId },
