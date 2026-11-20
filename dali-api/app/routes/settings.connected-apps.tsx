@@ -4,7 +4,6 @@ import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
-import { revokeAllForGrant } from "~/lib/session.server";
 
 export const meta: Route.MetaFunction = () => [{ title: "Settings · DALI OS" }];
 
@@ -31,7 +30,6 @@ export async function action({ request }: Route.ActionArgs) {
     where: { id: grantId },
     data: { revokedAt: new Date() },
   });
-  await revokeAllForGrant(grantId);
   await prisma.authSession.deleteMany({ where: { grantId } });
   await logAuditEvent({
     action: "oauth.grant.revoke",

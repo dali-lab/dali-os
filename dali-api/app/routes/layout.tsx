@@ -12,7 +12,6 @@ import { BannerHost } from '~/components/banners/BannerHost'
 import { NavPreloader } from '~/components/NavPreloader'
 import { TimeZonePrompt } from '~/components/TimeZonePrompt'
 import { requireAuth, redirectPartnerToPortal, impersonationAllowsWrites, isImpersonating, isNonMember } from "~/lib/auth"
-import { maybeUpgradeLegacyToBetterAuth } from "~/lib/betterauth-upgrade.server"
 import { redirectToLogin } from '~/lib/login-next';
 import { redirectRestoringAdmin } from '~/lib/impersonation-restore.server'
 import { getActiveCycles } from '~/hiring/lib/cycles'
@@ -96,16 +95,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   const portalTwin = auth.user.type !== 'member' && educationPortalTwin(pathname) !== null
   if (nonMember && !instructorPage && !portalTwin) {
     return (await publicDoc()) ?? redirect('/portal')
-  }
-
-  // TEMPORARY (remove ~1 week post-cutover): silently migrate a validated legacy
-  // session to a BetterAuth session, then reload the same URL so the new cookie
-  // takes effect. Self-limiting — it clears the legacy cookie, so the fast-path
-  // skips it on the reload and it runs at most once per user.
-  const __betterauthUpgrade = await maybeUpgradeLegacyToBetterAuth(request, auth)
-  if (__betterauthUpgrade) {
-    const __u = new URL(request.url)
-    return redirect(__u.pathname + __u.search, { headers: __betterauthUpgrade })
   }
 
   if (partnerRedirect) return (await publicDoc()) ?? partnerRedirect

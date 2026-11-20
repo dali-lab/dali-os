@@ -27,7 +27,7 @@ timesheet — nothing reaches payroll until you submit the period in JobX.
 - All DALI requests go through the background service worker
   (`background.js`), not the content script. A content script's fetch counts
   as the JobX page's, so it's cross-site to DALI and Chrome drops the
-  `SameSite=Lax` `__dali_sid` session cookie — every pull came back 401. The
+  `SameSite=Lax` BetterAuth session cookie (`__Secure-dali.session_token`) — every pull came back 401. The
   worker runs on the extension's origin with `host_permissions` for DALI, so
   the cookie is sent and CORS doesn't apply.
 - JobX's Save is a full-page ASP.NET postback, so the extension persists its

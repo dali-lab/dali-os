@@ -2,8 +2,8 @@
 //
 // Every request to DALI OS goes through here rather than the content script.
 // A content script's fetch runs as the JobX page: it's cross-site to DALI, so
-// Chrome drops the SameSite=Lax __dali_sid cookie and DALI answers 401 no
-// matter whether the member is signed in. A request from the extension's own
+// Chrome drops the SameSite=Lax BetterAuth session cookie and DALI answers 401
+// no matter whether the member is signed in. A request from the extension's own
 // origin to a host it holds host_permissions for is treated as same-site, so
 // the cookie rides along (and CORS doesn't apply).
 

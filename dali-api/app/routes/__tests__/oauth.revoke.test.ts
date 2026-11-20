@@ -1,10 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-const mockRevokeSession = vi.hoisted(() => vi.fn());
-vi.mock("~/lib/session.server", () => ({
-  revokeSession: mockRevokeSession,
-  hashSessionId: (raw: string) => `hash:${raw}`,
-}));
 const mockAudit = vi.hoisted(() => vi.fn());
 vi.mock("~/lib/audit", () => ({ logAuditEvent: mockAudit }));
 vi.mock("~/lib/db.server", () => ({
@@ -27,7 +22,6 @@ function revoke(token: string) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(prisma.session.findUnique).mockResolvedValue(null);
   vi.mocked(prisma.authSession.findUnique).mockResolvedValue(null);
 });
 
@@ -56,27 +50,15 @@ describe("POST /oauth/revoke", () => {
     );
   });
 
-  it("still revokes a legacy session", async () => {
-    vi.mocked(prisma.session.findUnique).mockResolvedValue({
-      userId: "user-1",
-      grantId: "grant-1",
-      revokedAt: null,
-    } as any);
-
+  it("does not touch the legacy session table for an opaque token", async () => {
     await action({ request: revoke("legacy-token") } as any);
 
-    expect(mockRevokeSession).toHaveBeenCalledWith("legacy-token");
+    expect(prisma.session.findUnique).not.toHaveBeenCalled();
     expect(prisma.authSession.deleteMany).not.toHaveBeenCalled();
-    expect(mockAudit).toHaveBeenCalledTimes(1);
+    expect(mockAudit).not.toHaveBeenCalled();
   });
 
-  it("returns 200 without auditing an unknown or already revoked token", async () => {
-    vi.mocked(prisma.session.findUnique).mockResolvedValue({
-      userId: "user-1",
-      grantId: null,
-      revokedAt: new Date(),
-    } as any);
-
+  it("returns 200 without auditing an unknown token", async () => {
     const res = (await action({ request: revoke("old") } as any)) as Response;
 
     expect(res.status).toBe(200);

@@ -1,9 +1,8 @@
-import { Outlet, redirect, useLoaderData, useRouteError } from "react-router";
+import { Outlet, useLoaderData, useRouteError } from "react-router";
 import { Home, FolderKanban } from "lucide-react";
 import type { Route } from "./+types/partner-layout";
 import { prisma } from "~/lib/db.server";
 import { requirePartnerAccount } from "~/partners/lib/partner-auth.server";
-import { maybeUpgradeLegacyToBetterAuth } from "~/lib/betterauth-upgrade.server";
 import { impersonationAllowsWrites, isImpersonating } from "~/lib/auth";
 import { partnerProjectsWhereForOrgs } from "~/partners/lib/partner-access";
 import { resolvePhotoUrl } from "~/lib/photo";
@@ -17,16 +16,6 @@ import type { PortalNavItem } from "~/lib/portal-nav";
 // parallel); every /partner route calls the guard itself.
 export async function loader({ request }: Route.LoaderArgs) {
   const ctx = await requirePartnerAccount(request);
-
-  // TEMPORARY (remove ~1 week post-cutover): migrate a validated legacy session
-  // to a BetterAuth session, then reload so the new cookie takes effect. Reuses
-  // ctx.auth; the helper's __dali_sid fast-path makes this zero-cost once the
-  // legacy cookie is gone. Same migration as the member/portal loaders.
-  const upgradeHeaders = await maybeUpgradeLegacyToBetterAuth(request, ctx.auth);
-  if (upgradeHeaders) {
-    const u = new URL(request.url);
-    return redirect(u.pathname + u.search, { headers: upgradeHeaders });
-  }
 
   const orgIds = ctx.memberships.map((m) => m.orgId);
 

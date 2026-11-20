@@ -5,16 +5,10 @@ vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
 vi.mock("~/lib/login-next", () => ({
   redirectToLogin: vi.fn(() => new Response(null, { status: 302 })),
 }));
-vi.mock("~/lib/session.server", () => ({
-  revokeAllForGrant: vi.fn(),
-  revokeSession: vi.fn(),
-  hashSessionId: (raw: string) => `h:${raw}`,
-}));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
-import { revokeAllForGrant, revokeSession } from "~/lib/session.server";
 import { logAuditEvent } from "~/lib/audit";
 import { action as sessionsAction } from "~/routes/settings.sessions";
 import { action as connectedAppsAction } from "~/routes/settings.connected-apps";
@@ -40,7 +34,7 @@ beforeEach(() => {
     findUnique: vi.fn().mockResolvedValue(null),
   };
   mockPrisma.session = {
-    updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+    updateMany: vi.fn(),
     findUnique: vi.fn(),
   };
   mockPrisma.oAuthGrant = { findUnique: vi.fn(), update: vi.fn() };
@@ -61,28 +55,23 @@ describe("settings.sessions audit", () => {
     expect(JSON.stringify(vi.mocked(logAuditEvent).mock.calls)).not.toContain("secret-sid");
   });
 
-  it("revoke-others ends sessions in both stores and logs the total", async () => {
+  it("revoke-others ends the other BetterAuth sessions and logs the count", async () => {
     mockPrisma.authSession.deleteMany.mockResolvedValue({ count: 2 });
-    mockPrisma.session.updateMany.mockResolvedValue({ count: 3 });
     await sessionsAction(post("http://x/settings/sessions", { intent: "revoke-others" }));
     expect(mockPrisma.authSession.deleteMany).toHaveBeenCalledWith({
       where: { userId: "u1", NOT: { id: "current" } },
     });
-    expect(mockPrisma.session.updateMany).toHaveBeenCalledWith({
-      where: { userId: "u1", revokedAt: null, NOT: { id: "current" } },
-      data: { revokedAt: expect.any(Date) },
-    });
+    expect(mockPrisma.session.updateMany).not.toHaveBeenCalled();
     expect(logAuditEvent).toHaveBeenCalledWith(
       expect.objectContaining({
         action: "session.revoke",
-        metadata: { scope: "others", count: 5 },
+        metadata: { scope: "others", count: 2 },
       }),
     );
   });
 
   it("does not log when nothing was revoked", async () => {
     mockPrisma.authSession.deleteMany.mockResolvedValue({ count: 0 });
-    mockPrisma.session.updateMany.mockResolvedValue({ count: 0 });
     await sessionsAction(post("http://x/settings/sessions", { intent: "revoke-others" }));
     expect(logAuditEvent).not.toHaveBeenCalled();
   });
@@ -97,7 +86,6 @@ describe("settings.connected-apps audit", () => {
       name: "Claude",
     });
     await connectedAppsAction(post("http://x/settings/connected-apps", { grantId: "g1" }));
-    expect(revokeAllForGrant).toHaveBeenCalledWith("g1");
     expect(logAuditEvent).toHaveBeenCalledWith(
       expect.objectContaining({
         action: "oauth.grant.revoke",
@@ -117,13 +105,12 @@ describe("settings.connected-apps audit", () => {
 
 describe("oauth.revoke audit", () => {
   it("logs session.revoke for a live token without recording the token", async () => {
-    mockPrisma.session.findUnique.mockResolvedValue({
+    mockPrisma.authSession.findUnique.mockResolvedValue({
+      id: "a1",
       userId: "u1",
       grantId: "g1",
-      revokedAt: null,
     });
     await oauthRevokeAction(post("http://x/oauth/revoke", { token: "raw-token" }));
-    expect(revokeSession).toHaveBeenCalledWith("raw-token");
     expect(logAuditEvent).toHaveBeenCalledWith(
       expect.objectContaining({
         action: "session.revoke",
@@ -134,15 +121,9 @@ describe("oauth.revoke audit", () => {
     expect(JSON.stringify(vi.mocked(logAuditEvent).mock.calls)).not.toContain("raw-token");
   });
 
-  it("does not log for an unknown or already revoked token", async () => {
-    mockPrisma.session.findUnique.mockResolvedValue(null);
-    await oauthRevokeAction(post("http://x/oauth/revoke", { token: "t" }));
-    mockPrisma.session.findUnique.mockResolvedValue({
-      userId: "u1",
-      grantId: null,
-      revokedAt: new Date(),
-    });
+  it("does not log for an unknown token", async () => {
     await oauthRevokeAction(post("http://x/oauth/revoke", { token: "t" }));
     expect(logAuditEvent).not.toHaveBeenCalled();
+    expect(mockPrisma.session.findUnique).not.toHaveBeenCalled();
   });
 });

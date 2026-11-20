@@ -2,13 +2,12 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 const mockRequireAuth = vi.hoisted(() => vi.fn());
 vi.mock("~/lib/auth", () => ({ requireAuth: mockRequireAuth }));
-const mockRevokeAllForGrant = vi.hoisted(() => vi.fn());
-vi.mock("~/lib/session.server", () => ({ revokeAllForGrant: mockRevokeAllForGrant }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/lib/db.server", () => ({
   prisma: {
     oAuthGrant: { findUnique: vi.fn(), update: vi.fn() },
     authSession: { deleteMany: vi.fn() },
+    session: { updateMany: vi.fn() },
   },
 }));
 
@@ -28,7 +27,7 @@ beforeEach(() => {
 });
 
 describe("POST /settings/connected-apps", () => {
-  it("revokes the grant and deletes its sessions in both stores", async () => {
+  it("revokes the grant and deletes its BetterAuth sessions", async () => {
     vi.mocked(prisma.oAuthGrant.findUnique).mockResolvedValue({
       id: "grant-1",
       userId: "user-1",
@@ -42,8 +41,8 @@ describe("POST /settings/connected-apps", () => {
       where: { id: "grant-1" },
       data: { revokedAt: expect.any(Date) },
     });
-    expect(mockRevokeAllForGrant).toHaveBeenCalledWith("grant-1");
     expect(prisma.authSession.deleteMany).toHaveBeenCalledWith({ where: { grantId: "grant-1" } });
+    expect(prisma.session.updateMany).not.toHaveBeenCalled();
   });
 
   it("does nothing for someone else's grant", async () => {

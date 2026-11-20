@@ -1,20 +1,6 @@
-// MCP request authentication. Resolves the Bearer session, walks to the
-// OAuthGrant + OAuthClient, re-runs the requireMembership gate, and bumps
-// rolling expiry + lastUsedAt. Failure paths surface a 401 Response.
-//
-// Legacy sessions are tried first (and bridged to BetterAuth, see
-// bridgeLegacyToken), then BetterAuth. A fault in the BetterAuth path cannot
-// break the legacy path — it is wrapped in try/catch.
-//
-// Both paths share the same downstream grant/membership validation via
-// `verifyGrantAndMembership()` to avoid duplication.
-
-import { parseSessionId } from "~/lib/cookies";
-import { lookupSession, rollSession } from "~/lib/session.server";
+import { parseBearerHeader } from "~/lib/cookies";
 import { prisma } from "~/lib/db.server";
 import { auth } from "~/lib/betterauth.server";
-import { mintBetterAuthSession } from "~/lib/betterauth-session.server";
-import { getClientIp } from "~/lib/rate-limit";
 import { getEnv } from "~/lib/env.server";
 
 export type McpAuthSuccess = {
@@ -56,8 +42,6 @@ function unauthorized(reason: string): Response {
   );
 }
 
-// Shared grant + membership validation. Used by both the legacy and BetterAuth
-// paths so the logic lives in exactly one place.
 type GrantCheckUser = {
   id: string;
   daliEmail: string | null;
@@ -107,75 +91,10 @@ async function verifyGrantAndMembership(
   };
 }
 
-// TEMPORARY — delete with the legacy branch above once no legacy MCP session is
-// left (see specs/betterauth-legacy-auth-cleanup.md, Phase 4).
-//
-// MCP clients have no refresh grant, so they can't be handed a new token. The
-// session moves to BetterAuth under the SAME token string instead: the client
-// keeps working without reconnecting, and the legacy row is deleted so the next
-// request resolves through BetterAuth.
-async function bridgeLegacyToken(
-  raw: string,
-  session: { id: string; userId: string; grantId: string | null },
-  request: Request,
-): Promise<boolean> {
-  try {
-    if (!session.grantId) return false;
-    const existing = await prisma.authSession.findUnique({
-      where: { token: raw },
-      select: { id: true },
-    });
-    if (!existing) {
-      await mintBetterAuthSession({
-        userId: session.userId,
-        grantId: session.grantId,
-        token: raw,
-        ipAddress: getClientIp(request),
-        userAgent: request.headers.get("user-agent") ?? undefined,
-      });
-    }
-    await prisma.session.deleteMany({ where: { id: session.id } });
-    return true;
-  } catch (err) {
-    // The request is already authorized by the legacy session; a failed bridge
-    // just leaves that session in place for the next request to retry.
-    console.error(
-      "[mcp-auth] legacy token bridge failed:",
-      err instanceof Error ? err.message : String(err),
-    );
-    return false;
-  }
-}
-
 export async function authenticateMcpRequest(
   request: Request,
 ): Promise<McpAuthResult> {
-  const raw = parseSessionId(request);
-  if (!raw) return { ok: false, response: unauthorized("missing_token") };
-
-  // ── Legacy path (bespoke Session) ────────────────────────────────────────
-  // Always tried first. When the flag is off this is the only path.
-  const session = await lookupSession(raw);
-  if (session) {
-    if (session.revokedAt) {
-      return { ok: false, response: unauthorized("revoked") };
-    }
-    const now = new Date();
-    if (session.expiresAt < now || session.absoluteExpiresAt < now) {
-      return { ok: false, response: unauthorized("expired") };
-    }
-
-    // Only OAuth-issued (grant-backed) sessions are valid MCP credentials.
-    if (!session.grantId) {
-      return { ok: false, response: unauthorized("not_an_mcp_session") };
-    }
-
-    const result = await verifyGrantAndMembership(session.grantId, session.user);
-    if (result.ok && !(await bridgeLegacyToken(raw, session, request))) {
-      rollSession(session).catch(() => {});
-    }
-    return result;
-  }
+  if (!parseBearerHeader(request)) return { ok: false, response: unauthorized("missing_token") };
 
   // ── BetterAuth path ───────────────────────────────────────────────────────
   try {
