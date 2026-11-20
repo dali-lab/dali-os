@@ -17,7 +17,7 @@ export function shouldRevalidate(args: ShouldRevalidateFunctionArgs) {
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
-  await requireCommsViewer(request, "banners");
+  await requireCommsViewer(request);
   const banners = await listBanners();
   const groupIds = [...new Set(banners.flatMap((b) => b.groupIds))];
   const groups = groupIds.length

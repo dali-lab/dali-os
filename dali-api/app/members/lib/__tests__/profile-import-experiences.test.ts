@@ -11,12 +11,10 @@ vi.mock("~/lib/roles", () => ({
   isAdmin: vi.fn(),
   isCore: vi.fn(),
 }));
-vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
 
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db.server";
 import { isAdmin } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { runProfileAction } from "~/members/lib/profile-page.server";
 
 const ME = "u-me";
@@ -45,7 +43,6 @@ function run(jobs: unknown, { sub = ME, targetId = ME, raw }: { sub?: string; ta
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(isFeatureEnabled).mockResolvedValue(true);
   vi.mocked(isAdmin).mockResolvedValue(false);
   vi.mocked(prisma.workExperience.createMany).mockResolvedValue({ count: 0 } as never);
 });
@@ -102,12 +99,6 @@ describe("import-experiences", () => {
   it("refuses an admin importing onto someone else's profile", async () => {
     vi.mocked(isAdmin).mockResolvedValue(true);
     expect(await run([job()], { sub: "admin-1" })).toHaveProperty("error");
-    expect(prisma.workExperience.createMany).not.toHaveBeenCalled();
-  });
-
-  it("returns an error with the flag off", async () => {
-    vi.mocked(isFeatureEnabled).mockResolvedValue(false);
-    expect(await run([job()])).toHaveProperty("error");
     expect(prisma.workExperience.createMany).not.toHaveBeenCalled();
   });
 });

@@ -2,8 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn(), requireProjectEditAccess: vi.fn() }));
 vi.mock("~/lib/db.server");
-vi.mock("~/lib/roles", () => ({ currentTerm: vi.fn(), isCore: vi.fn(), getUserRoles: vi.fn() }));
-vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
+vi.mock("~/lib/roles", () => ({ currentTerm: vi.fn(), isCore: vi.fn() }));
 vi.mock("~/lib/core-members.server", () => ({ listActiveCoreMembers: vi.fn() }));
 vi.mock("~/projects/lib/core-board.server", () => ({ getCoreBoardProject: vi.fn() }));
 vi.mock("~/lib/cors", () => ({
@@ -14,7 +13,6 @@ vi.mock("~/lib/cors", () => ({
 import { requireAuth, requireProjectEditAccess } from "~/lib/auth";
 import { prisma } from "~/lib/db.server";
 import { currentTerm, isCore } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { listActiveCoreMembers } from "~/lib/core-members.server";
 import { getCoreBoardProject } from "~/projects/lib/core-board.server";
 import { loader } from "~/projects/routes/api.task-options";
@@ -44,7 +42,6 @@ beforeEach(() => {
   mockPrisma.project.findMany = vi.fn().mockResolvedValue([{ id: "p1", name: "Campus Compost" }]);
   mockPrisma.project.findUnique = vi.fn().mockResolvedValue({ kind: "Standard" });
   mockPrisma.projectAssignment.findMany = vi.fn().mockResolvedValue([]);
-  vi.mocked(isFeatureEnabled).mockResolvedValue(true);
   vi.mocked(getCoreBoardProject).mockResolvedValue({ id: "core", name: "Core" });
   vi.mocked(listActiveCoreMembers).mockResolvedValue([]);
 });
@@ -75,15 +72,6 @@ describe("GET /api/task-options", () => {
       ],
     });
     expect(mockPrisma.project.findMany.mock.calls[0]![0].where).toEqual({ status: "Active", kind: "Standard" });
-    expect(isFeatureEnabled).toHaveBeenCalledWith("core-taskboard", "u1", undefined);
-  });
-
-  it("leaves the Core board out while the taskboard flag is off", async () => {
-    vi.mocked(isCore).mockResolvedValue(true);
-    vi.mocked(isFeatureEnabled).mockResolvedValue(false);
-    const res = await get();
-    expect(await res.json()).toEqual({ projects: [{ id: "p1", name: "Campus Compost" }] });
-    expect(getCoreBoardProject).not.toHaveBeenCalled();
   });
 
   it("requires a session", async () => {

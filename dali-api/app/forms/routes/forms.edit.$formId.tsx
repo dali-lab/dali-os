@@ -21,18 +21,14 @@ import {
 import { FormDetail } from "~/forms/components/FormDetail";
 import { parsePageParam } from "~/lib/pagination";
 import { loadVersionResponses } from "~/forms/lib/version-responses.server";
-import { parseMemberColumns } from "~/projects/lib/member-history";
 import {
   applyResultColumnOp,
   parseResultColumns,
-  responseColumnId,
 } from "~/forms/lib/response-columns";
 import { parseColumnOp } from "~/forms/lib/column-ops";
 import { unionResponseColumns } from "~/forms/lib/answer-rows.server";
 import type { Question } from "~/types";
 import { parseFormDataJson } from "~/lib/safe-json";
-import { getUserRoles } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { loadVersionSummary } from "~/forms/lib/version-summary.server";
 import { parseAnswerFilters } from "~/forms/lib/answer-filters";
 import { driveRootCrumbs } from "~/drive/lib/drive-crumbs";
@@ -150,14 +146,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           answers,
         })
       : null;
-  const savedColumns =
-    resultsVersion != null &&
-    (await isFeatureEnabled(
-      "form-response-views",
-      auth.user.sub,
-      await getUserRoles(auth.user.sub, request),
-      request,
-    ));
   const results = resultsVersion && !summaryActive
     ? await loadVersionResponses(form.id, resultsVersion.id, {
         page: parsePageParam(url.searchParams.get("page")),
@@ -165,9 +153,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         slot: url.searchParams.get("slot") ?? "",
         answers,
         questions: resultsVersion.questions,
-        columns: savedColumns
-          ? form.responseColumns
-          : parseMemberColumns(url.searchParams).map((k) => ({ id: responseColumnId(k) })),
+        columns: form.responseColumns,
       })
     : null;
   const tracker = resultsVersion ? await loadTrackerCounts(params.formId) : null;
@@ -248,9 +234,6 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   if (intent === "response-column") {
-    const roles = await getUserRoles(auth.user.sub, request);
-    if (!(await isFeatureEnabled("form-response-views", auth.user.sub, roles, request)))
-      return forbidden(request);
     const op = parseColumnOp(parseFormDataJson(formData.get("op")));
     if (!op) return Response.json({ error: "Invalid input" }, { status: 400 });
     const [form, versions] = await Promise.all([

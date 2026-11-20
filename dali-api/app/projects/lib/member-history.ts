@@ -104,10 +104,3 @@ export function memberHistoryText(h: MemberHistory, now: Date): Record<MemberHis
     currentRole: currentRoleText(h, now),
   };
 }
-
-export const MEMBER_COLUMNS_PARAM = "member";
-
-export function parseMemberColumns(params: URLSearchParams): MemberHistoryColumn[] {
-  const chosen = (params.get(MEMBER_COLUMNS_PARAM) ?? "").split(",");
-  return MEMBER_HISTORY_COLUMNS.map((c) => c.key).filter((k) => chosen.includes(k));
-}

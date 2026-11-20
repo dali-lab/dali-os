@@ -24,40 +24,24 @@ beforeEach(() => {
 });
 
 describe("alumniInviteFor", () => {
-  const flags = (onboarding: boolean, game: boolean) => ({ "alumni-onboarding": onboarding, "alumni-game": game });
-
   it("never invites someone who is not an alumnus", async () => {
-    expect(await alumniInviteFor("u1", false, flags(true, true))).toBeNull();
+    expect(await alumniInviteFor("u1", false)).toBeNull();
     expect(db.user.findUnique).not.toHaveBeenCalled();
   });
 
-  it("offers both paths to an alumnus who has not onboarded when the game is on", async () => {
+  it("offers both paths to an alumnus who has not onboarded", async () => {
     db.user.findUnique.mockResolvedValue({ alumniOnboardedAt: null } as never);
-    expect(await alumniInviteFor("u1", true, flags(true, true))).toBe("choice");
-    expect(db.pixelAvatar.findUnique).not.toHaveBeenCalled();
+    expect(await alumniInviteFor("u1", true)).toBe("choice");
   });
 
-  it("offers only the stepped flow when the game is off", async () => {
-    db.user.findUnique.mockResolvedValue({ alumniOnboardedAt: null } as never);
-    expect(await alumniInviteFor("u1", true, flags(true, false))).toBe("onboarding");
-  });
-
-  it("stops inviting once they have finished, without falling back to the game", async () => {
+  it("stops inviting once they have finished", async () => {
     db.user.findUnique.mockResolvedValue({ alumniOnboardedAt: new Date() } as never);
-    expect(await alumniInviteFor("u1", true, flags(true, true))).toBeNull();
-    expect(db.pixelAvatar.findUnique).not.toHaveBeenCalled();
+    expect(await alumniInviteFor("u1", true)).toBeNull();
   });
 
-  it("keeps today's game invite when the onboarding flag is off", async () => {
-    db.pixelAvatar.findUnique.mockResolvedValue(null);
-    expect(await alumniInviteFor("u1", true, flags(false, true))).toBe("game");
-    db.pixelAvatar.findUnique.mockResolvedValue({ userId: "u1" } as never);
-    expect(await alumniInviteFor("u1", true, flags(false, true))).toBeNull();
-    expect(db.user.findUnique).not.toHaveBeenCalled();
-  });
-
-  it("invites no one when both flags are off", async () => {
-    expect(await alumniInviteFor("u1", true, flags(false, false))).toBeNull();
+  it("does not invite a user with no row", async () => {
+    db.user.findUnique.mockResolvedValue(null);
+    expect(await alumniInviteFor("u1", true)).toBeNull();
   });
 });
 

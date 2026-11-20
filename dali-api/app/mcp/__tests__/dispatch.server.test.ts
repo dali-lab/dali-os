@@ -36,7 +36,7 @@ vi.mock("~/mcp/registry", async () => {
   tools.flagged_tool = {
     def: { name: "flagged_tool", description: "f", requiredScope: "mcp:read", inputSchema: schema },
     run: h.flaggedRun,
-    featureFlag: "core-taskboard",
+    featureFlag: "mcp-email",
   };
   return {
     findRegistryTool: (n: string) => tools[n],
@@ -205,7 +205,7 @@ describe("feature-flagged tools", () => {
       message: "Unknown tool: flagged_tool",
     });
     expect(h.flaggedRun).not.toHaveBeenCalled();
-    expect(h.isFeatureEnabled).toHaveBeenCalledWith("core-taskboard", "u1", { isCore: true }, request);
+    expect(h.isFeatureEnabled).toHaveBeenCalledWith("mcp-email", "u1", { isCore: true }, request);
   });
 
   it("runs a flag-on tool", async () => {

@@ -49,7 +49,6 @@ export const CORE_CLUSTERS: NavCluster[] = [
         to: "/core/communications/banners",
         icon: GalleryHorizontal,
         description: "Full-screen banners shown when members open DALI OS or visit a page.",
-        flag: "banners",
       },
       {
         key: "release-notes",

@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures';
-import { deleteWorkExperiences, setFeatureFlag } from './helpers';
+import { deleteWorkExperiences } from './helpers';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -15,24 +15,18 @@ const COMPANIES = ['E2E Import Alpha', 'E2E Import Beta', 'E2E Import Gamma'];
 test.describe('Work history import', () => {
   test.beforeEach(async ({ loginAs }) => {
     await deleteWorkExperiences(EMAIL, COMPANIES);
-    await setFeatureFlag('work-history-import', true);
     await loginAs({ daliEmail: EMAIL });
   });
 
   test.afterEach(async () => {
     await deleteWorkExperiences(EMAIL, COMPANIES);
-    await setFeatureFlag('work-history-import', false);
   });
 
   test('imports the checked jobs from Positions.csv', async ({ page }) => {
     await page.goto('/profile');
 
-    // Flag rows are cached for up to 15s; reload until the button shows.
     const importButton = page.getByRole('button', { name: 'Import' });
-    await expect(async () => {
-      await page.reload({ waitUntil: 'domcontentloaded' });
-      await expect(importButton).toBeVisible({ timeout: 2000 });
-    }).toPass({ timeout: 30_000 });
+    await expect(importButton).toBeVisible();
 
     await importButton.click();
     const dialog = page.getByRole('dialog');

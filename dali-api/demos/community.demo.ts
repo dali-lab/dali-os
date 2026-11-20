@@ -1,7 +1,6 @@
-import { expect, setFeatureFlag, test } from './lib/demo';
+import { expect, test } from './lib/demo';
 
 test('community: switch to the Community section and browse its pages', async ({ page, stage, loginAs }) => {
-  await setFeatureFlag('community', true);
   await loginAs({ daliEmail: 'jordan.taylor@dali.dartmouth.edu' });
 
   // Flag rows are cached for 15s server-side.

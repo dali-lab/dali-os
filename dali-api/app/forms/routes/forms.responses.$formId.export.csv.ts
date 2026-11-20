@@ -15,8 +15,6 @@ import {
   versionResponsesWhere,
 } from "~/forms/lib/version-responses.server";
 import { arrangeResultColumns, parseResultColumns } from "~/forms/lib/response-columns";
-import { getUserRoles } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import type { Question } from "~/types";
 
 // Resource route — no default export, no layout wrapping. Returning a Response
@@ -40,12 +38,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     select: { id: true, name: true, responseColumns: true },
   });
   if (!form) return redirect("/forms");
-  const savedColumns = await isFeatureEnabled(
-    "form-response-views",
-    auth.user.sub,
-    await getUserRoles(auth.user.sub, request),
-    request,
-  );
 
   const query = new URL(request.url).searchParams;
   const version = Number(query.get("version"));
@@ -99,7 +91,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const arranged = arrangeResultColumns(
     grid.columns,
-    savedColumns ? parseResultColumns(form.responseColumns) : [],
+    parseResultColumns(form.responseColumns),
   );
   const member = await memberColumnValues(arranged.members, submissions.map((s) => s.userId));
 

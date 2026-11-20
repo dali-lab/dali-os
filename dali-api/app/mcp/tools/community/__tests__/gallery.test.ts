@@ -8,7 +8,6 @@ const roles = vi.hoisted(() => ({
   isLabMemberOrAlum: vi.fn(async () => true),
   getUserRoles: vi.fn(async () => ({ isCore: false })),
 }));
-const flags = vi.hoisted(() => ({ isFeatureEnabled: vi.fn(async () => true) }));
 const s3 = vi.hoisted(() => ({
   isS3Configured: vi.fn(() => true),
   headObject: vi.fn(
@@ -35,7 +34,6 @@ const gallery = vi.hoisted(() => ({
 
 vi.mock("~/lib/db.server", () => ({ prisma: db }));
 vi.mock("~/lib/roles", () => roles);
-vi.mock("~/lib/feature-flags.server", () => flags);
 vi.mock("~/lib/s3.server", () => s3);
 vi.mock("~/community/lib/gallery.server", () => gallery);
 
@@ -90,7 +88,6 @@ beforeEach(() => {
   vi.clearAllMocks();
   roles.isLabMemberOrAlum.mockResolvedValue(true);
   roles.getUserRoles.mockResolvedValue({ isCore: false });
-  flags.isFeatureEnabled.mockResolvedValue(true);
   s3.isS3Configured.mockReturnValue(true);
   s3.headObject.mockResolvedValue({ sizeBytes: 1, contentType: "image/jpeg" });
   gallery.applyGalleryIntent.mockResolvedValue({ ok: true });
@@ -117,15 +114,6 @@ describe("access", () => {
     roles.isLabMemberOrAlum.mockResolvedValue(false);
     await expect(runListGalleryPosts(ctx, {})).rejects.toMatchObject({ status: 403 });
     expect(gallery.loadGalleryPage).not.toHaveBeenCalled();
-  });
-
-  it("refuses everyone while the community flag is off for them", async () => {
-    flags.isFeatureEnabled.mockResolvedValue(false);
-    await expect(runManageGalleryPost(ctx, { action: "react", postId: "p1", emoji: "🎉" })).rejects.toMatchObject({
-      status: 403,
-    });
-    expect(flags.isFeatureEnabled).toHaveBeenCalledWith("community", "me", { isCore: false }, ctx.request);
-    expect(gallery.applyGalleryIntent).not.toHaveBeenCalled();
   });
 
   it("acts as Core for Core members", async () => {

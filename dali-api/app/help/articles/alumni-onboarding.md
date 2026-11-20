@@ -1,14 +1,13 @@
 ---
 title: Alumni welcome flow
 summary: Choose your sign-in and contact email, check your details, add a few things about yourself and choose what you are open to the first time you sign in as an alum.
-flag: alumni-onboarding
 keywords: [alumni, onboarding, welcome, profile, majors, minors, based in, open to, coffee chats, resume reviews, ask me about, email, invite link, sign in, expired link]
 paths: [/alumni/onboarding, /alumni/invite/:token, /settings/security]
 ---
 
 If DALI sent you a personal link, open it and choose **Continue to DALI OS** to sign in. Opening the link alone does not use it up.
 
-The first time you sign in as an alum, DALI OS invites you to finish your alumni profile. It takes about two minutes and ends on a page of places worth a look. When the pixel lab is on for you, the invite offers two ways to do it: **Fill it in** opens the steps below, and **Walk the pixel lab** does the same thing by chatting with Tim. Finishing either one counts. If you choose **Later**, the invite comes back next time you open DALI OS.
+The first time you sign in as an alum, DALI OS invites you to finish your alumni profile. It takes about two minutes and ends on a page of places worth a look. The invite offers two ways to do it: **Fill it in** opens the steps below, and **Walk the pixel lab** does the same thing by chatting with Tim. Finishing either one counts. If you choose **Later**, the invite comes back next time you open DALI OS.
 
 **Finish later** in the top corner of every step takes you back to DALI OS. Anything you already saved stays saved.
 

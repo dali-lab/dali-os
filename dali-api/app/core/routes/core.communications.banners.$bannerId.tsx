@@ -20,7 +20,7 @@ export const meta: Route.MetaFunction = ({ data }) => [
 const LIST = "/core/communications/banners";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
-  const viewer = await requireCommsViewer(request, "banners");
+  const viewer = await requireCommsViewer(request);
   const isNew = params.bannerId === "new";
   const banner = isNew ? null : await getBanner(params.bannerId);
   if (!isNew && !banner) throw new Response("Not found", { status: 404 });
@@ -52,7 +52,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
-  const viewer = await requireCommsViewer(request, "banners");
+  const viewer = await requireCommsViewer(request);
   const form = await request.formData();
   const intent = String(form.get("intent") ?? "");
 

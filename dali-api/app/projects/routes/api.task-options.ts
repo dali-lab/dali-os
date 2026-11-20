@@ -4,8 +4,7 @@ import { requireAuth, requireProjectEditAccess } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { fullName } from "~/lib/display";
 import { USER_NAME_SELECT } from "~/lib/prisma-shapes";
-import { currentTerm, getUserRoles, isCore } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import { currentTerm, isCore } from "~/lib/roles";
 import { listActiveCoreMembers } from "~/lib/core-members.server";
 import { getCoreBoardProject } from "~/projects/lib/core-board.server";
 import { assignableAssignments } from "../lib/task-board";
@@ -60,9 +59,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       orderBy: { name: "asc" },
       select: { id: true, name: true },
     }),
-    core && (await isFeatureEnabled("core-taskboard", userId, await getUserRoles(userId, request)))
-      ? getCoreBoardProject()
-      : null,
+    core ? getCoreBoardProject() : null,
   ]);
   return withCors(request, Response.json({ projects: coreBoard ? [coreBoard, ...projects] : projects }));
 }

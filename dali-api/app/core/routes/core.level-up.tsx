@@ -1,6 +1,6 @@
 import { useMemo, useState, useEffect } from "react";
 import { buttonClasses } from "~/components/ui/Button";
-import { redirect, useLoaderData, useFetcher, useSearchParams } from "react-router";
+import { redirect, useLoaderData, useFetcher } from "react-router";
 import type { Route } from "./+types/core.level-up";
 import { coreHandle } from "~/core/coreNav";
 import type { ShouldRevalidateFunctionArgs } from "react-router";
@@ -24,7 +24,6 @@ import {
   setSlotPublished,
 } from "~/projects/lib/form-slots";
 import { ColumnFilters, useColumnFilters } from "~/projects/components/ColumnFilters";
-import { SlotAdvancedSettingsModal } from "~/projects/components/SlotAdvancedSettingsModal";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { TermFilter } from "~/components/TermFilter";
 import { DomainFilter } from "~/projects/components/DomainFilter";
@@ -44,7 +43,6 @@ import { BoardCsvLink, BoardTable } from "~/projects/components/BoardTable";
 import { BoardSettings } from "~/projects/components/BoardSettings";
 import { AddResponseDialog } from "~/projects/components/AddResponseDialog";
 import { Button } from "~/components/ui/Button";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import type { Question } from "~/types";
 import { conditionalKeys } from "~/forms/lib/form-logic";
 import { isLevel, type Level } from "~/lib/level";
@@ -331,7 +329,7 @@ export async function action({ request }: Route.ActionArgs) {
       return Response.json({ error: "Forbidden" }, { status: 403 });
 
     if (intent === "set-slot-column")
-      return setBoardColumn(form, cycle.id, SLOT, auth.user.sub, request);
+      return setBoardColumn(form, cycle.id, SLOT, auth.user.sub);
     if (intent === "delete-response")
       return deleteBoardResponse(form, cycle.id, SLOT, auth.user.sub, request);
 
@@ -445,10 +443,6 @@ export default function LevelUpDatabase() {
 type LoadedData = Extract<Awaited<ReturnType<typeof loader>>, { gate: "ok" }>;
 
 function Loaded({ data }: { data: LoadedData }) {
-  const [searchParams] = useSearchParams();
-  const [settingsOpen, setSettingsOpen] = useState(
-    () => searchParams.get("settings") === "1",
-  );
   const [confirmRow, setConfirmRow] = useState<{
     userId: string;
     name: string;
@@ -460,7 +454,6 @@ function Loaded({ data }: { data: LoadedData }) {
   const [domainId, setDomainId] = useSearchParamState("domain");
   const [search, setSearch] = useSearchParamState("q", { debounceMs: 300 });
   const columnFilters = useColumnFilters(data.tableColumns, [], { inUrl: true });
-  const responseTable = useFeatureFlag("form-response-views");
   const [adding, setAdding] = useState(false);
 
   const { filtered } = useFilteredList(data.submissions, {
@@ -478,33 +471,11 @@ function Loaded({ data }: { data: LoadedData }) {
     [data.domainOptions],
   );
 
-  const canOpenSettings = !data.isAll && !responseTable;
-
   return (
     <div className="flex flex-col gap-4">
-      <Header
-        cycleName={data.cycle.name}
-        onOpenSettings={
-          canOpenSettings ? () => setSettingsOpen(true) : undefined
-        }
-        settingsLabel={data.canManage ? "Advanced settings" : "View settings"}
-      />
+      <Header />
 
-      {canOpenSettings && (
-        <SlotAdvancedSettingsModal
-          open={settingsOpen}
-          onClose={() => setSettingsOpen(false)}
-          slot="level-up"
-          slotLabel="Level Up"
-          binding={data.binding}
-          selectableForms={data.selectableForms}
-          formQuestions={data.formQuestions}
-          cycleTerms={[]}
-          canManage={data.canManage}
-        />
-      )}
-
-      {responseTable && !data.isAll && (
+      {!data.isAll && (
         <BoardSettings
           slotLabel="Level Up"
           binding={data.binding}
@@ -547,10 +518,10 @@ function Loaded({ data }: { data: LoadedData }) {
             shownCount={filtered.length}
           />
         </div>
-        {responseTable && !data.noFormConnected && (
+        {!data.noFormConnected && (
           <BoardCsvLink slot={SLOT} matching={filtered.length} total={data.submissions.length} />
         )}
-        {responseTable && data.canManage && data.cycle.id && data.binding && (
+        {data.canManage && data.cycle.id && data.binding && (
           <Button variant="secondary" size="sm" className="h-8" onClick={() => setAdding(true)}>
             Add response
           </Button>
@@ -563,16 +534,11 @@ function Loaded({ data }: { data: LoadedData }) {
           "rounded-os-card bg-os-card",
         )}
       >
-        {data.noFormConnected && responseTable ? (
+        {data.noFormConnected ? (
           <div className="px-4 py-8 text-center text-sm text-muted-foreground">
             Connect a form from the ⋯ menu above so members can submit.
           </div>
-        ) : data.noFormConnected ? (
-          <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-            No Level Up form is connected for this term. Open{" "}
-            <em>Advanced settings</em> to connect one.
-          </div>
-        ) : responseTable ? (
+        ) : (
           <BoardTable
             columns={data.tableColumns}
             addable={data.addableColumns}
@@ -600,19 +566,6 @@ function Loaded({ data }: { data: LoadedData }) {
                 : "No members match the current filters."
             }
           />
-        ) : (
-          <LevelUpTable
-            columns={data.tableColumns}
-            rows={filtered}
-            canManage={data.canManage}
-            selectedTerm={data.selectedTerm}
-            emptyMessage={
-              data.submissions.length === 0
-                ? "No Level Up submissions yet."
-                : "No members match the current filters."
-            }
-            onLevelUp={(row) => setConfirmRow(row)}
-          />
         )}
       </div>
 
@@ -629,127 +582,6 @@ function Loaded({ data }: { data: LoadedData }) {
 // ─── Table ────────────────────────────────────────────────────────────────────
 
 type TableRow = LoadedData["submissions"][number];
-
-function LevelUpTable({
-  columns,
-  rows,
-  canManage,
-  selectedTerm,
-  emptyMessage,
-  onLevelUp,
-}: {
-  columns: { key: string; label: string }[];
-  rows: TableRow[];
-  canManage: boolean;
-  selectedTerm: string;
-  emptyMessage: string;
-  onLevelUp: (row: {
-    userId: string;
-    name: string;
-    domainId: string;
-    domainName: string;
-    targetLevel: Level;
-  }) => void;
-}) {
-  if (rows.length === 0) {
-    return (
-      <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-        {emptyMessage}
-      </div>
-    );
-  }
-
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm min-w-[640px]">
-        <thead className="bg-muted/30 text-muted-foreground text-xs">
-          <tr>
-            <th className="text-left font-medium px-4 py-2">Member</th>
-            {columns.map((c) => (
-              <th key={c.key} className="text-left font-medium px-4 py-2">
-                {c.label}
-              </th>
-            ))}
-            {canManage && (
-              <th className="text-left font-medium px-4 py-2">Actions</th>
-            )}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => (
-            <LevelUpRow
-              key={r.userId}
-              row={r}
-              columns={columns}
-              canManage={canManage}
-              selectedTerm={selectedTerm}
-              onLevelUp={onLevelUp}
-            />
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function LevelUpRow({
-  row,
-  columns,
-  canManage,
-  selectedTerm,
-  onLevelUp,
-}: {
-  row: TableRow;
-  columns: { key: string; label: string }[];
-  canManage: boolean;
-  selectedTerm: string;
-  onLevelUp: (row: {
-    userId: string;
-    name: string;
-    domainId: string;
-    domainName: string;
-    targetLevel: Level;
-  }) => void;
-}) {
-  const href = `/core/level-up/${row.userId}?term=${encodeURIComponent(selectedTerm)}`;
-
-  return (
-    <tr className="border-t border-border hover:bg-muted/10">
-      <td className="px-4 py-2">
-        <a
-          href={href}
-          className="text-foreground hover:underline"
-          onClick={(e) => {
-            // Allow middle-click / cmd-click to open new tab naturally.
-            if (!e.metaKey && !e.ctrlKey && !e.shiftKey) {
-              e.preventDefault();
-              window.location.href = href;
-            }
-          }}
-        >
-          {row.name}
-        </a>
-      </td>
-      {columns.map((c) => {
-        const v = row.cells[c.key] ?? "";
-        return (
-          <td key={c.key} className="px-4 py-2 text-foreground">
-            {v === "" ? (
-              <span className="text-muted-foreground">—</span>
-            ) : (
-              v
-            )}
-          </td>
-        );
-      })}
-      {canManage && (
-        <td className="px-4 py-2">
-          <LevelUpAction row={row} onLevelUp={onLevelUp} />
-        </td>
-      )}
-    </tr>
-  );
-}
 
 type LevelUpTarget = {
   userId: string;
@@ -886,33 +718,11 @@ function LevelUpConfirmDialog({
 
 // ─── Header ───────────────────────────────────────────────────────────────────
 
-function Header({
-  cycleName,
-  onOpenSettings,
-  settingsLabel,
-}: {
-  cycleName?: string;
-  onOpenSettings?: () => void;
-  settingsLabel?: string;
-}) {
+function Header() {
   const { pageTitle } = useOsChrome();
   return (
-    <>
     <header className="flex items-start justify-between gap-3">
       <h1 className={pageTitle}>Level Up</h1>
-      {onOpenSettings && (
-        <button
-          type="button"
-          onClick={onOpenSettings}
-          className={cn(
-            "shrink-0",
-            "os-edit-btn",
-          )}
-        >
-          {settingsLabel ?? "Advanced settings"}
-        </button>
-      )}
     </header>
-    </>
   );
 }

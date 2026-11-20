@@ -13,7 +13,7 @@ import pg from 'pg';
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://dali:dali@localhost:5432/dali';
 const STAMP = `E2E-comms-${Date.now()}`;
-const FLAG = 'banners';
+const FLAG = 'release-notes';
 
 test.describe.serial('Core announcements', () => {
   test.setTimeout(90_000);
@@ -136,7 +136,7 @@ test.describe.serial('Feature flags', () => {
     }
   });
 
-  test('an admin turns Banners on for one person and the tab appears only for them', async () => {
+  test('an admin turns Release notes on for one person and the tab appears only for them', async () => {
     const page = admin.page;
     await page.goto('/admin/platform/flags');
     await page.getByRole('searchbox', { name: 'Search flags' }).fill(FLAG);
@@ -166,13 +166,13 @@ test.describe.serial('Feature flags', () => {
     // Flag rows are cached for ~15s server side.
     await expect(async () => {
       await core.page.goto('/core/communications');
-      await expect(core.page.getByRole('link', { name: 'Banners' })).toBeVisible({ timeout: 2000 });
+      await expect(core.page.getByRole('link', { name: 'Release notes' })).toBeVisible({ timeout: 2000 });
     }).toPass({ timeout: 60_000 });
 
     // Targeted at one person: another Core member (the admin) still has no tab.
     await page.goto('/core/communications');
     await expect(page.getByRole('heading', { name: 'Communications' })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Banners' })).toHaveCount(0);
+    await expect(page.getByRole('link', { name: 'Release notes' })).toHaveCount(0);
   });
 
   test('turning the flag off removes the tab again', async () => {
@@ -191,7 +191,7 @@ test.describe.serial('Feature flags', () => {
     await expect(async () => {
       await core.page.goto('/core/communications');
       await expect(core.page.getByRole('heading', { name: 'Communications' })).toBeVisible({ timeout: 2000 });
-      await expect(core.page.getByRole('link', { name: 'Banners' })).toHaveCount(0, { timeout: 2000 });
+      await expect(core.page.getByRole('link', { name: 'Release notes' })).toHaveCount(0, { timeout: 2000 });
     }).toPass({ timeout: 60_000 });
   });
 

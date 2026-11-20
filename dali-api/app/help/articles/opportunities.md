@@ -1,7 +1,6 @@
 ---
 title: Opportunities
 summary: Share a job, ask for a coffee chat, and see where partner referrals go.
-flag: alumni-opportunities
 paths: [/community/opportunities, /refer]
 keywords: [jobs, hiring, coffee chat, referral, internship, still open, opportunities]
 ---

@@ -222,9 +222,8 @@ export async function loader({ request }: Route.LoaderArgs) {
     flags['onboarding-journeys'] && isLabMember && !core
       ? timed(request, 'newMember', () => layoutIsNewMember(auth.user.sub))
       : false,
-    // First-login alumni invite: the onboarding flow, or the game when only that is on.
-    (flags['alumni-onboarding'] || flags['alumni-game']) && isAlumni
-      ? timed(request, 'alumniInvite', () => alumniInviteFor(auth.user.sub, isAlumni, flags))
+    isAlumni
+      ? timed(request, 'alumniInvite', () => alumniInviteFor(auth.user.sub, isAlumni))
       : null,
   ])
 

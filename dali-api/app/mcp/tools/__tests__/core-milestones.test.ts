@@ -124,8 +124,8 @@ describe("manage_core_milestone", () => {
   });
 });
 
-describe("core milestone tool flag", () => {
-  it("gates every registry entry on core-taskboard", () => {
-    expect(CORE_MILESTONE_TOOLS.map((t) => t.featureFlag)).toEqual(["core-taskboard", "core-taskboard"]);
+describe("core milestone tool registration", () => {
+  it("is not behind a feature flag", () => {
+    expect(CORE_MILESTONE_TOOLS.map((t) => t.featureFlag)).toEqual([undefined, undefined]);
   });
 });
