@@ -6,6 +6,7 @@ import {
   offersStartTermChoice,
   impliedStartTermId,
   isOfferedStartTerm,
+  effectiveStartTermId,
   type StartTermOption,
 } from "~/hiring/lib/start-terms";
 
@@ -160,5 +161,29 @@ describe("isOfferedStartTerm", () => {
     expect(isOfferedStartTerm(["t-26f"], null)).toBe(false);
     expect(isOfferedStartTerm(["t-26f"], undefined)).toBe(false);
     expect(isOfferedStartTerm(["t-26f"], "")).toBe(false);
+  });
+});
+
+describe("effectiveStartTermId", () => {
+  const cycle = (startTermIds: string[], termId: string | null = "t-26f") => ({ termId, startTermIds });
+
+  it("keeps a stored start term, even one the cycle never offered", () => {
+    expect(effectiveStartTermId({ startTermId: "t-27w" }, cycle(["t-26f"]))).toBe("t-27w");
+  });
+
+  it("falls back to the cycle's own term when the cycle offers no start terms", () => {
+    expect(effectiveStartTermId({ startTermId: null }, cycle([]))).toBe("t-26f");
+  });
+
+  it("uses the single offered term over the cycle's own term", () => {
+    expect(effectiveStartTermId({ startTermId: null }, cycle(["t-27w"]))).toBe("t-27w");
+  });
+
+  it("is null when the cycle offers a choice the applicant never made", () => {
+    expect(effectiveStartTermId({ startTermId: null }, cycle(["t-27w", "t-26f"]))).toBeNull();
+  });
+
+  it("is null when the cycle has no term and offers none", () => {
+    expect(effectiveStartTermId({ startTermId: null }, cycle([], null))).toBeNull();
   });
 });

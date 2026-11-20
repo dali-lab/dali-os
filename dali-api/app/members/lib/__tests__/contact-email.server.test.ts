@@ -30,7 +30,7 @@ import {
   confirmContactEmail,
   listContactEmailOptions,
   runContactEmailIntent,
-} from "~/lib/contact-email.server";
+} from "~/members/lib/contact-email.server";
 
 const db = vi.mocked(prisma, true);
 const record = vi.mocked(recordUserEmail);

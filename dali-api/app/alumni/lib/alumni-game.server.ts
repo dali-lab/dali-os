@@ -1,12 +1,12 @@
 import { prisma } from "~/lib/db.server";
-import { chooseContactEmail } from "~/lib/contact-email.server";
+import { chooseContactEmail } from "~/members/lib/contact-email.server";
 import { normalizeEmailAddress } from "~/lib/user-email.server";
 import {
   toQuestProfile,
   questPercent,
   type QuestProfile,
   type QuestionContext,
-} from "~/components/alumni-game/quest";
+} from "~/alumni/lib/quest";
 
 export type QuestState = { profile: QuestProfile; ctx: QuestionContext };
 

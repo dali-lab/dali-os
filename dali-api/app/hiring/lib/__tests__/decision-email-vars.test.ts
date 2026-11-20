@@ -88,6 +88,17 @@ describe("decisionEmailVarsProblem", () => {
     expect(problem).toMatch(/Setup tab/);
   });
 
+  it("points at the Decisions tab when the cycle offers start terms and the applicant has none", () => {
+    const problem = decisionEmailVarsProblem(
+      "Accepted",
+      { ...ALL_SET, startTermCode: null, offersStartTerms: true },
+      ["starting in {{startTerm}}"],
+      NOW,
+    );
+    expect(problem).toMatch(/this applicant has no start term/);
+    expect(problem).toMatch(/Decisions tab/);
+  });
+
   it("blocks an Accepted email that quotes {{respondBy}} with no offer date", () => {
     const problem = decisionEmailVarsProblem(
       "Accepted",

@@ -24,7 +24,7 @@ import type { ColumnOp } from "~/forms/lib/column-ops";
 import type { Slot } from "~/projects/lib/form-slots";
 import { OPEN_PARAM } from "~/projects/lib/board-filters";
 
-type BoardRow = {
+export type BoardRow = {
   submissionId: string;
   enteredBy: string | null;
   userId: string;

@@ -2,7 +2,7 @@ import type { CSSProperties } from "react";
 import { cn } from "~/lib/cn";
 import { AUTH_TILE_GRID, type AuthTile } from "~/components/auth/auth-tiles";
 import { TileMotif } from "~/components/auth/AnimatedTileCluster";
-import { WALL_FILL_ORDER, WALL_SIZE } from "~/lib/alumni-onboarding";
+import { WALL_FILL_ORDER, WALL_SIZE } from "~/alumni/lib/alumni-onboarding";
 
 const pct = (n: number, of: number) => `${(n / of) * 100}%`;
 

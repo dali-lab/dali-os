@@ -5,8 +5,8 @@ vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/lib/betterauth-session.server", () => ({ mintBetterAuthSession: vi.fn() }));
 vi.mock("~/lib/betterauth-cookie.server", () => ({ appendBetterAuthSessionCookie: vi.fn() }));
-vi.mock("~/lib/contact-email.server", () => ({ adoptInviteAddress: vi.fn() }));
-vi.mock("~/lib/alumni-invite.server", () => ({
+vi.mock("~/members/lib/contact-email.server", () => ({ adoptInviteAddress: vi.fn() }));
+vi.mock("~/alumni/lib/alumni-invite.server", () => ({
   lookupAlumniInvite: vi.fn(),
   redeemAlumniInvite: vi.fn(),
   sendFreshAlumniInvite: vi.fn(),
@@ -17,8 +17,8 @@ import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 import { mintBetterAuthSession } from "~/lib/betterauth-session.server";
 import { appendBetterAuthSessionCookie } from "~/lib/betterauth-cookie.server";
-import { adoptInviteAddress } from "~/lib/contact-email.server";
-import { lookupAlumniInvite, redeemAlumniInvite, sendFreshAlumniInvite } from "~/lib/alumni-invite.server";
+import { adoptInviteAddress } from "~/members/lib/contact-email.server";
+import { lookupAlumniInvite, redeemAlumniInvite, sendFreshAlumniInvite } from "~/alumni/lib/alumni-invite.server";
 import { action, loader } from "../alumni.invite.$token";
 
 const url = "https://os.example/alumni/invite/tok";

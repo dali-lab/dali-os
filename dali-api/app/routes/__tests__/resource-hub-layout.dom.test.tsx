@@ -5,7 +5,7 @@ import { RouterProvider, createMemoryRouter } from "react-router";
 import { renderDom, click } from "~/test-utils/render";
 
 vi.mock("~/lib/db.server", () => ({ prisma: {} }));
-vi.mock("~/lib/resource-hub.server", () => ({ loadHubShell: vi.fn() }));
+vi.mock("~/resource-hub/lib/resource-hub.server", () => ({ loadHubShell: vi.fn() }));
 vi.mock("~/lib/collabAuth.server", () => ({}));
 vi.mock("~/lib/link-preview-limit.server", () => ({}));
 vi.mock("~/lib/collab-token.server", () => ({}));

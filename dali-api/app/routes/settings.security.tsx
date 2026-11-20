@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useLoaderData } from "react-router";
 import { requireAuth } from "~/lib/auth";
-import { listContactEmailOptions, runContactEmailIntent } from "~/lib/contact-email.server";
+import { listContactEmailOptions, runContactEmailIntent } from "~/members/lib/contact-email.server";
 import { ContactEmailPicker } from "~/components/contact-email/ContactEmailPicker";
 import { SettingsSection } from "~/components/settings/SettingsSection";
 import {

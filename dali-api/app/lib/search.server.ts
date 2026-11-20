@@ -25,7 +25,7 @@ import { blocksToPlainText } from "~/components/doc/schema/configs";
 import { PAGE_ACCESS_SELECT, getPageAccessBulk } from "~/lib/pageAccess.server";
 import { HELP_ARTICLES } from "~/lib/help-articles";
 import { visibleHelpArticles } from "~/help/library.server";
-import { searchResourceHubs } from "~/lib/resource-hub-search.server";
+import { searchResourceHubs } from "~/resource-hub/lib/resource-hub-search.server";
 import { categorize } from "~/lib/file-type";
 import { filterViewableFiles } from "~/lib/fileAccess.server";
 

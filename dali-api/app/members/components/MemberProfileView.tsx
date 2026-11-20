@@ -56,7 +56,7 @@ import { Activity, Heart, User as ProfileTabIcon } from "lucide-react";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { Toggle } from "~/components/ui/Toggle";
-import { OPEN_TO_CHOICES } from "~/lib/alumni-onboarding";
+import { OPEN_TO_CHOICES } from "~/members/lib/open-to";
 import { PersonalNotesRail } from "./PersonalNotesRail";
 import { BasedInField, structuredPlace } from "./BasedInField";
 import { ProfileRequestButtons } from "./ProfileRequestButtons";

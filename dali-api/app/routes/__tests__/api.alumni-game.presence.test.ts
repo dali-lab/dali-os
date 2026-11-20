@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("~/lib/auth", () => ({ requireMemberSession: vi.fn() }));
 
 import { requireMemberSession } from "~/lib/auth";
-import { resetPresence, heartbeat } from "~/lib/alumni-presence.server";
+import { resetPresence, heartbeat } from "~/alumni/lib/alumni-presence.server";
 import { SERVER_CAPACITY } from "~/components/alumni-game/servers";
 import { DEFAULT_AVATAR } from "~/components/alumni-game/pixel-avatar";
 import { action } from "../api.alumni-game.presence";

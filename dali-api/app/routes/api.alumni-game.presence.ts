@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.alumni-game.presence";
 import { requireMemberSession } from "~/lib/auth";
-import { heartbeat, leave } from "~/lib/alumni-presence.server";
+import { heartbeat, leave } from "~/alumni/lib/alumni-presence.server";
 import { isLabServerId } from "~/components/alumni-game/servers";
 import { isAvatarConfig } from "~/components/alumni-game/pixel-avatar";
 import { WORLD } from "~/components/alumni-game/lab-data";

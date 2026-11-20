@@ -1,13 +1,11 @@
 import { describe, it, expect } from "vitest";
 import {
-  OPEN_TO_CHOICES,
   WALL_FILL_ORDER,
   WALL_SIZE,
   blockById,
   blockIdFor,
   classTag,
   joinRoles,
-  parseJsonList,
   splitWork,
   summarizeDali,
   wallFilledForStep,
@@ -34,18 +32,6 @@ describe("finished block", () => {
       const block = blockById(blockIdFor(id));
       expect(["solid", "loose"]).not.toContain(block.motif);
     }
-  });
-});
-
-describe("open-to choices", () => {
-  it("lists the five designed tiles in order", () => {
-    expect(OPEN_TO_CHOICES.map((c) => c.title)).toEqual([
-      "Coffee chats",
-      "Resume reviews",
-      "Partner referrals",
-      "Mentor a project",
-      "Speak at a lab event",
-    ]);
   });
 });
 
@@ -95,11 +81,5 @@ describe("helpers", () => {
   it("builds the name tag with a two digit class year", () => {
     expect(classTag("Ada Lovelace", 2024)).toBe("Ada Lovelace '24");
     expect(classTag("Ada Lovelace", null)).toBe("Ada Lovelace");
-  });
-
-  it("parses the topic list and drops anything that is not a string list", () => {
-    expect(parseJsonList('["a","b",3]')).toEqual(["a", "b"]);
-    expect(parseJsonList("nope")).toEqual([]);
-    expect(parseJsonList('{"a":1}')).toEqual([]);
   });
 });

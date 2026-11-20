@@ -6,7 +6,7 @@ import { redirect, useFetcher, useLoaderData } from "react-router";
 import { Plus } from "lucide-react";
 import type { Route } from "./+types/resource-hub";
 import { prisma } from "~/lib/db.server";
-import { hubDomainOptions, ledDomainIds, requireResourceHubViewer } from "~/lib/resource-hub.server";
+import { hubDomainOptions, ledDomainIds, requireResourceHubViewer } from "~/resource-hub/lib/resource-hub.server";
 
 export const meta: Route.MetaFunction = () => [{ title: "Resource Hub · DALI OS" }];
 

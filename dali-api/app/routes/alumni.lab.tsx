@@ -4,7 +4,7 @@ import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db.server";
 import { readOnlyRoles } from "~/lib/read-only-roles.server";
-import { loadQuestState } from "~/lib/alumni-game.server";
+import { loadQuestState } from "~/alumni/lib/alumni-game.server";
 import { isAvatarConfig } from "~/components/alumni-game/pixel-avatar";
 import { LabSceneView } from "~/components/alumni-game/LabSceneView";
 

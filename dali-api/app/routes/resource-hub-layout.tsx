@@ -7,7 +7,7 @@ import { isPatternCover } from "~/components/cover/CoverPattern";
 import { HubHeader } from "~/components/resource-hub/HubHeader";
 import { HubCoverStudio } from "~/components/resource-hub/HubCoverStudio";
 import { prisma } from "~/lib/db.server";
-import { loadHubShell } from "~/lib/resource-hub.server";
+import { loadHubShell } from "~/resource-hub/lib/resource-hub.server";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const { page, canEdit } = await loadHubShell(request, params.pageId!);

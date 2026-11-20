@@ -2,7 +2,7 @@ import { prisma } from "~/lib/db.server";
 import { readDocAsBlocks } from "~/collab/read";
 import { blocksToMarkdown } from "~/collab/blocknote-server";
 import { resourceHubRoomName } from "~/collab/roomName";
-import { loadHubAccess, ledDomainIds, resourceHubViewer, type HubAccess } from "~/lib/resource-hub.server";
+import { loadHubAccess, ledDomainIds, resourceHubViewer, type HubAccess } from "~/resource-hub/lib/resource-hub.server";
 import type { McpCtx } from "../../registry";
 import { McpInvalidError, McpNotFoundError } from "../../errors";
 import { TEXT_PAGE_LIMITS, pageProps, pageText, type PageArgs } from "../../pagination";

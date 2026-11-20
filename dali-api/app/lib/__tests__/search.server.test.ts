@@ -11,7 +11,7 @@ vi.mock("~/hiring/lib/confidentiality", () => ({
 // can't stand in for — its own behavior is covered in doc-search.test.ts.
 vi.mock("~/lib/doc-search.server", () => ({ searchPageContent: vi.fn() }));
 vi.mock("~/help/library.server", () => ({ visibleHelpArticles: vi.fn().mockResolvedValue([]) }));
-vi.mock("~/lib/resource-hub-search.server", () => ({ searchResourceHubs: vi.fn().mockResolvedValue([]) }));
+vi.mock("~/resource-hub/lib/resource-hub-search.server", () => ({ searchResourceHubs: vi.fn().mockResolvedValue([]) }));
 vi.mock("~/lib/fileAccess.server", () => ({ filterViewableFiles: vi.fn() }));
 vi.mock("~/lib/pageAccess.server", () => ({
   PAGE_ACCESS_SELECT: { id: true, accessMarker: true },
@@ -24,7 +24,7 @@ import { getPageAccessBulk } from "~/lib/pageAccess.server";
 import { filterViewableFiles } from "~/lib/fileAccess.server";
 import { visibleHelpArticles } from "~/help/library.server";
 import { parseHelpArticle } from "~/help/article-format";
-import { searchResourceHubs } from "~/lib/resource-hub-search.server";
+import { searchResourceHubs } from "~/resource-hub/lib/resource-hub-search.server";
 import { CATEGORY_RAW_TAKE, runCategorySearch, runSearch, runSearchWithOverflow } from "~/lib/search.server";
 import type { UserRoles } from "~/lib/roles";
 

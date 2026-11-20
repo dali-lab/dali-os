@@ -7,7 +7,7 @@ import {
   type QuestFieldKey,
   type QuestionContext,
   type QuestProfile,
-} from "./quest";
+} from "~/alumni/lib/quest";
 
 export type ChatMessage = { from: "tim" | "you"; text: string };
 
