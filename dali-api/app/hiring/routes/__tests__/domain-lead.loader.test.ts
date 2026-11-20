@@ -117,6 +117,18 @@ describe("domain lead loader", () => {
     expect(prisma.form.findMany).not.toHaveBeenCalled();
   });
 
+  it("shows each domain once when the lead holds it for several terms", async () => {
+    prisma.domainLeadAssignment.findMany.mockResolvedValue([
+      ASSIGNMENT,
+      { ...ASSIGNMENT, id: "a0", termId: "older" },
+    ]);
+    const data = await run();
+    expect(data.domainData.map((d: { assignment: { id: string } }) => d.assignment.id)).toEqual(["a1"]);
+    expect(prisma.domainLeadAssignment.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ orderBy: [{ domain: { name: "asc" } }, { createdAt: "desc" }] }),
+    );
+  });
+
   it("passes the request to getUserRoles", async () => {
     await run();
     expect(getUserRoles).toHaveBeenCalledWith("u1", request);

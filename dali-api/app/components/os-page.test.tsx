@@ -94,6 +94,11 @@ describe("PageTabRow", () => {
     expect(container.querySelector('button[aria-label="Settings"]')).toBeNull();
   });
 
+  it("caps the tab island at the row width so a long tab strip scrolls instead of running off the page", () => {
+    const { container } = renderDom(<PageTabRow label="Sections" tabs={TABS} />);
+    expect(container.querySelector('[data-slot="island"]')!.classList).toContain("max-w-full");
+  });
+
   it("names the gear with settingsLabel", () => {
     const { container } = renderDom(
       <PageTabRow label="Sections" tabs={TABS} onSettings={() => {}} settingsLabel="Partner settings" />,

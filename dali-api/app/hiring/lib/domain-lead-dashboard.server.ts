@@ -19,13 +19,18 @@ export async function loadDomainLeadDashboard({ request }: { request: Request })
   const auth = await requireAuth(request);
   if (!auth.ok) return { domainData: [], pillRoles: null };
 
-  const [roles, assignments] = await Promise.all([
+  const [roles, allAssignments] = await Promise.all([
     getUserRoles(auth.user.sub, request),
     prisma.domainLeadAssignment.findMany({
       where: { userId: auth.user.sub },
       include: { domain: true },
+      orderBy: [{ domain: { name: "asc" } }, { createdAt: "desc" }],
     }),
   ]);
+  // Assignments are per term but the dashboard is per domain.
+  const assignments = allAssignments.filter(
+    (a, i) => allAssignments.findIndex((b) => b.domainId === a.domainId) === i,
+  );
   const pillRoles = {
     isCore: roles.isCore,
     isDomainLead: roles.isDomainLead,
