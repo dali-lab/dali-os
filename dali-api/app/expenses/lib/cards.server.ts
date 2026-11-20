@@ -3,6 +3,7 @@ import { prisma } from "~/lib/db.server";
 import { isValidChartString } from "~/lib/chart-string";
 import { ACTIVE_LAB_MEMBER_WHERE } from "~/lib/prisma-shapes";
 import { canFileOnCard, canManageCards, canManageCategories, isCardHolderGroup, type ExpenseViewer } from "./access";
+import { auditExpense } from "./audit.server";
 import { ExpenseError } from "./errors";
 
 const CARD_SELECT = {
@@ -100,7 +101,7 @@ export async function createCategory(actor: ExpenseViewer, input: CategoryInput)
   if (!label) throw new ExpenseError("invalid", "Give the category a name.");
   const chartString = cleanChartString(input.chartString);
   const last = await prisma.expenseCategory.findFirst({ orderBy: { sortOrder: "desc" }, select: { sortOrder: true } });
-  return prisma.expenseCategory.create({
+  const category = await prisma.expenseCategory.create({
     data: {
       label,
       chartString,
@@ -108,6 +109,8 @@ export async function createCategory(actor: ExpenseViewer, input: CategoryInput)
       sortOrder: input.sortOrder ?? (last?.sortOrder ?? -1) + 1,
     },
   });
+  await auditExpense(actor, "expense.category.create", category.id, { label, chartString });
+  return category;
 }
 
 function cleanChartString(raw: string | null | undefined): string | null {
@@ -131,7 +134,9 @@ export async function updateCategory(actor: ExpenseViewer, id: string, input: Pa
   if (input.hints !== undefined) data.hints = cleanHints(input.hints);
   if (input.sortOrder !== undefined) data.sortOrder = input.sortOrder;
   try {
-    return await prisma.expenseCategory.update({ where: { id }, data });
+    const category = await prisma.expenseCategory.update({ where: { id }, data });
+    await auditExpense(actor, "expense.category.update", id, { fields: Object.keys(data) });
+    return category;
   } catch (e) {
     if ((e as { code?: string }).code === "P2025") throw new ExpenseError("not_found", "Category not found.");
     throw e;
@@ -141,6 +146,7 @@ export async function updateCategory(actor: ExpenseViewer, id: string, input: Pa
 export async function archiveCategory(actor: ExpenseViewer, id: string) {
   requireCore(canManageCategories(actor));
   const r = await prisma.expenseCategory.updateMany({ where: { id, archivedAt: null }, data: { archivedAt: new Date() } });
+  if (r.count > 0) await auditExpense(actor, "expense.category.archive", id);
   return { archived: r.count > 0 };
 }
 
@@ -161,7 +167,7 @@ export async function createCard(actor: ExpenseViewer, input: CardInput) {
   await assertStaffOwner(data.ownerId);
   await assertHolders(data);
   await assertCategoryExists(data.defaultCategoryId);
-  return prisma.expenseCard.create({
+  const card = await prisma.expenseCard.create({
     data: {
       nickname: data.nickname,
       last4: data.last4,
@@ -172,6 +178,14 @@ export async function createCard(actor: ExpenseViewer, input: CardInput) {
     },
     select: CARD_SELECT,
   });
+  await auditExpense(actor, "expense.card.create", card.id, {
+    nickname: card.nickname,
+    last4: card.last4,
+    ownerId: card.ownerId,
+    holderIds: card.holderIds,
+    holderGroupIds: card.holderGroupIds,
+  });
+  return card;
 }
 
 export async function updateCard(actor: ExpenseViewer, id: string, input: Partial<CardInput>) {
@@ -181,7 +195,14 @@ export async function updateCard(actor: ExpenseViewer, id: string, input: Partia
   await assertHolders(data);
   await assertCategoryExists(data.defaultCategoryId);
   try {
-    return await prisma.expenseCard.update({ where: { id }, data, select: CARD_SELECT });
+    const card = await prisma.expenseCard.update({ where: { id }, data, select: CARD_SELECT });
+    await auditExpense(actor, "expense.card.update", id, {
+      fields: Object.keys(data),
+      ownerId: card.ownerId,
+      holderIds: card.holderIds,
+      holderGroupIds: card.holderGroupIds,
+    });
+    return card;
   } catch (e) {
     if ((e as { code?: string }).code === "P2025") throw new ExpenseError("not_found", "Card not found.");
     throw e;
@@ -201,5 +222,6 @@ export async function archiveCard(actor: ExpenseViewer, id: string, opts: { conf
     const exists = await prisma.expenseCard.findUnique({ where: { id }, select: { id: true } });
     if (!exists) throw new ExpenseError("not_found", "Card not found.");
   }
+  await auditExpense(actor, "expense.card.archive", id, { submittedCount });
   return { archived: true };
 }

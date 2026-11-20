@@ -3,6 +3,7 @@ import { isIP } from "node:net";
 import { randomUUID } from "node:crypto";
 import { isPrivateAddress } from "~/lib/pdf/render-guard.server";
 import { putObject } from "~/lib/s3.server";
+import { pinnedFetch } from "~/lib/safe-fetch.server";
 
 export type ResolvedJobLink = {
   url: string;
@@ -112,18 +113,16 @@ async function safeFetch(
   deps: JobLinkDeps,
   opts: { maxBytes: number; truncate: boolean; readBody?: boolean; accept?: string },
 ): Promise<Fetched | null> {
-  const doFetch = deps.fetch ?? fetch;
   let current = raw;
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
     const url = await isSafeUrl(current, deps);
     if (!url) return null;
     let res: Response;
     try {
-      res = await doFetch(url.href, {
-        redirect: "manual",
-        signal: AbortSignal.timeout(TIMEOUT_MS),
-        headers: { accept: opts.accept ?? "text/html,application/json;q=0.9,*/*;q=0.5", "user-agent": "Mozilla/5.0 (compatible; DALIBot/1.0)" },
-      });
+      const headers = { accept: opts.accept ?? "text/html,application/json;q=0.9,*/*;q=0.5", "user-agent": "Mozilla/5.0 (compatible; DALIBot/1.0)" };
+      res = deps.fetch
+        ? await deps.fetch(url.href, { redirect: "manual", signal: AbortSignal.timeout(TIMEOUT_MS), headers })
+        : await pinnedFetch(url, { headers, timeoutMs: TIMEOUT_MS, signal: AbortSignal.timeout(TIMEOUT_MS) });
     } catch {
       return null;
     }

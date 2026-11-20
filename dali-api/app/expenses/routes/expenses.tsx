@@ -38,7 +38,7 @@ import {
 import { getChargeForFiling } from "../lib/charge-filing.server";
 import { parseMoneyToCents } from "../lib/money";
 import { requestReceipt } from "../lib/reminders.server";
-import { parseExpenseFilters } from "./filters";
+import { parseExpenseFilters } from "../lib/filters";
 import { failure, guardExpenses } from "./guard.server";
 
 export const meta: Route.MetaFunction = () => [{ title: "Expenses · DALI OS" }];

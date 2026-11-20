@@ -8,7 +8,6 @@ vi.mock("~/lib/auth", () => ({
   isImpersonating: vi.fn(() => false),
   isNonMember: vi.fn(),
 }));
-vi.mock("~/lib/betterauth-upgrade.server", () => ({ maybeUpgradeLegacyToBetterAuth: vi.fn() }));
 vi.mock("~/lib/login-next", () => ({
   redirectToLogin: vi.fn(() => new Response(null, { status: 302, headers: { Location: "/login" } })),
 }));
@@ -37,7 +36,6 @@ vi.mock("~/lib/public-doc.server", () => ({ publicDocRedirectForPath: vi.fn() })
 vi.mock("~/lib/impersonation-restore.server", () => ({ redirectRestoringAdmin: vi.fn() }));
 
 import { isNonMember, redirectPartnerToPortal, requireAuth } from "~/lib/auth";
-import { maybeUpgradeLegacyToBetterAuth } from "~/lib/betterauth-upgrade.server";
 import { getActiveCycles } from "~/hiring/lib/cycles";
 import { layoutAppGate, layoutFavorites, layoutFormGate, layoutRoles } from "~/lib/layout-reads.server";
 import { loadShellUser } from "~/lib/shell-user.server";
@@ -67,7 +65,6 @@ beforeEach(() => {
   vi.mocked(requireAuth).mockResolvedValue(auth as never);
   vi.mocked(isNonMember).mockResolvedValue(false);
   vi.mocked(redirectPartnerToPortal).mockResolvedValue(null as never);
-  vi.mocked(maybeUpgradeLegacyToBetterAuth).mockResolvedValue(null as never);
   vi.mocked(publicDocRedirectForPath).mockResolvedValue(null as never);
   vi.mocked(redirectRestoringAdmin).mockResolvedValue(null);
   vi.mocked(isImpersonating).mockReturnValue(false);
@@ -129,25 +126,10 @@ describe("layout loader gate order", () => {
     expect(location(await run("/documents/p1").result)).toBe("/d/public");
   });
 
-  it("never gives a non-member the session upgrade", async () => {
-    vi.mocked(isNonMember).mockResolvedValue(true);
-    vi.mocked(maybeUpgradeLegacyToBetterAuth).mockResolvedValue(new Headers({ "Set-Cookie": "s=1" }) as never);
-    expect(location(await run().result)).toBe("/portal");
-    expect(maybeUpgradeLegacyToBetterAuth).not.toHaveBeenCalled();
-  });
-
   it("applies the non-member redirect ahead of the partner redirect", async () => {
     vi.mocked(isNonMember).mockResolvedValue(true);
     vi.mocked(redirectPartnerToPortal).mockResolvedValue(to("/partner") as never);
     expect(location(await run().result)).toBe("/portal");
-  });
-
-  it("reloads the same URL with the upgrade cookie, ahead of the partner redirect", async () => {
-    vi.mocked(maybeUpgradeLegacyToBetterAuth).mockResolvedValue(new Headers({ "Set-Cookie": "s=1" }) as never);
-    vi.mocked(redirectPartnerToPortal).mockResolvedValue(to("/partner") as never);
-    const response = await run().result;
-    expect(location(response)).toBe("/projects?view=grid");
-    expect(response.headers.get("Set-Cookie")).toBe("s=1");
   });
 
   it("sends a partner to the partner portal", async () => {

@@ -8,6 +8,7 @@ import {
   canMatchCharge,
   canViewCard,
   canViewExpense,
+  expenseAccessDenial,
   expenseTabs,
   isCardHolderGroup,
   type ExpenseRef,
@@ -130,5 +131,17 @@ describe("expenseTabs", () => {
     const t = expenseTabs(viewer({ isStaff: true }));
     expect(t.approvals).toBe(true);
     expect(t.all).toBe(true);
+  });
+});
+
+describe("expenseAccessDenial", () => {
+  const base = { isLabMemberOrAlum: true, isAlumni: false, readOnlyImpersonation: false };
+  it("allows a current member", () => {
+    expect(expenseAccessDenial(base)).toBeNull();
+  });
+  it("denies non-members, alumni and read-only impersonation", () => {
+    expect(expenseAccessDenial({ ...base, isLabMemberOrAlum: false })).toBe("non_member");
+    expect(expenseAccessDenial({ ...base, isAlumni: true })).toBe("alumni");
+    expect(expenseAccessDenial({ ...base, readOnlyImpersonation: true })).toBe("impersonated_write");
   });
 });

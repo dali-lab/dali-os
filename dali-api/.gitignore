@@ -28,3 +28,7 @@ prisma/data/
 /demo-results/
 /demo-out/
 /demo-work/
+
+# Scripts take real data as input; keep it out of the repo
+/scripts/*.json
+/scripts/*.csv

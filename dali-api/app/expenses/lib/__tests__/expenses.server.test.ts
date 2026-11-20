@@ -22,6 +22,8 @@ const m = vi.hoisted(() => {
   };
 });
 
+const audit = vi.hoisted(() => vi.fn());
+vi.mock("~/lib/audit", () => ({ logAuditEvent: audit }));
 vi.mock("~/lib/db.server", () => ({ prisma: m.prisma }));
 vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn() }));
 vi.mock("~/lib/notify.server", () => ({ notify: (...a: unknown[]) => m.notify(...a) }));
@@ -637,5 +639,77 @@ describe("receiptLink", () => {
     setRecord();
     expect(await code(receiptLink(viewer(), "r1"))).toBe("not_found");
     expect(m.getDownloadUrl).not.toHaveBeenCalled();
+  });
+});
+
+describe("audit trail", () => {
+  const last = () => audit.mock.calls.at(-1)![0];
+
+  it("records a receipt-backed create with the filer as the actor", async () => {
+    m.headObject.mockResolvedValue({ sizeBytes: 3, contentType: "image/png" });
+    m.getObjectBytes.mockResolvedValue({ body: Buffer.from("abc") });
+    m.prisma.expenseCategory.findMany.mockResolvedValue([]);
+    m.extractReceipts.mockResolvedValue(emptyExtraction(1));
+    m.prisma.expense.create.mockResolvedValue({ id: "e1" });
+    setRecord();
+    await createFromReceipts(filer, ["uploads/expense-receipts/filer/abc"], { paidWith: "OWN_CARD" });
+    expect(last()).toMatchObject({ action: "expense.create", userId: "filer", targetId: "e1", metadata: { receipts: 1, paidWith: "OWN_CARD" } });
+  });
+
+  it("records a no-receipt create", async () => {
+    m.prisma.expense.create.mockResolvedValue({ id: "e1" });
+    setRecord({ noReceipt: true });
+    await createNoReceipt(filer, { merchant: "Co-op", totalCents: 500, paidWith: "OWN_CARD" }, "Lost it");
+    expect(last()).toMatchObject({ action: "expense.create", userId: "filer", targetId: "e1", metadata: { noReceipt: true } });
+  });
+
+  it("records the fields changed by an edit, and nothing for an empty patch", async () => {
+    setRecord();
+    await updateExpense(filer, "e1", { merchant: "Staples", purpose: "Posters" });
+    expect(last()).toMatchObject({ action: "expense.update", userId: "filer", targetId: "e1", metadata: { fields: ["merchant", "purpose"], coding: false } });
+    audit.mockClear();
+    await updateExpense(filer, "e1", {});
+    expect(audit).not.toHaveBeenCalled();
+  });
+
+  it("flags an approver's coding edit", async () => {
+    setRecord({ status: "SUBMITTED" });
+    await updateExpense(owner, "e1", { categoryId: null });
+    expect(last()).toMatchObject({ action: "expense.update", userId: "owner", metadata: { coding: true } });
+  });
+
+  it("records submit, withdraw and delete", async () => {
+    setRecord();
+    await submitExpense(filer, "e1");
+    expect(last()).toMatchObject({ action: "expense.submit", userId: "filer", targetId: "e1" });
+    setRecord({ status: "SUBMITTED" });
+    await withdrawExpense(filer, "e1");
+    expect(last()).toMatchObject({ action: "expense.withdraw", userId: "filer", targetId: "e1" });
+    setRecord({ receipts: [{ s3Key: "k1" }] });
+    await deleteDraft(filer, "e1");
+    expect(last()).toMatchObject({ action: "expense.delete", userId: "filer", targetId: "e1", metadata: { receipts: 1 } });
+  });
+
+  it("records approve, review and return decisions with the note", async () => {
+    setRecord({ status: "SUBMITTED" });
+    await decideExpense(owner, "e1", { decision: "approve" });
+    expect(last()).toMatchObject({ action: "expense.decide", userId: "owner", targetId: "e1", metadata: { decision: "approve", reviewOnly: true } });
+    setRecord({ status: "SUBMITTED" });
+    await decideExpense(staff, "e1", { decision: "return", note: "Need the invoice" });
+    expect(last()).toMatchObject({ action: "expense.decide", userId: "staff1", metadata: { decision: "return", note: "Need the invoice" } });
+  });
+
+  it("records mark paid", async () => {
+    setRecord({ status: "APPROVED", paidWith: "OWN_CARD", cardId: null, card: null });
+    await markPaid(staff, "e1");
+    expect(last()).toMatchObject({ action: "expense.paid", userId: "staff1", targetId: "e1" });
+  });
+
+  it("writes nothing when the action is refused", async () => {
+    setRecord({ status: "SUBMITTED" });
+    await code(decideExpense(filer, "e1", { decision: "approve" }));
+    await code(deleteDraft(filer, "e1"));
+    await code(markPaid(filer, "e1"));
+    expect(audit).not.toHaveBeenCalled();
   });
 });

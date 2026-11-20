@@ -1,8 +1,6 @@
-import { lookup as dnsLookup } from "node:dns";
-import http from "node:http";
-import https from "node:https";
 import { isIP } from "node:net";
 import { isPrivateAddress } from "~/lib/pdf/render-guard.server";
+import { pinnedRequest } from "~/lib/safe-fetch.server";
 
 export interface LinkPreview {
   image: string | null;
@@ -31,64 +29,36 @@ export function isFetchableUrl(raw: string): URL | null {
   return url;
 }
 
-/** Resolves at connect time and refuses any non-public address, so a name can't be pointed at the network between a check and the request. */
-const publicOnlyLookup: typeof dnsLookup = ((host: string, options: unknown, cb: unknown) => {
-  const callback = (typeof options === "function" ? options : cb) as (err: Error | null, address?: unknown, family?: number) => void;
-  const opts = typeof options === "function" ? {} : (options as { all?: boolean });
-  dnsLookup(host, { all: true }, (err, addresses) => {
-    if (err) return callback(err);
-    if (!addresses.length || addresses.some((a) => isPrivateAddress(a.address))) {
-      return callback(new Error("Blocked address"));
-    }
-    if (opts.all) return callback(null, addresses);
-    callback(null, addresses[0]!.address, addresses[0]!.family);
-  });
-}) as typeof dnsLookup;
+const REQUEST_HEADERS = { "user-agent": "Mozilla/5.0 (compatible; DALI-OS link preview)", accept: "text/html,application/xhtml+xml" };
 
-function get(url: URL, signal: AbortSignal): Promise<{ status: number; location: string | null; contentType: string; body: string }> {
+async function get(url: URL, signal: AbortSignal): Promise<{ status: number; location: string | null; contentType: string; body: string }> {
+  const res = await pinnedRequest(url, { headers: REQUEST_HEADERS, timeoutMs: TIMEOUT_MS, signal });
+  const status = res.statusCode ?? 0;
+  const location = typeof res.headers.location === "string" ? res.headers.location : null;
+  const contentType = String(res.headers["content-type"] ?? "");
+  if (status >= 300 && status < 400) {
+    res.resume();
+    return { status, location, contentType, body: "" };
+  }
+  if (!/text\/html|application\/xhtml/i.test(contentType)) {
+    res.resume();
+    return { status, location: null, contentType, body: "" };
+  }
   return new Promise((resolve, reject) => {
-    const client = url.protocol === "https:" ? https : http;
-    const req = client.get(
-      url,
-      {
-        lookup: publicOnlyLookup,
-        timeout: TIMEOUT_MS,
-        headers: { "user-agent": "Mozilla/5.0 (compatible; DALI-OS link preview)", accept: "text/html,application/xhtml+xml" },
-      },
-      (res) => {
-        const status = res.statusCode ?? 0;
-        const location = typeof res.headers.location === "string" ? res.headers.location : null;
-        const contentType = String(res.headers["content-type"] ?? "");
-        if (status >= 300 && status < 400) {
-          res.resume();
-          return resolve({ status, location, contentType, body: "" });
-        }
-        if (!/text\/html|application\/xhtml/i.test(contentType)) {
-          res.resume();
-          return resolve({ status, location: null, contentType, body: "" });
-        }
-        const chunks: Buffer[] = [];
-        let size = 0;
-        res.on("data", (c: Buffer) => {
-          size += c.length;
-          chunks.push(c);
-          if (size >= MAX_BYTES) {
-            res.destroy();
-            resolve({ status, location: null, contentType, body: Buffer.concat(chunks).toString("utf8") });
-          }
-        });
-        res.on("end", () => resolve({ status, location: null, contentType, body: Buffer.concat(chunks).toString("utf8") }));
-        res.on("error", reject);
-      },
-    );
-    req.on("timeout", () => req.destroy(new Error("Timed out")));
-    req.on("error", reject);
-    const abort = () => {
-      req.destroy();
-      reject(new Error("Timed out"));
-    };
-    if (signal.aborted) abort();
-    else signal.addEventListener("abort", abort, { once: true });
+    const chunks: Buffer[] = [];
+    let size = 0;
+    const done = () => resolve({ status, location: null, contentType, body: Buffer.concat(chunks).toString("utf8") });
+    res.on("data", (c: Buffer) => {
+      size += c.length;
+      chunks.push(c);
+      if (size >= MAX_BYTES) {
+        res.destroy();
+        done();
+      }
+    });
+    res.on("end", done);
+    res.on("error", reject);
+    signal.addEventListener("abort", () => reject(new Error("Timed out")), { once: true });
   });
 }
 

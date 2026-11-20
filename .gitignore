@@ -11,3 +11,11 @@ node_modules/
 __pycache__/
 .pytest_cache/
 .venv/
+
+# Local data and design-sync output (may hold member data)
+/.staffing-*.json
+/.ds-sync/
+/.design-sync/
+/ds-bundle/
+/dali-api/.ds-build/
+/dali-api/test-results/

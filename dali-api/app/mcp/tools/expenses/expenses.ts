@@ -21,7 +21,7 @@ import { isS3Configured } from "~/lib/s3.server";
 import type { McpCtx } from "../../registry";
 import { McpInvalidError, requireForAction } from "../../errors";
 import { curlCommand } from "../presigned-upload";
-import { moneyToCents, parseDay, presentMoney, withViewer } from "./shared";
+import { moneyToCents, parseDay, presentMoney, requireExpenseAccess, withViewer } from "./shared";
 
 const STATUSES = ["DRAFT", "SUBMITTED", "RETURNED", "APPROVED", "PAID"];
 
@@ -184,6 +184,7 @@ export async function runGetExpense(ctx: McpCtx, args: Args) {
 }
 
 export async function runCreateExpenseReceiptUpload(ctx: McpCtx, args: Args) {
+  await requireExpenseAccess(ctx);
   if (!isS3Configured()) throw new McpInvalidError("File storage is not configured in this environment");
   try {
     const { key, post, contentType } = await createReceiptUpload(ctx.user.id, args.contentType as string);
@@ -285,6 +286,7 @@ export async function runDecideExpense(ctx: McpCtx, args: Args) {
   );
 }
 
-export async function runListExpenseCategories(_ctx: McpCtx, args: Args) {
+export async function runListExpenseCategories(ctx: McpCtx, args: Args) {
+  await requireExpenseAccess(ctx);
   return { categories: await listCategories({ includeArchived: args.includeArchived === true }) };
 }

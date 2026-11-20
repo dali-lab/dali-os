@@ -40,7 +40,7 @@ import { ReceiptKeyError } from "../../lib/receipts.server";
 import { action as upload } from "../expenses.upload";
 import { loader as exportLoader } from "../expenses.export";
 import { loader as receiptLoader } from "../expenses.receipt";
-import { parseExpenseFilters, parseScope } from "../filters";
+import { parseExpenseFilters, parseScope } from "../../lib/filters";
 
 const viewer = { userId: "u1", isCore: true, isStaff: true, ownedCardIds: [] };
 
@@ -72,6 +72,22 @@ describe("POST /expenses/upload", () => {
   it("401s when signed out", async () => {
     m.requireAuth.mockResolvedValue({ ok: false });
     expect((await presign({ contentTypes: ["image/jpeg"] })).status).toBe(401);
+  });
+  it("403s a non-member", async () => {
+    m.isNonMember.mockResolvedValue(true);
+    expect((await presign({ contentTypes: ["image/jpeg"] })).status).toBe(403);
+    expect(m.createReceiptUpload).not.toHaveBeenCalled();
+  });
+  it("404s alumni", async () => {
+    m.getUserRoles.mockResolvedValue({ isAlumni: true });
+    expect((await presign({ contentTypes: ["image/jpeg"] })).status).toBe(404);
+    expect(m.createReceiptUpload).not.toHaveBeenCalled();
+  });
+  it("403s a write while impersonating", async () => {
+    m.isImpersonating.mockReturnValue(true);
+    m.impersonationAllowsWrites.mockReturnValue(false);
+    expect((await presign({ contentTypes: ["image/jpeg"] })).status).toBe(403);
+    expect(m.createReceiptUpload).not.toHaveBeenCalled();
   });
   it.each([[{}], [{ contentTypes: [] }], [{ contentTypes: [1] }], [{ contentTypes: Array(13).fill("image/jpeg") }]])("rejects %j", async (body) => {
     expect((await presign(body)).status).toBe(400);

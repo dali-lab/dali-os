@@ -1,8 +1,9 @@
 import { prisma } from "~/lib/db.server";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { getUserRoles } from "~/lib/roles";
+import { impersonationAllowsWrites, isImpersonating } from "~/lib/auth";
 import { mobileError, requireMobileUser } from "~/lib/mobile-auth.server";
-import type { ExpenseViewer } from "./access";
+import { expenseAccessDenial, type ExpenseViewer } from "./access";
 import { ExpenseError } from "./errors";
 import { loadExpenseViewer, type ExpenseDetail, type listExpenses } from "./expenses.server";
 import { expenseLineItems } from "./line-items";
@@ -18,7 +19,16 @@ export async function requireMobileExpenses(request: Request): Promise<MobileExp
   const guard = await requireMobileUser(request);
   if (!guard.ok) return guard;
   const roles = await getUserRoles(guard.userId, request);
-  if (!(await isFeatureEnabled("expenses", guard.userId, roles, request))) {
+  const write = request.method !== "GET" && request.method !== "HEAD";
+  const denial = expenseAccessDenial({
+    isLabMemberOrAlum: roles.isLabMemberOrAlum,
+    isAlumni: roles.isAlumni,
+    readOnlyImpersonation: write && isImpersonating(guard.auth) && !impersonationAllowsWrites(),
+  });
+  if (denial === "impersonated_write") {
+    return { ok: false, response: mobileError("Expenses can't be changed while viewing as someone else.", 403) };
+  }
+  if (denial || !(await isFeatureEnabled("expenses", guard.userId, roles, request))) {
     return { ok: false, response: mobileError("Not found", 404) };
   }
   return { ok: true, userId: guard.userId, viewer: await loadExpenseViewer(guard.userId, request) };

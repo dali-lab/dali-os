@@ -1,4 +1,6 @@
 import { prisma } from "~/lib/db.server";
+import { chooseContactEmail } from "~/lib/contact-email.server";
+import { normalizeEmailAddress } from "~/lib/user-email.server";
 import {
   toQuestProfile,
   questPercent,
@@ -110,25 +112,21 @@ export async function confirmQuestField(userId: string, key: string) {
   });
 }
 
-// Records the address the alum wants to be reached at. An address that isn't
-// one of the institutional ones also lands in personalEmail so the rest of the
-// app (magic links, contact lists) picks it up.
-export async function setPreferredEmail(userId: string, email: string) {
+export type PreferredEmailOutcome = "saved" | "code_sent";
+
+export async function setPreferredEmail(userId: string, email: string, request?: Request): Promise<PreferredEmailOutcome> {
   const user = await prisma.user.findUniqueOrThrow({
     where: { id: userId },
     select: { daliEmail: true, dartmouthEmail: true },
   });
-  const normalized = email.trim().toLowerCase();
-  const institutional = [user.daliEmail, user.dartmouthEmail]
-    .filter((e): e is string => typeof e === "string")
-    .map((e) => e.toLowerCase());
-  await prisma.user.update({
-    where: { id: userId },
-    data: {
-      preferredEmail: normalized,
-      ...(institutional.includes(normalized) ? {} : { personalEmail: normalized }),
-    },
-  });
+  const normalized = normalizeEmailAddress(email);
+  const own = [user.daliEmail, user.dartmouthEmail].filter((e): e is string => typeof e === "string").map(normalizeEmailAddress);
+  if (!own.includes(normalized)) {
+    const { status } = await chooseContactEmail({ userId, address: normalized, request });
+    if (status === "code_sent") return "code_sent";
+  }
+  await prisma.user.update({ where: { id: userId }, data: { preferredEmail: normalized } });
+  return "saved";
 }
 
 export async function addQuestWorkExperience(
