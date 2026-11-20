@@ -103,7 +103,8 @@ test.describe('hiring lead workflow', () => {
     const editor = page.getByRole('dialog');
     await expect(editor).toBeVisible();
     await expect(editor.getByRole('heading', { name: 'Decision: not accepted' })).toBeVisible();
-    await expect(editor.getByRole('button', { name: 'Save changes' })).toBeVisible();
+    await expect(editor.getByRole('button', { name: 'Save', exact: true })).toBeVisible();
+    await expect(editor.getByRole('button', { name: 'Send test' })).toBeVisible();
   });
 
   test('review tab holds the reviewer and interviewer rosters', async ({ page }) => {
