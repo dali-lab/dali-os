@@ -1,60 +1,23 @@
-import { useMemo, useState, useEffect } from "react";
-import { buttonClasses } from "~/components/ui/Button";
-import { redirect, useLoaderData, useFetcher } from "react-router";
+import { useEffect, useState } from "react";
+import { useLoaderData, useFetcher, type ShouldRevalidateFunctionArgs } from "react-router";
 import type { Route } from "./+types/core.level-up";
 import { coreHandle } from "~/core/coreNav";
-import type { ShouldRevalidateFunctionArgs } from "react-router";
-import { useFilteredList } from "~/hooks/useFilteredList";
-import { useSearchParamState } from "~/hooks/useSearchParamState";
 import { skipClientOnlySearchChange } from "~/lib/should-revalidate";
-import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
-import { redirectToLogin } from "~/lib/login-next";
-import { parseFormDataJson } from "~/lib/safe-json";
-import { canManageStaffing, canViewStaffing, currentTerm } from "~/lib/roles";
+import { canManageStaffing } from "~/lib/roles";
 import { prisma } from "~/lib/db.server";
 import { applyEligibilityWithNotify } from "~/admin/lib/eligibility.server";
-import { ensureStaffingCycle } from "~/projects/lib/staffing-cycle";
-import {
-  getSlotBinding,
-  isGateAudience,
-  listSelectableForms,
-  setSlotBinding,
-  setSlotColumnMapping,
-  setSlotGate,
-  setSlotPublished,
-} from "~/projects/lib/form-slots";
-import { ColumnFilters, useColumnFilters } from "~/projects/components/ColumnFilters";
-import { SearchInput } from "~/components/ui/SearchInput";
-import { TermFilter } from "~/components/TermFilter";
-import { DomainFilter } from "~/projects/components/DomainFilter";
-import { useOsChrome } from "~/components/os-chrome";
-import { cn } from "~/lib/cn";
+import { getSlotBinding } from "~/projects/lib/form-slots";
+import { buttonClasses } from "~/components/ui/Button";
 import { Modal, ModalHeader } from "~/components/Modal";
-import { resolveTermFilter } from "~/lib/terms";
-import {
-  parseColumnMapping,
-  validateMapping,
-  boardTableModel,
-  type ColumnMapping,
-} from "~/projects/lib/slot-roles";
-import { buildSubmissionView } from "~/projects/lib/submission-view.server";
-import { deleteBoardResponse, resolveBoardCycles, setBoardColumn } from "~/projects/lib/slot-board.server";
-import { BoardCsvLink, BoardTable } from "~/projects/components/BoardTable";
-import { BoardSettings } from "~/projects/components/BoardSettings";
-import { AddResponseDialog } from "~/projects/components/AddResponseDialog";
-import { Button } from "~/components/ui/Button";
-import type { Question } from "~/types";
-import { conditionalKeys } from "~/forms/lib/form-logic";
+import { loadSlotBoard, slotBoardAction } from "~/projects/lib/slot-board-page.server";
+import { StaffingBoardPage } from "~/projects/components/StaffingBoardPage";
 import { isLevel, type Level } from "~/lib/level";
 
 const SLOT = "level-up" as const;
 
+export const handle = coreHandle(SLOT);
 
-export const handle = coreHandle("level-up");
-
-export const meta: Route.MetaFunction = () => [
-  { title: "Level Up · DALI OS" },
-];
+export const meta: Route.MetaFunction = () => [{ title: "Level Up · DALI OS" }];
 
 // Parses a level string to Level enum. Accepts "P1"/"P2"/"P3" and their full
 // names "Learner"/"Doer"/"Mentor" (case-insensitive).
@@ -66,110 +29,21 @@ function parseLevel(raw: string): Level | null {
   return null;
 }
 
-// Search, domain and column filters live in the URL but filter client side;
-// only the term changes what the loader reads.
 export function shouldRevalidate(args: ShouldRevalidateFunctionArgs) {
   return skipClientOnlySearchChange(args, ["term"]);
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
-  const auth = await requireAuth(request);
-  if (!auth.ok) return redirectToLogin(request);
-  const portalRedirect = await redirectNonMemberToPortal(auth, request);
-  if (portalRedirect) return portalRedirect;
-  if (!(await canViewStaffing(auth.user.sub))) return redirect("/");
-
-  const cycles = await resolveBoardCycles(request, { create: true });
-  if (!cycles) return { gate: "no-cycle" as const };
-  const { termOptions, selectedTerm, isAll, cycleIds, cycleName, singleCycleId } = cycles;
-
-  const canManage = await canManageStaffing(auth.user.sub);
-  const [binding, selectableForms] = await Promise.all([
-    singleCycleId ? getSlotBinding(singleCycleId, SLOT) : Promise.resolve(null),
-    canManage && singleCycleId
-      ? listSelectableForms({ slot: SLOT, exceptCycleId: singleCycleId })
-      : Promise.resolve([]),
-  ]);
-
-  const view = await buildSubmissionView({
-    cycleIds,
-    slot: SLOT,
-    formId: binding?.formId ?? null,
+  return loadSlotBoard(request, SLOT, {
+    enrichRows: async (rows, { cycleIds, binding }) => {
+      const targetPromotion = await resolveTargetPromotions(
+        rows.map((r) => r.userId),
+        cycleIds,
+        binding,
+      );
+      return rows.map((r) => ({ ...r, targetPromotion: targetPromotion.get(r.userId) ?? null }));
+    },
   });
-
-
-  let formQuestions: {
-    key: string;
-    label: string;
-    type: string;
-    referenceSource?: string;
-  }[] = [];
-  let mappingWarning: string | null = null;
-  if (binding) {
-    const latest = await prisma.formVersion.findFirst({
-      where: { form: { id: binding.formId } },
-      orderBy: { versionNumber: "desc" },
-      select: { questions: true },
-    });
-    const qs = (latest?.questions as unknown as Question[]) ?? [];
-    const conditional = conditionalKeys(qs);
-    formQuestions = qs.filter((q) => !conditional.has(q.key)).map((q) => ({
-      key: q.key,
-      label: q.data.label,
-      type: q.type,
-      referenceSource: q.data.referenceSource,
-    }));
-    const check = validateMapping(SLOT, qs, binding.mapping);
-    if (!check.ok) mappingWarning = check.reason;
-  }
-
-  const noFormConnected = !isAll && !binding;
-
-  // Resolve target domain + level for each row so the Level Up button can
-  // show a meaningful confirmation and be disabled when already promoted.
-  // We need raw answers, not the display-resolved cell strings.
-  const targetPromotion = await resolveTargetPromotions(
-    view.rows.map((r) => r.userId),
-    cycleIds,
-    binding,
-  );
-
-  const submissions = view.rows.map((r) => ({
-    ...r,
-    targetPromotion: targetPromotion.get(r.userId) ?? null,
-  }));
-
-  const columnModel = boardTableModel(
-    SLOT,
-    binding?.mapping ?? null,
-    view.tableColumns,
-    formQuestions,
-    [],
-  );
-
-  const domainOptions = await prisma.domain.findMany({
-    orderBy: { displayName: "asc" },
-    select: { id: true, displayName: true },
-  });
-
-  return {
-    gate: "ok" as const,
-    cycle: { name: cycleName, id: singleCycleId },
-    termOptions,
-    selectedTerm,
-    domainOptions,
-    isAll,
-    submissions,
-    tableColumns: columnModel.columns,
-    addableColumns: columnModel.addable,
-    roleChoices: columnModel.roleChoices,
-    canManage,
-    binding,
-    selectableForms,
-    formQuestions,
-    mappingWarning,
-    noFormConnected,
-  };
 }
 
 export type TargetPromotion = {
@@ -298,290 +172,26 @@ async function resolveTargetPromotions(
 }
 
 export async function action({ request }: Route.ActionArgs) {
-  const auth = await requireAuth(request);
-  if (!auth.ok) return auth.response;
-
-  const { terms: termOptions, termId: filterTermId } =
-    await resolveTermFilter(request);
-  const fallbackTerm = await currentTerm();
-  const selected =
-    termOptions.find((o) => o.id === filterTermId) ??
-    (fallbackTerm
-      ? { id: fallbackTerm.id, code: fallbackTerm.code }
-      : termOptions[0]);
-  if (!selected)
-    return Response.json({ error: "No active staffing term." }, { status: 400 });
-  const cycle = await ensureStaffingCycle(selected.id, selected.code);
-
-  const form = await request.formData();
-  const intent = String(form.get("intent"));
-
-  // Form binding, mapping and app-lock: managers only.
-  if (
-    intent === "set-slot-form" ||
-    intent === "set-slot-mapping" ||
-    intent === "set-slot-gate" ||
-    intent === "set-slot-published" ||
-    intent === "set-slot-column" ||
-    intent === "delete-response"
-  ) {
-    if (!(await canManageStaffing(auth.user.sub)))
-      return Response.json({ error: "Forbidden" }, { status: 403 });
-
-    if (intent === "set-slot-column")
-      return setBoardColumn(form, cycle.id, SLOT, auth.user.sub);
-    if (intent === "delete-response")
-      return deleteBoardResponse(form, cycle.id, SLOT, auth.user.sub, request);
-
-    if (intent === "set-slot-form") {
-      const formId = String(form.get("formId") ?? "");
-      // The picker sets allowMove only after the manager confirms taking the
-      // form off the cycle that currently holds it.
-      const result = await setSlotBinding(cycle.id, SLOT, formId, auth.user.sub, {
-        allowMove: form.get("allowMove") === "1",
+  return slotBoardAction(request, SLOT, {
+    extraIntent: async (intent, { form, userId }) => {
+      if (intent !== "level-up-member") return null;
+      if (!(await canManageStaffing(userId)))
+        return Response.json({ error: "Forbidden" }, { status: 403 });
+      const targetUserId = String(form.get("userId") ?? "");
+      const domainId = String(form.get("domainId") ?? "");
+      const targetLevel = String(form.get("targetLevel") ?? "");
+      if (!targetUserId || !domainId || !isLevel(targetLevel))
+        return Response.json({ error: "Invalid parameters." }, { status: 400 });
+      await applyEligibilityWithNotify({
+        userId: targetUserId,
+        domainId,
+        level: targetLevel,
+        actorId: userId,
       });
-      if (!result.ok)
-        return Response.json({ error: result.error }, { status: 400 });
-      return Response.json({ ok: true, movedFrom: result.movedFrom ?? null });
-    }
-
-    if (intent === "set-slot-mapping") {
-      const binding = await getSlotBinding(cycle.id, SLOT);
-      if (!binding)
-        return Response.json(
-          { error: "Bind a form before mapping its columns." },
-          { status: 400 },
-        );
-      const mapping = parseColumnMapping(parseFormDataJson(form.get("mapping")));
-      if (!mapping)
-        return Response.json({ error: "Invalid mapping." }, { status: 400 });
-      const latest = await prisma.formVersion.findFirst({
-        where: { form: { id: binding.formId } },
-        orderBy: { versionNumber: "desc" },
-        select: { questions: true },
-      });
-      const qs = (latest?.questions as unknown as Question[]) ?? [];
-      const check = validateMapping(SLOT, qs, mapping);
-      if (!check.ok)
-        return Response.json({ error: check.reason }, { status: 400 });
-      const result = await setSlotColumnMapping(
-        cycle.id,
-        SLOT,
-        mapping as ColumnMapping,
-        auth.user.sub,
-      );
-      if (!result.ok)
-        return Response.json({ error: result.error }, { status: 400 });
       return Response.json({ ok: true });
-    }
-
-    if (intent === "set-slot-gate") {
-      const raw = String(form.get("gateAudience") ?? "");
-      const audience = raw === "" ? null : raw;
-      if (audience !== null && !isGateAudience(audience))
-        return Response.json({ error: "Invalid audience." }, { status: 400 });
-      const result = await setSlotGate(cycle.id, SLOT, audience, null, auth.user.sub);
-      if (!result.ok)
-        return Response.json({ error: result.error }, { status: 400 });
-      return Response.json({ ok: true });
-    }
-
-    if (intent === "set-slot-published") {
-      const result = await setSlotPublished(
-        cycle.id,
-        SLOT,
-        form.get("published") === "1",
-      );
-      if (!result.ok)
-        return Response.json({ error: result.error }, { status: 400 });
-      return Response.json({ ok: true });
-    }
-  }
-
-  // Note saving: anyone who can view the page.
-  // Level Up: managers only.
-  if (intent === "level-up-member") {
-    if (!(await canManageStaffing(auth.user.sub)))
-      return Response.json({ error: "Forbidden" }, { status: 403 });
-    const targetUserId = String(form.get("userId") ?? "");
-    const domainId = String(form.get("domainId") ?? "");
-    const targetLevel = String(form.get("targetLevel") ?? "");
-    if (!targetUserId || !domainId || !isLevel(targetLevel))
-      return Response.json({ error: "Invalid parameters." }, { status: 400 });
-
-    await applyEligibilityWithNotify({
-      userId: targetUserId,
-      domainId,
-      level: targetLevel,
-      actorId: auth.user.sub,
-    });
-    return Response.json({ ok: true });
-  }
-
-  return Response.json({ error: "Unknown intent" }, { status: 400 });
-}
-
-// ─── Component ────────────────────────────────────────────────────────────────
-
-export default function LevelUpDatabase() {
-  const data = useLoaderData<typeof loader>();
-
-  if (data.gate === "no-cycle") {
-    return (
-      <div className="flex flex-col gap-4">
-        <Header />
-        <p className="text-sm text-muted-foreground">
-          No active staffing term right now.
-        </p>
-      </div>
-    );
-  }
-
-  return <Loaded data={data} />;
-}
-
-type LoadedData = Extract<Awaited<ReturnType<typeof loader>>, { gate: "ok" }>;
-
-function Loaded({ data }: { data: LoadedData }) {
-  const [confirmRow, setConfirmRow] = useState<{
-    userId: string;
-    name: string;
-    domainId: string;
-    domainName: string;
-    targetLevel: Level;
-  } | null>(null);
-
-  const [domainId, setDomainId] = useSearchParamState("domain");
-  const [search, setSearch] = useSearchParamState("q", { debounceMs: 300 });
-  const columnFilters = useColumnFilters(data.tableColumns, [], { inUrl: true });
-  const [adding, setAdding] = useState(false);
-
-  const { filtered } = useFilteredList(data.submissions, {
-    search,
-    searchFields: (s) => [s.name, s.email],
-    predicates: [
-      (s) => !domainId || s.domainIds.includes(domainId),
-      columnFilters.predicate,
-    ],
-    deps: [domainId, columnFilters.active],
+    },
   });
-
-  const domains = useMemo(
-    () => data.domainOptions.map((d) => ({ id: d.id, name: d.displayName })),
-    [data.domainOptions],
-  );
-
-  return (
-    <div className="flex flex-col gap-4">
-      <Header />
-
-      {!data.isAll && (
-        <BoardSettings
-          slotLabel="Level Up"
-          binding={data.binding}
-          forms={data.selectableForms}
-          canManage={data.canManage}
-        />
-      )}
-
-      {adding && data.cycle.id && (
-        <AddResponseDialog
-          cycleId={data.cycle.id}
-          slot={SLOT}
-          slotLabel="Level Up"
-          onClose={() => setAdding(false)}
-        />
-      )}
-
-      {data.mappingWarning && (
-        <div className="rounded-md border border-os-amber/30 bg-os-amber/10 px-3 py-2 text-sm text-os-amber">
-          <span className="font-medium">Heads up:</span> {data.mappingWarning}
-        </div>
-      )}
-
-      <div className="flex flex-wrap items-center gap-3">
-        <SearchInput
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search by name or email"
-          aria-label="Search submissions"
-          containerClassName="flex-1 min-w-[200px] max-w-[420px]"
-        />
-        <TermFilter terms={data.termOptions} selected={data.selectedTerm} />
-        <DomainFilter domains={domains} value={domainId} onChange={setDomainId} />
-        <div className="min-w-[220px] flex-1">
-          <ColumnFilters
-            columns={data.tableColumns}
-            rows={data.submissions}
-            filters={columnFilters.filters}
-            onChange={columnFilters.setFilters}
-            shownCount={filtered.length}
-          />
-        </div>
-        {!data.noFormConnected && (
-          <BoardCsvLink slot={SLOT} matching={filtered.length} total={data.submissions.length} />
-        )}
-        {data.canManage && data.cycle.id && data.binding && (
-          <Button variant="secondary" size="sm" className="h-8" onClick={() => setAdding(true)}>
-            Add response
-          </Button>
-        )}
-      </div>
-
-      <div
-        className={cn(
-          "overflow-hidden",
-          "rounded-os-card bg-os-card",
-        )}
-      >
-        {data.noFormConnected ? (
-          <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-            Connect a form from the ⋯ menu above so members can submit.
-          </div>
-        ) : (
-          <BoardTable
-            columns={data.tableColumns}
-            addable={data.addableColumns}
-            roleChoices={data.roleChoices}
-            rows={filtered}
-            editable={data.canManage && !data.isAll}
-            canDelete={data.canManage && !data.isAll}
-            drawerFooter={
-              data.canManage ? (r) => <LevelUpAction row={r} onLevelUp={setConfirmRow} /> : undefined
-            }
-            trailing={
-              data.canManage
-                ? [
-                    {
-                      key: "actions",
-                      label: "Actions",
-                      cell: (r) => <LevelUpAction row={r} onLevelUp={setConfirmRow} />,
-                    },
-                  ]
-                : []
-            }
-            emptyMessage={
-              data.submissions.length === 0
-                ? "No Level Up submissions yet."
-                : "No members match the current filters."
-            }
-          />
-        )}
-      </div>
-
-      {confirmRow && (
-        <LevelUpConfirmDialog
-          row={confirmRow}
-          onClose={() => setConfirmRow(null)}
-        />
-      )}
-    </div>
-  );
 }
-
-// ─── Table ────────────────────────────────────────────────────────────────────
-
-type TableRow = LoadedData["submissions"][number];
 
 type LevelUpTarget = {
   userId: string;
@@ -590,6 +200,39 @@ type LevelUpTarget = {
   domainName: string;
   targetLevel: Level;
 };
+
+export default function LevelUpDatabase() {
+  const data = useLoaderData<typeof loader>();
+  const [confirmRow, setConfirmRow] = useState<LevelUpTarget | null>(null);
+  const tableProps =
+    data.gate === "ok" && data.canManage
+      ? {
+          drawerFooter: (r: TableRow) => <LevelUpAction row={r} onLevelUp={setConfirmRow} />,
+          trailing: [
+            {
+              key: "actions",
+              label: "Actions",
+              cell: (r: TableRow) => <LevelUpAction row={r} onLevelUp={setConfirmRow} />,
+            },
+          ],
+        }
+      : undefined;
+
+  return (
+    <StaffingBoardPage
+      data={data}
+      slot={SLOT}
+      label="Level Up"
+      emptyLabel="Level Up"
+      tableProps={tableProps}
+    >
+      {confirmRow && <LevelUpConfirmDialog row={confirmRow} onClose={() => setConfirmRow(null)} />}
+    </StaffingBoardPage>
+  );
+}
+
+type LoadedData = Extract<Awaited<ReturnType<typeof loader>>, { gate: "ok" }>;
+type TableRow = LoadedData["submissions"][number];
 
 function LevelUpAction({
   row,
@@ -713,16 +356,5 @@ function LevelUpConfirmDialog({
         </div>
       </>
     </Modal>
-  );
-}
-
-// ─── Header ───────────────────────────────────────────────────────────────────
-
-function Header() {
-  const { pageTitle } = useOsChrome();
-  return (
-    <header className="flex items-start justify-between gap-3">
-      <h1 className={pageTitle}>Level Up</h1>
-    </header>
   );
 }
