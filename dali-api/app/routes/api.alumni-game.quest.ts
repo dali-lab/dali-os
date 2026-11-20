@@ -214,7 +214,12 @@ function scriptedProbe(asked: QuestField): string {
 }
 
 // Applies one extraction. Returns the key that now counts as filled, or null.
-async function applyExtraction(userId: string, ex: Extraction): Promise<QuestFieldKey | null> {
+async function applyExtraction(
+  userId: string,
+  ex: Extraction,
+  request: Request,
+  outcome: { notice?: string },
+): Promise<QuestFieldKey | null> {
   switch (ex.do) {
     case "none":
       return null;
@@ -258,7 +263,9 @@ async function applyExtraction(userId: string, ex: Extraction): Promise<QuestFie
     }
     case "email": {
       if (ex.email) {
-        await setPreferredEmail(userId, ex.email);
+        if ((await setPreferredEmail(userId, ex.email, request)) === "code_sent") {
+          outcome.notice = `a code is on its way to ${ex.email.trim().toLowerCase()}, so check your inbox!  enter it under Settings, then Security to make it your contact email.`;
+        }
       }
       await confirmQuestField(userId, "email");
       return "email";
@@ -520,8 +527,9 @@ export async function action({ request }: Route.ActionArgs) {
     // reads the asked field only, and probes rather than saving a guess.
     const understood = interpreted ? interpreted.extraction : scriptedExtraction(asked, value);
     let savedField: QuestFieldKey | null = null;
+    const outcome: { notice?: string } = {};
     try {
-      savedField = await applyExtraction(userId, understood ?? { do: "none" });
+      savedField = await applyExtraction(userId, understood ?? { do: "none" }, request, outcome);
     } catch (e) {
       if (e instanceof BadRequestError || e instanceof ProfileConflictError) {
         return Response.json({ error: e.message }, { status: 400 });
@@ -534,9 +542,10 @@ export async function action({ request }: Route.ActionArgs) {
       understood?.do === "history" && understood.note
         ? "got it, I've flagged that for the team to fix!"
         : undefined;
-    const say =
-      interpreted?.reply ??
-      (savedField ? scriptedSay(asked, profile, ctx, skipped, flagged) : scriptedProbe(asked));
+    const say = outcome.notice
+      ? scriptedSay(asked, profile, ctx, skipped, outcome.notice)
+      : (interpreted?.reply ??
+        (savedField ? scriptedSay(asked, profile, ctx, skipped, flagged) : scriptedProbe(asked)));
     await saveMessages(userId, [
       { from: "you", text: value },
       { from: "tim", text: say },

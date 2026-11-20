@@ -8,6 +8,7 @@ vi.mock("~/lib/ai.server", () => ({
   stripJsonFences: (text: string) => text.trim(),
 }));
 vi.mock("~/lib/ai-quota.server", () => ({ claimAiQuota: vi.fn() }));
+vi.mock("~/lib/contact-email.server", () => ({ chooseContactEmail: vi.fn() }));
 vi.mock("~/lib/alumni-history.server", () => ({ reportHistoryCorrection: vi.fn() }));
 vi.mock("~/members/lib/profile-update.server", async () => {
   const { BadRequestError, ConflictError } = await import("~/lib/http-error");
@@ -34,6 +35,8 @@ import { mockedPrisma } from "~/test-utils/prisma";
 import { requireMemberSession } from "~/lib/auth";
 import { isAiEnabled, generateShortText } from "~/lib/ai.server";
 import { claimAiQuota } from "~/lib/ai-quota.server";
+import { chooseContactEmail } from "~/lib/contact-email.server";
+import { BadRequestError } from "~/lib/http-error";
 import { reportHistoryCorrection } from "~/lib/alumni-history.server";
 import {
   updateProfileFields,
@@ -239,17 +242,33 @@ describe("POST /api/alumni-game/quest", () => {
       expect(body.say).toContain("full name");
     });
 
-    it("saves a pasted address as the preferred and personal email", async () => {
-      const res = await post({ intent: "answer", field: "email", value: "use ada@new.com please" });
+    it("starts verification for a new outside address and never writes personalEmail", async () => {
+      vi.mocked(chooseContactEmail).mockResolvedValue({ status: "code_sent" });
+      const res = await post({ intent: "answer", field: "email", value: "use Ada@New.com please" });
       const body = await res.json();
+      expect(chooseContactEmail).toHaveBeenCalledWith(expect.objectContaining({ userId: "u1", address: "ada@new.com" }));
       expect(body.savedField).toBe("email");
-      expect(db.user.update).toHaveBeenCalledWith({
-        where: { id: "u1" },
-        data: { preferredEmail: "ada@new.com", personalEmail: "ada@new.com" },
-      });
+      expect(body.say).toContain("ada@new.com");
+      expect(body.say).toContain("check your inbox");
+      expect(db.user.update).not.toHaveBeenCalled();
     });
 
-    it("keeps personalEmail untouched when they pick an institutional address", async () => {
+    it("saves the preference once an outside address is already proven", async () => {
+      vi.mocked(chooseContactEmail).mockResolvedValue({ status: "switched" });
+      const res = await post({ intent: "answer", field: "email", value: "ada@new.com" });
+      expect((await res.json()).savedField).toBe("email");
+      expect(db.user.update).toHaveBeenCalledWith({ where: { id: "u1" }, data: { preferredEmail: "ada@new.com" } });
+    });
+
+    it("refuses an address that belongs to another account without a server error", async () => {
+      vi.mocked(chooseContactEmail).mockRejectedValue(new BadRequestError("That email is on another DALI OS account. Ask DALI staff to merge them."));
+      const res = await post({ intent: "answer", field: "email", value: "grace@example.com" });
+      expect(res.status).toBe(400);
+      expect((await res.json()).error).toContain("another DALI OS account");
+      expect(db.user.update).not.toHaveBeenCalled();
+    });
+
+    it("sets an institutional address of their own directly, without verification", async () => {
       const res = await post({
         intent: "answer",
         field: "email",
@@ -257,6 +276,7 @@ describe("POST /api/alumni-game/quest", () => {
       });
       const body = await res.json();
       expect(body.savedField).toBe("email");
+      expect(chooseContactEmail).not.toHaveBeenCalled();
       expect(db.user.update).toHaveBeenCalledWith({
         where: { id: "u1" },
         data: { preferredEmail: "ada@dali.dartmouth.edu" },
