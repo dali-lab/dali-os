@@ -41,6 +41,8 @@ Domain leads run deliberations from their own pages. The delib tab shows each do
 1. After a domain closes a delib, its draft decisions become interview invites (on the Interviews step) or final drafts.
 2. Interview invites appear under **Interview invites**. Drafts need to be finalized by the domain lead (or by you with **Finalize all** on member cycles).
 3. Finalized decisions appear under **Decisions to release**. Release one at a time, or use **Release all** (or **Release shown** when filtered).
+   - Each acceptance shows the start term its email will use: the applicant's pick, the one term the cycle offers, or the cycle's own term when it offers none. Change it from the row.
+   - When the cycle offers more than one start term and the applicant didn't pick one, the row shows **No start term** and can't be released until you set one.
 4. Confirm. This emails applicants straight away and can't be undone. Accepting someone who still has an open application in another domain also closes that one, and the confirmation names it.
 5. When every decision is out, click **Complete cycle** under **Complete the cycle**.
 

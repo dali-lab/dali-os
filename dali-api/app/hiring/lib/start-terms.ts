@@ -134,17 +134,19 @@ export function isOfferedStartTerm(
 }
 
 /**
- * Rule 2, as one function: the term a hire actually starts in. The applicant's
- * own pick when there is one, otherwise the term the cycle ran in — which is
- * what the lab assumed before start terms existed, so every application and
- * cycle predating the feature keeps reading the way it always did.
+ * Rule 2, as one function: the term a hire actually starts in. The stored
+ * start term always wins, since a lead can defer a hire to a term the cycle
+ * never offered. Without one, a cycle offering a single start term implies it,
+ * and a cycle offering none falls back to its own term.
  *
- * Null only when neither is set: a cycle whose term was never picked on Setup.
- * Callers that group by start term need a bucket for that.
+ * Null when the cycle offers a choice the applicant never made, or has no term
+ * at all. The acceptance email refuses to send on null rather than guess.
  */
 export function effectiveStartTermId(
   application: { startTermId: string | null },
-  cycle: { termId: string | null },
+  cycle: { termId: string | null; startTermIds: string[] },
 ): string | null {
-  return application.startTermId ?? cycle.termId;
+  if (application.startTermId) return application.startTermId;
+  if (cycle.startTermIds.length === 0) return cycle.termId;
+  return impliedStartTermId(cycle.startTermIds);
 }

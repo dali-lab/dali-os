@@ -983,6 +983,8 @@ describe("lead.cycle.$id action — save-term-dates start terms", () => {
     statusUpdates: [{ newStatus: status }],
   });
 
+  const HIRES_EXCLUDED = { none: { decisions: { some: { type: "Accepted", stage: "Released" } } } };
+
   function startTermWrites() {
     return mockPrisma.applicationCycle.update.mock.calls
       .map((c: any) => c[0].data)
@@ -1076,6 +1078,41 @@ describe("lead.cycle.$id action — save-term-dates start terms", () => {
         applicationCycleId: CYCLE_ID,
         startTermId: { not: null },
         NOT: { startTermId: { in: ["t-26f"] } },
+        domainApplications: HIRES_EXCLUDED,
+      },
+      data: { startTermId: null },
+    });
+  });
+
+  it("clears picks a lead removed from the offered terms, leaving hires alone", async () => {
+    await callAction({
+      intent: "save-term-dates",
+      termId: "t-26s",
+      startTermIds: JSON.stringify(["t-26f"]),
+    });
+    expect(startTermWrites()).toEqual([{ startTermIds: ["t-26f"] }]);
+    expect(mockPrisma.application.updateMany).toHaveBeenCalledWith({
+      where: {
+        applicationCycleId: CYCLE_ID,
+        startTermId: { not: null },
+        NOT: { startTermId: { in: ["t-26f"] } },
+        domainApplications: HIRES_EXCLUDED,
+      },
+      data: { startTermId: null },
+    });
+  });
+
+  it("clears every unhired pick when a lead empties the offered terms", async () => {
+    await callAction({
+      intent: "save-term-dates",
+      termId: "t-26s",
+      startTermIds: JSON.stringify([]),
+    });
+    expect(mockPrisma.application.updateMany).toHaveBeenCalledWith({
+      where: {
+        applicationCycleId: CYCLE_ID,
+        startTermId: { not: null },
+        domainApplications: HIRES_EXCLUDED,
       },
       data: { startTermId: null },
     });

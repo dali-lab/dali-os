@@ -867,6 +867,7 @@ export default [
 
   route("api/hiring/decisions/:id/finalize", "hiring/routes/api.decisions.$id.finalize.ts"),
   route("api/hiring/decisions/:id/release", "hiring/routes/api.decisions.$id.release.ts"),
+  route("api/hiring/decisions/:id/start-term", "hiring/routes/api.decisions.$id.start-term.ts"),
 
   route("api/hiring/waitlist", "hiring/routes/api.waitlist.ts"),
   route("api/hiring/waitlist/reorder", "hiring/routes/api.waitlist.reorder.ts"),
