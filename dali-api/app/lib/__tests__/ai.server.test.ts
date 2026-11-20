@@ -103,17 +103,17 @@ describe("resolveAiProvider", () => {
 });
 
 describe("modelParams", () => {
-  it("runs the TL;DR and alumni chat on Haiku and every other task on Sonnet", () => {
+  it("runs alumni chat on Haiku and every other task on Sonnet", () => {
     for (const task of TASKS) {
       expect(modelParams({ name: "anthropic" }, task).model).toBe(
-        task === "projectTldr" || task === "alumniChat" ? "claude-haiku-5-5" : "claude-sonnet-5-5",
+        task === "alumniChat" ? "claude-haiku-5-5" : "claude-sonnet-5-5",
       );
     }
   });
 
   it("maps each tier to the gateway's catalog ids on Dartmouth", () => {
     expect(modelParams({ name: "dartmouth" }, "enhance").model).toBe("anthropic.claude-sonnet-5-5");
-    expect(modelParams({ name: "dartmouth" }, "projectTldr").model).toBe("anthropic.claude-haiku-4-5-20251001");
+    expect(modelParams({ name: "dartmouth" }, "alumniChat").model).toBe("anthropic.claude-haiku-4-5-20251001");
   });
 
   it("never resolves a task to an Opus model", () => {
@@ -125,7 +125,7 @@ describe("modelParams", () => {
   it("sends each task's effort to first-party Anthropic", () => {
     expect(modelParams({ name: "anthropic" }, "enhance").output_config).toEqual({ effort: "medium" });
     expect(modelParams({ name: "anthropic" }, "ask").output_config).toEqual({ effort: "medium" });
-    expect(modelParams({ name: "anthropic" }, "projectTldr").output_config).toEqual({ effort: "low" });
+    expect(modelParams({ name: "anthropic" }, "alumniChat").output_config).toEqual({ effort: "low" });
     expect(modelParams({ name: "anthropic" }, "doc").output_config).toBeUndefined();
   });
 
@@ -153,7 +153,7 @@ describe("generateShortText", () => {
       stop_reason: "end_turn",
     });
 
-    const result = await generateShortText({ task: "projectTldr", system: "sys", prompt: "facts", maxTokens: 400 });
+    const result = await generateShortText({ task: "alumniChat", system: "sys", prompt: "facts", maxTokens: 400 });
 
     expect(create).toHaveBeenCalledTimes(1);
     expect(create.mock.calls[0][0]).toEqual({
@@ -182,8 +182,8 @@ describe("aiProvidersFor", () => {
     process.env.DARTMOUTH_CHAT_API_KEY = "dartmouth-test";
   });
 
-  it("tries the gateway first for enhance, email, release notes, the TL;DR and alumni chat", () => {
-    for (const task of ["enhance", "email", "releaseNotes", "projectTldr", "alumniChat"] as const) {
+  it("tries the gateway first for enhance, email, release notes and alumni chat", () => {
+    for (const task of ["enhance", "email", "releaseNotes", "alumniChat"] as const) {
       expect(aiProvidersFor(task).map((p) => p.name)).toEqual(["dartmouth", "anthropic"]);
     }
   });

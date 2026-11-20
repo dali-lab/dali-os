@@ -5,7 +5,6 @@ vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
   return { ...real, isCore: vi.fn(), isProjectMember: vi.fn() };
 });
-vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn().mockResolvedValue(true) }));
 vi.mock("~/projects/lib/core-board.server", () => ({
   getCoreBoardProject: vi.fn().mockResolvedValue({ id: "core1", name: "Core" }),
 }));
@@ -19,7 +18,6 @@ vi.mock("~/projects/lib/github-task-sync", () => ({
 
 import { prisma } from "~/lib/db.server";
 import { isCore, isProjectMember } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { createIssueForTask } from "~/projects/lib/github-task-sync";
 import { getCoreBoardProject } from "~/projects/lib/core-board.server";
 import {
@@ -226,13 +224,6 @@ describe("create_task core: true", () => {
 
   it("rejects a non-Core caller", async () => {
     vi.mocked(isCore).mockResolvedValue(false);
-    await expect(runCreateTask("u1", { core: true, title: "x" })).rejects.toMatchObject({ status: 403 });
-    expect(getCoreBoardProject).not.toHaveBeenCalled();
-  });
-
-  it("rejects a Core caller when the core-taskboard flag is off", async () => {
-    vi.mocked(isCore).mockResolvedValue(true);
-    vi.mocked(isFeatureEnabled).mockResolvedValueOnce(false);
     await expect(runCreateTask("u1", { core: true, title: "x" })).rejects.toMatchObject({ status: 403 });
     expect(getCoreBoardProject).not.toHaveBeenCalled();
   });

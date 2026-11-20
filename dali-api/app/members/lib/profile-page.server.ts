@@ -64,7 +64,6 @@ import {
   parseWorkExperience,
   type WorkExperienceItem,
 } from "~/members/lib/work-experience";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { MAX_IMPORTED_JOBS, type SavePayload } from "~/members/lib/work-history-import";
 import { getEducationProfile } from "~/education/lib/engagement.server";
 import type { AttendanceSummary } from "~/education/lib/session-time";
@@ -775,13 +774,11 @@ export type ProfileActionResult =
   | null;
 
 async function importExperiences(
-  request: Request,
   form: FormData,
   viewerId: string,
   targetId: string,
 ): Promise<ProfileActionResult> {
-  const roles = await getUserRoles(viewerId, request);
-  if (viewerId !== targetId || !(await isFeatureEnabled("work-history-import", viewerId, roles, request))) {
+  if (viewerId !== targetId) {
     return { error: "You can only import your own work history." };
   }
 
@@ -885,7 +882,7 @@ export async function runProfileAction({
   }
 
   if (intent === "import-experiences") {
-    return importExperiences(request, form, auth.user.sub, targetId);
+    return importExperiences(form, auth.user.sub, targetId);
   }
 
   // Default: profile field update. Editable by admins or the member themself.

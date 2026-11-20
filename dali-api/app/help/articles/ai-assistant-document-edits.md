@@ -1,7 +1,6 @@
 ---
 title: AI assistants in your documents
 summary: How a connected AI assistant edits part of a page or story, and what you see when it works in a document you have open.
-flag: mcp-block-edits
 paths: [/documents/:pageId]
 keywords: [mcp, claude, ai assistant, agent, edit, cursor, highlight, presence, page, story, blog]
 ---

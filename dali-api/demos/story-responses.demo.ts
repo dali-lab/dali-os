@@ -1,5 +1,5 @@
 import pg from 'pg';
-import { expect, setFeatureFlag, test } from './lib/demo';
+import { expect, test } from './lib/demo';
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://dali:dali@localhost:5432/dali';
 const POST_ID = 'demo-story-responses';
@@ -27,7 +27,6 @@ async function seedStory() {
 }
 
 test('stories: react and comment on a post', async ({ page, stage, loginAs }) => {
-  await setFeatureFlag('community', true);
   await seedStory();
   await loginAs({ daliEmail: 'jordan.taylor@dali.dartmouth.edu' });
 

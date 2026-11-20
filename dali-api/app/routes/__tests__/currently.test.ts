@@ -18,7 +18,6 @@ vi.mock("~/lib/roles", () => ({
   currentTerm: vi.fn(),
   currentTermMemberWhere: vi.fn(),
 }));
-vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
 vi.mock("~/lib/photo", () => ({
   resolvePhotoUrl: vi.fn(async (key: string | null) => (key ? `signed:${key}` : null)),
 }));
@@ -28,7 +27,6 @@ vi.mock("~/projects/lib/showcase-view.server", () => ({ listShowcaseCards: vi.fn
 
 import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
 import { getUserRoles, currentTerm, currentTermMemberWhere } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { loadGalleryHighlights } from "~/community/lib/gallery.server";
 import { listShowcaseCards } from "~/projects/lib/showcase-view.server";
 import { loader } from "~/routes/currently";
@@ -54,7 +52,6 @@ beforeEach(() => {
     endDate: new Date("2026-11-24T00:00:00Z"),
   } as never);
   vi.mocked(currentTermMemberWhere).mockResolvedValue({ membershipStatus: "Active" } as never);
-  vi.mocked(isFeatureEnabled).mockResolvedValue(true);
   vi.mocked(loadGalleryHighlights).mockResolvedValue([TILE] as never);
   vi.mocked(listShowcaseCards).mockResolvedValue([] as never);
   prisma.user.count.mockResolvedValue(74);
@@ -149,18 +146,6 @@ describe("Currently at DALI loader", () => {
     expect(data.gallery).toEqual([TILE]);
   });
 
-  it("skips the stories and gallery reads entirely while the community flag is off", async () => {
-    vi.mocked(isFeatureEnabled).mockResolvedValue(false);
-    const data = await run();
-    expect(data.community).toBe(false);
-    expect(data.stories).toEqual([]);
-    expect(data.gallery).toEqual([]);
-    expect(data.storiesTotal).toBe(0);
-    expect(prisma.blogPost.findMany).not.toHaveBeenCalled();
-    expect(prisma.blogPost.count).not.toHaveBeenCalled();
-    expect(loadGalleryHighlights).not.toHaveBeenCalled();
-  });
-
   it("sends a signed-out visitor to login", async () => {
     vi.mocked(requireAuth).mockResolvedValue({ ok: false } as never);
     const res = await run();
@@ -221,13 +206,10 @@ describe("Currently at DALI loader", () => {
     });
   });
 
-  it("skips term-scoped hours and keeps photos private while term and community are off", async () => {
+  it("skips term-scoped hours while there is no current term", async () => {
     vi.mocked(currentTerm).mockResolvedValue(null as never);
-    vi.mocked(isFeatureEnabled).mockResolvedValue(false);
     const data = await run();
     expect(data.stats.hours).toBeNull();
-    expect(data.stats.photos).toBe(0);
     expect(prisma.timeEntry.aggregate).not.toHaveBeenCalled();
-    expect(prisma.galleryPost.count).not.toHaveBeenCalled();
   });
 });

@@ -4,7 +4,6 @@
 
 import { loadDriveScope, buildLinkedProcessMap } from "~/drive/lib/drive.server";
 import type { DriveItem, ProjectPageRow, ProjectFileRow } from "~/drive/lib/drive.server";
-import { prisma } from "~/lib/db.server";
 import { isImpersonating, type AuthSuccess } from "~/lib/auth";
 import { favoritePageIds } from "~/lib/user-pages.server";
 import { withChildCounts } from "~/drive/lib/drive-counts.server";
@@ -137,25 +136,6 @@ async function resolveLiveRoots(userSub: string, isCore: boolean) {
   return findAllRoots();
 }
 
-async function loadLegacyCoreTops() {
-  const coreGroup = await prisma.groupDefinition.findUnique({
-    where: { systemKey: "core" },
-    select: { id: true },
-  });
-  if (!coreGroup) return [];
-  return prisma.page.findMany({
-    where: {
-      workspaceType: "Lab",
-      workspaceId: null,
-      parentPageId: null,
-      scopeKind: "Group",
-      scopeGroupId: coreGroup.id,
-      archivedAt: null,
-    },
-    select: { id: true, folderType: true },
-  });
-}
-
 type WorkspaceOut = {
   key: string;
   label: string;
@@ -243,9 +223,6 @@ export async function loadDriveScopes({
       }),
     ),
   );
-  // Until the reparent job has run, Core-scoped folders still sit at the Lab
-  // top level. Looked up speculatively: it needs nothing from the Lab load.
-  const legacyTopsPending = isCore ? loadLegacyCoreTops() : Promise.resolve([]);
   const [
     favIds,
     memberItems,
@@ -253,7 +230,6 @@ export async function loadDriveScopes({
     labItems,
     liveRoots,
     rootAccess,
-    legacyTops,
     ...scopeItemArrays
   ] = await Promise.all([
     favoritePageIds(userSub),
@@ -274,7 +250,6 @@ export async function loadDriveScopes({
     ),
     liveRootsPending,
     rootAccessPending,
-    legacyTopsPending,
     ...projectIds.map((projectId) =>
       linkedProcessMapPending.then((linkedProcessMap) =>
         loadDriveScope({
@@ -322,21 +297,6 @@ export async function loadDriveScopes({
     );
   }
 
-  if (isCore && visibleRootIds.has("core")) {
-    const legacyIds = new Set<string>();
-    for (const top of legacyTops) {
-      if (top.folderType === "Root" || carved.has(top.id)) continue;
-      if (!labItems.some((it) => it.id === top.id)) continue;
-      for (const id of subtreeIds(labItems, top.id)) legacyIds.add(id);
-    }
-    if (legacyIds.size > 0) {
-      for (const id of legacyIds) carved.add(id);
-      rootSpaceItems.set("core", [
-        ...rootSpaceItems.get("core")!,
-        ...labItems.filter((it) => legacyIds.has(it.id)),
-      ]);
-    }
-  }
   for (const [key, items] of rootSpaceItems) rootSpaceItems.set(key, liftOrphans(items));
   const labVisibleBase = carved.size > 0 ? labItems.filter((it) => !carved.has(it.id)) : labItems;
 

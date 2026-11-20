@@ -14,7 +14,6 @@ const m = vi.hoisted(() => {
     requireAuth: vi.fn(),
     isCore: vi.fn(),
     getUserRoles: vi.fn(),
-    isFeatureEnabled: vi.fn(),
     loadMilestonesPage: vi.fn(),
     createMilestone: vi.fn(),
     updateMilestone: vi.fn(),
@@ -28,7 +27,6 @@ vi.mock("~/lib/login-next", () => ({
   redirectToLogin: () => new Response(null, { status: 302, headers: { Location: "/login" } }),
 }));
 vi.mock("~/lib/roles", () => ({ isCore: m.isCore, getUserRoles: m.getUserRoles }));
-vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: m.isFeatureEnabled }));
 vi.mock("~/core/lib/milestones-page.server", () => ({ loadMilestonesPage: m.loadMilestonesPage }));
 vi.mock("~/core/lib/milestones.server", () => ({
   MilestoneError: m.MilestoneError,
@@ -55,7 +53,6 @@ beforeEach(() => {
   m.requireAuth.mockResolvedValue({ ok: true, user: { sub: "u1" } });
   m.isCore.mockResolvedValue(true);
   m.getUserRoles.mockResolvedValue({ isCore: true, isAdmin: false });
-  m.isFeatureEnabled.mockResolvedValue(true);
 });
 
 describe("milestones loader", () => {
@@ -65,19 +62,12 @@ describe("milestones loader", () => {
     expect(m.loadMilestonesPage).not.toHaveBeenCalled();
   });
 
-  it("redirects Core to Staffing while the flag is off, keeping embed", async () => {
-    m.isFeatureEnabled.mockResolvedValue(false);
-    expect(location(await runLoader())).toBe("/core/staffing");
-    expect(location(await runLoader("http://x/core/milestones?embed=1"))).toBe("/core/staffing?embed=1");
-    expect(m.loadMilestonesPage).not.toHaveBeenCalled();
-  });
-
   it("sends signed-out visitors to login", async () => {
     m.requireAuth.mockResolvedValue({ ok: false });
     expect(location(await runLoader())).toBe("/login");
   });
 
-  it("loads the page for Core with the flag on", async () => {
+  it("loads the page for Core", async () => {
     m.loadMilestonesPage.mockResolvedValue({ term: null });
     expect(await runLoader()).toEqual({ term: null, isAdmin: false });
   });
@@ -91,12 +81,6 @@ describe("milestones action", () => {
       expect(location(res)).toBe("/");
     }
     expect(m.createMilestone).not.toHaveBeenCalled();
-    expect(m.deleteMilestone).not.toHaveBeenCalled();
-  });
-
-  it("is blocked while the flag is off", async () => {
-    m.isFeatureEnabled.mockResolvedValue(false);
-    expect(location(await runAction({ intent: "delete", id: "x" }))).toBe("/core/staffing");
     expect(m.deleteMilestone).not.toHaveBeenCalled();
   });
 

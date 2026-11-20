@@ -1,7 +1,6 @@
 ---
 title: Fill in form answers from records
 summary: Start form answers with what DALI OS already knows about the person filling it, like their name or their organization, and share a form with partners.
-flag: form-prefill
 paths: [/forms/edit/:formId, /forms/fill/:token]
 keywords: [prefill, autofill, fill in, partner, organization, project, records]
 ---

@@ -388,17 +388,13 @@ export function areaIconFor(key: string): LucideIcon | undefined {
  */
 export function areasFor(flags: Partial<FeatureFlagMap> = {}): NavArea[] {
   const hidden = new Set<string>();
-  if (flags.community) hidden.add("/community");
+  hidden.add("/community");
   if (!flags["onboarding-journeys"]) hidden.add(ONBOARDING_NAV_ITEM.href);
   if (!flags["refer-a-partner"]) hidden.add(REFER_NAV_ITEM.href);
   if (!flags.expenses || flags.paperwork) hidden.add(EXPENSES_NAV_ITEM.href);
   if (flags.paperwork) hidden.add(REFER_NAV_ITEM.href);
   else hidden.add(PAPERWORK_NAV_ITEM.href);
-  if (!flags["core-taskboard"]) {
-    hidden.add(CORE_TASKBOARD_NAV_ITEM.href);
-    hidden.add(CORE_MILESTONES_NAV_ITEM.href);
-  }
-  return REGROUPED_AREAS.filter((a) => flags.community || a.key !== "community").map((a) =>
+  return REGROUPED_AREAS.map((a) =>
     a.key === "projects" || a.key === "core" ? { ...a, subtabs: a.subtabs.filter((t) => !hidden.has(t.href)) } : a,
   );
 }
@@ -488,15 +484,8 @@ export function areasForViewer(
     }));
   }
   if (!r?.isAlumni) return areasFor(flags);
-  const hidden = new Set<string>(
-    flags.community
-      ? []
-      : REGROUPED_AREAS.find((a) => a.key === "community")!
-          .subtabs.map((t) => t.href)
-          .filter((href) => href !== ALUMNI_COMMUNITY_NAV_ITEM.href),
-  );
+  const hidden = new Set<string>();
   if (!flags["refer-a-partner"]) hidden.add(REFER_NAV_ITEM.href);
-  if (!flags["alumni-game"]) hidden.add(ALUMNI_GAME_NAV_ITEM.href);
   return ALUMNI_AREAS.map((a) => ({
     ...a,
     subtabs: a.subtabs.filter((t) => !hidden.has(t.href)),
@@ -513,7 +502,7 @@ export const ROOM_BOOKING_NAV_ITEM: SubTab = { label: "Room booking", href: "/ro
 // favorite saved under the old nav still resolves its area and icon.
 const ALL_AREAS: NavArea[] = [
   ...NAV_AREAS,
-  ...areasFor({ community: true, "onboarding-journeys": true, "refer-a-partner": true, "core-taskboard": true }),
+  ...areasFor({ "onboarding-journeys": true, "refer-a-partner": true }),
 ];
 
 // These matchers are handed a live URL, not a bare pathname: the sidebar

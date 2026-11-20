@@ -1,4 +1,4 @@
-// Token accounting for the AI routes (/api/ai/doc, /api/ai/project-tldr),
+// Token accounting for the AI routes,
 // kept separate from ai.server so provider resolution stays db-free (and its
 // unit test needs no Prisma client). Writes to the caller's AiUsage row created
 // by that request's daily-quota upsert.

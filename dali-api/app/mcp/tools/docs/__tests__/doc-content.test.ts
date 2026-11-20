@@ -8,7 +8,6 @@ vi.mock("~/lib/db.server", () => ({
   },
 }));
 vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn() }));
-vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
 vi.mock("~/lib/collabAuth.server", () => ({ authorizeCollabDoc: vi.fn() }));
 vi.mock("~/blog/lib/blog-post.server", () => ({ findBlogPost: vi.fn() }));
 vi.mock("../blog-posts", () => ({ requireViewer: vi.fn() }));
@@ -56,7 +55,6 @@ vi.mock("~/collab/agent-presence.server", () => {
 });
 
 import { prisma } from "~/lib/db.server";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { authorizeCollabDoc } from "~/lib/collabAuth.server";
 import { findBlogPost } from "~/blog/lib/blog-post.server";
 import { requireViewer } from "../blog-posts";
@@ -87,7 +85,6 @@ const OUTLINE_ROW = { type: "paragraph", depth: 0, parentId: null, preview: "", 
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(isFeatureEnabled).mockResolvedValue(true);
   vi.mocked(authorizeCollabDoc).mockResolvedValue({ allowed: true } as any);
   db.page.findUnique.mockResolvedValue({ id: "pg1", kind: "FreeForm", contentDocId: null });
   db.user.findMany.mockResolvedValue([]);
@@ -114,16 +111,6 @@ describe("registration", () => {
       ["edit_content", "mcp:write"],
       ["point_at_content", "mcp:write"],
     ]);
-  });
-});
-
-describe("feature flag", () => {
-  it("refuses every tool while the flag is off", async () => {
-    vi.mocked(isFeatureEnabled).mockResolvedValue(false);
-    await expect(runOutlineContent(ctx, { target: PAGE })).rejects.toMatchObject({ status: 403 });
-    await expect(runEditContent(ctx, { target: PAGE, ops: [{ op: "delete", blockId: "b1", expectedHash: "h" }] })).rejects.toMatchObject({ status: 403 });
-    await expect(runPointAtContent(ctx, { target: PAGE, blockId: "b1" })).rejects.toMatchObject({ status: 403 });
-    expect(applyDocOps).not.toHaveBeenCalled();
   });
 });
 

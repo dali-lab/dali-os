@@ -1,12 +1,11 @@
 ---
 title: Gallery and stories
 summary: Share photos in the gallery and read or write member stories in Everything DALI.
-flag: community
 paths: [/community/gallery, /community/gallery/:postId, /community/opportunities, /resources, /resources/blog/:postId, /resources/write/:postId]
 keywords: [community, gallery, photos, post, story, stories, blog, resources, write, comments, reactions, publish, opportunities, report]
 ---
 
-The Community area groups the places where members and alumni share things: Community, Opportunities, Gallery and Stories. It is available when the Community feature is turned on for you.
+The Community area groups the places where members and alumni share things: Community, Opportunities, Gallery and Stories.
 
 ## Gallery
 
@@ -66,4 +65,4 @@ Core sees an **Edit** button on the front page. Turn it on to **Pin to top**, **
 
 ## Opportunities
 
-[Opportunities](/community/opportunities) is a placeholder for jobs, internships and other openings. It says it is coming soon, and there is nothing to do there yet.
+[Opportunities](/community/opportunities) is where alumni share jobs and anyone can ask for a coffee chat. See [Opportunities](/help/articles/opportunities).

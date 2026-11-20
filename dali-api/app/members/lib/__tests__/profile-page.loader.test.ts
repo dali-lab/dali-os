@@ -62,7 +62,6 @@ vi.mock("~/members/lib/coffee-chat.server", () => ({
   hasOutgoingCoffeeChat: vi.fn(async () => false),
   sendCoffeeChatInvite: vi.fn(),
 }));
-vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
 vi.mock("~/education/lib/engagement.server", () => ({
   getEducationProfile: vi.fn(async () => ({ attended: [], taught: [], ceCredits: [] })),
 }));

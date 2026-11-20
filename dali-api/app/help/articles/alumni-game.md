@@ -1,7 +1,6 @@
 ---
 title: The alumni lab game
 summary: Build a pixel avatar, walk around a pixel DALI lab, and finish your alumni profile by chatting with Tim.
-flag: alumni-game
 keywords: [alumni, game, avatar, pixel, lab, quest, Tim, Lorie, onboarding]
 paths: [/alumni/welcome, /alumni/lab]
 ---
