@@ -130,6 +130,17 @@ describe("useCertificateAutosave", () => {
     expect(sent).toEqual([]);
   });
 
+  it("swallows a failed unload post, since the page is already going away", async () => {
+    const unhandled = vi.fn();
+    process.on("unhandledRejection", unhandled);
+    fetchMock.mockRejectedValueOnce(new Error("offline"));
+    await edit(0.2);
+    act(() => window.dispatchEvent(new Event("beforeunload")));
+    await wait(20);
+    process.off("unhandledRejection", unhandled);
+    expect(unhandled).not.toHaveBeenCalled();
+  });
+
   it("sends nothing on unmount when there are no unsaved changes", () => {
     act(() => root.unmount());
     expect(fetchMock).not.toHaveBeenCalled();
