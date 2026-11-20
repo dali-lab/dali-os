@@ -116,4 +116,35 @@ describe("EmailEditorModal", () => {
     expect(title?.tagName).toBe("H2");
     expect(title?.textContent?.trim().length).toBeGreaterThan(0);
   });
+
+  describe("with this cycle's values", () => {
+    const waitlisted = "hiring:decision:Waitlisted" as const;
+    const waitRow = { ...row, key: waitlisted, subject: "Waitlist", body: "Reply by {{respondBy}}" };
+    function renderWaitlisted(sample?: Record<string, string>) {
+      fetcherData = { rows: [waitRow], versions: [] };
+      act(() => root.render(createElement(EmailEditorModal, { templateKey: waitlisted, onClose, sample })));
+    }
+
+    it("previews with them", () => {
+      renderWaitlisted({ respondBy: "Friday, January 8, 2027" });
+      expect(document.body.textContent).toContain("Reply by Friday, January 8, 2027");
+      expect(document.body.textContent).toContain("Preview with this cycle's dates and sample values");
+    });
+
+    it("sends them with a test", () => {
+      renderWaitlisted({ respondBy: "Friday, January 8, 2027" });
+      act(() => button("Send test").click());
+      expect(submit.mock.calls[0]![0]).toMatchObject({
+        intent: "send-test",
+        sample: JSON.stringify({ respondBy: "Friday, January 8, 2027" }),
+      });
+    });
+
+    it("sends no sample without them", () => {
+      renderWaitlisted();
+      act(() => button("Send test").click());
+      expect(submit.mock.calls[0]![0]).not.toHaveProperty("sample");
+      expect(document.body.textContent).toContain("Reply by Monday, June 8, 2026");
+    });
+  });
 });

@@ -15,6 +15,9 @@ vi.mock("~/email/lib/templates.server", () => ({
 }));
 
 import { requireAuth } from "~/lib/auth";
+import { prisma } from "~/lib/db.server";
+import { enqueueOutbound } from "~/lib/outbound.server";
+import { renderAuthEmail } from "~/email/lib/layout.server";
 import { isCore } from "~/lib/roles";
 import { rollbackEmailTemplate, saveEmailTemplate } from "~/email/lib/templates.server";
 import { EMAIL_TEMPLATES } from "~/email/lib/registry";
@@ -52,5 +55,44 @@ describe("admin.email action", () => {
     vi.mocked(isCore).mockResolvedValue(false);
     await submit({ intent: "save", key: KEY, subject: "S", body: "B" }).run();
     expect(saveEmailTemplate).not.toHaveBeenCalled();
+  });
+
+  describe("send-test", () => {
+    const WAITLISTED = "hiring:decision:Waitlisted";
+    beforeEach(() => {
+      vi.mocked(prisma.user.findUnique).mockResolvedValue({ daliEmail: "ada@example.edu" } as never);
+      vi.mocked(renderAuthEmail).mockImplementation(
+        async ({ subject, bodyHtml }) => ({ subject, html: bodyHtml, text: subject }) as never,
+      );
+      vi.mocked(enqueueOutbound).mockResolvedValue({ id: "o1" } as never);
+    });
+    const sentHtml = () => vi.mocked(enqueueOutbound).mock.calls[0]![0].bodyHtml;
+
+    it("fills variables from the sample the editor sends", async () => {
+      await submit({
+        intent: "send-test",
+        key: WAITLISTED,
+        subject: "Waitlist",
+        body: "Reply by {{respondBy}}",
+        sample: JSON.stringify({ respondBy: "Friday, January 8, 2027" }),
+      }).run();
+      expect(sentHtml()).toContain("Friday, January 8, 2027");
+    });
+
+    it("uses the registry sample without one", async () => {
+      await submit({ intent: "send-test", key: WAITLISTED, subject: "Waitlist", body: "Reply by {{respondBy}}" }).run();
+      expect(sentHtml()).toContain("Monday, June 8, 2026");
+    });
+
+    it("falls back to the registry sample when the sample isn't JSON", async () => {
+      await submit({
+        intent: "send-test",
+        key: WAITLISTED,
+        subject: "Waitlist",
+        body: "Reply by {{respondBy}}",
+        sample: "{nope",
+      }).run();
+      expect(sentHtml()).toContain("Monday, June 8, 2026");
+    });
   });
 });

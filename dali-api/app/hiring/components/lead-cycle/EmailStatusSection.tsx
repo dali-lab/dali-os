@@ -3,6 +3,7 @@ import { cn } from "~/lib/cn";
 import { hiringKey } from "~/email/lib/registry";
 import { EmailEditorModal } from "~/admin/components/EmailTemplatesAdmin";
 import { Link } from "react-router";
+import { decisionEmailVars, type DecisionEmailDates } from "~/hiring/lib/decision-email-vars";
 import { CONTINUED_INTEREST_SLOT, LATER_INTERVIEW_INVITE_SLOT, type TemplateSlot, type DecisionSlotType, type NotificationSlotType } from "~/hiring/lib/email-variables";
 import { Modal } from "~/components/Modal";
 import { X } from "lucide-react";
@@ -74,6 +75,7 @@ export function EmailStatusSection({
   slots,
   hiringEmails,
   canEdit,
+  dates,
 }: {
   title: string;
   description: string;
@@ -81,6 +83,8 @@ export function EmailStatusSection({
   hiringEmails: Record<string, { subject: string; body: string }>;
   /** The viewer is Core, so a row opens Core's editor on that email. */
   canEdit: boolean;
+  /** This cycle's dates, so a decision email's preview and test send use them. */
+  dates?: DecisionEmailDates;
 }) {
   // No editor of its own, on purpose. These emails are shared by every cycle, so
   // editing them belongs to Core, not to whoever happens to administer this
@@ -137,7 +141,11 @@ export function EmailStatusSection({
         </p>
       </div>
       {editing && (
-        <EmailEditorModal templateKey={hiringKey(editing)} onClose={() => setEditing(null)} />
+        <EmailEditorModal
+          templateKey={hiringKey(editing)}
+          onClose={() => setEditing(null)}
+          sample={dates && editing.startsWith("decision:") ? decisionEmailVars(editing.slice("decision:".length) as DecisionSlotType, dates) : undefined}
+        />
       )}
     </SetupCard>
   );

@@ -15,6 +15,7 @@ import {
   EMAIL_TEMPLATE_KEYS,
   emailTemplateDef,
   isEmailTemplateKey,
+  sampleWith,
   type EmailTemplateKey,
 } from "~/email/lib/registry";
 import {
@@ -159,7 +160,13 @@ export async function action({ request }: Route.ActionArgs) {
     const def = emailTemplateDef(key);
     // Rendered through the same path a real send uses, so the test can't look
     // right while the send looks wrong.
-    const rendered = renderEmail({ subject, body }, def.sample as never);
+    let overrides: unknown = null;
+    try {
+      overrides = JSON.parse((formData.get("sample") as string) || "null");
+    } catch {
+      overrides = null;
+    }
+    const rendered = renderEmail({ subject, body }, sampleWith(key, overrides) as never);
     const mail = await renderAuthEmail({
       subject: rendered.subject,
       bodyHtml: rendered.html,
