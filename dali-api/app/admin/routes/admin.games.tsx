@@ -6,6 +6,7 @@ import { RangeSegmented } from "~/admin/components/RangeSegmented";
 import { resolveWindow, wantsAllTime } from "~/admin/lib/insights-range";
 import { loadPeopleById } from "~/admin/lib/people.server";
 import { summarizeTunnelRuns, type Count } from "~/admin/lib/tunnel-runs";
+import { loadTunnelRunAggregates, loadTunnelRunsPerDay } from "~/admin/lib/tunnel-runs.server";
 import { fillDays } from "~/components/analytics/chart-range";
 import { useOsChrome } from "~/components/os-chrome";
 import { Avatar } from "~/components/ui/Avatar";
@@ -33,17 +34,10 @@ export async function loader({ request }: Route.LoaderArgs) {
     : null;
   const range = resolveWindow(url.searchParams, new Date(), earliest);
 
-  const rows = await prisma.tunnelRun.findMany({
-    where: { createdAt: { gte: range.since, lte: range.until } },
-    select: { userId: true, score: true, durationMs: true, endedBy: true, obstacle: true, createdAt: true },
-  });
-  const summary = summarizeTunnelRuns(rows);
+  const span = { since: range.since, until: range.until };
+  const [aggregates, perDay] = await Promise.all([loadTunnelRunAggregates(span), loadTunnelRunsPerDay(span)]);
+  const summary = summarizeTunnelRuns(aggregates);
 
-  const perDay = new Map<string, number>();
-  for (const row of rows) {
-    const day = row.createdAt.toISOString().slice(0, 10);
-    perDay.set(day, (perDay.get(day) ?? 0) + 1);
-  }
   const series = fillDays(
     range.firstDay,
     range.lastDay,
