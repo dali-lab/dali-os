@@ -8,8 +8,8 @@ vi.mock("~/lib/ai.server", () => ({
   stripJsonFences: (text: string) => text.trim(),
 }));
 vi.mock("~/lib/ai-quota.server", () => ({ claimAiQuota: vi.fn() }));
-vi.mock("~/lib/contact-email.server", () => ({ chooseContactEmail: vi.fn() }));
-vi.mock("~/lib/alumni-history.server", () => ({ reportHistoryCorrection: vi.fn() }));
+vi.mock("~/members/lib/contact-email.server", () => ({ chooseContactEmail: vi.fn() }));
+vi.mock("~/alumni/lib/alumni-history.server", () => ({ reportHistoryCorrection: vi.fn() }));
 vi.mock("~/members/lib/profile-update.server", async () => {
   const { BadRequestError, ConflictError } = await import("~/lib/http-error");
   class ProfileValidationError extends BadRequestError {
@@ -35,14 +35,14 @@ import { mockedPrisma } from "~/test-utils/prisma";
 import { requireMemberSession } from "~/lib/auth";
 import { isAiEnabled, generateShortText } from "~/lib/ai.server";
 import { claimAiQuota } from "~/lib/ai-quota.server";
-import { chooseContactEmail } from "~/lib/contact-email.server";
+import { chooseContactEmail } from "~/members/lib/contact-email.server";
 import { BadRequestError } from "~/lib/http-error";
-import { reportHistoryCorrection } from "~/lib/alumni-history.server";
+import { reportHistoryCorrection } from "~/alumni/lib/alumni-history.server";
 import {
   updateProfileFields,
   ProfileValidationError,
 } from "~/members/lib/profile-update.server";
-import { QUEST_FIELDS } from "~/components/alumni-game/quest";
+import { QUEST_FIELDS } from "~/alumni/lib/quest";
 import { action } from "../api.alumni-game.quest";
 
 const db = mockedPrisma();

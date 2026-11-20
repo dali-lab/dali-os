@@ -11,7 +11,7 @@ const hub = vi.hoisted(() => ({
 const read = vi.hoisted(() => ({ readDocAsBlocks: vi.fn() }));
 
 vi.mock("~/lib/db.server", () => ({ prisma: db }));
-vi.mock("~/lib/resource-hub.server", () => hub);
+vi.mock("~/resource-hub/lib/resource-hub.server", () => hub);
 vi.mock("~/collab/read", () => read);
 vi.mock("~/collab/blocknote-server", () => ({ blocksToMarkdown: vi.fn(async () => "# Welcome\n\nBody text") }));
 

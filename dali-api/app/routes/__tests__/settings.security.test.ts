@@ -6,13 +6,13 @@ vi.mock("~/lib/auth", async (importOriginal) => ({
   requireAuth: vi.fn(),
 }));
 vi.mock("~/lib/settings-page.server", () => ({}));
-vi.mock("~/lib/contact-email.server", () => ({
+vi.mock("~/members/lib/contact-email.server", () => ({
   listContactEmailOptions: vi.fn(),
   runContactEmailIntent: vi.fn(),
 }));
 
 import { requireAuth } from "~/lib/auth";
-import { listContactEmailOptions, runContactEmailIntent } from "~/lib/contact-email.server";
+import { listContactEmailOptions, runContactEmailIntent } from "~/members/lib/contact-email.server";
 import { action, loader } from "~/routes/settings.security";
 
 const mockAuth = vi.mocked(requireAuth);

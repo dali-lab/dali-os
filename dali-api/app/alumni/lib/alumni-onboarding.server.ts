@@ -2,7 +2,7 @@ import { prisma } from "~/lib/db.server";
 import { BadRequestError } from "~/lib/http-error";
 import { LAB_MEMBER_WHERE } from "~/lib/prisma-shapes";
 import { resolvePhotoUrl } from "~/lib/photo";
-import { addQuestWorkExperience, markAlumniOnboarded } from "~/lib/alumni-game.server";
+import { addQuestWorkExperience, markAlumniOnboarded } from "~/alumni/lib/alumni-game.server";
 import { updateProfileFields } from "~/members/lib/profile-update.server";
 import {
   blockIdFor,
@@ -12,8 +12,8 @@ import {
   splitWork,
   summarizeDali,
   type AlumniInvite,
-  type OpenToChoices,
-} from "~/lib/alumni-onboarding";
+} from "~/alumni/lib/alumni-onboarding";
+import { openToPatch, type OpenToChoices } from "~/members/lib/open-to";
 
 export async function alumniInviteFor(userId: string, isAlumni: boolean): Promise<AlumniInvite | null> {
   if (!isAlumni) return null;
@@ -198,17 +198,6 @@ export async function loadOnboarding(userId: string): Promise<OnboardingData> {
             : "Find people who worked on the same projects",
       },
     },
-  };
-}
-
-export function openToPatch(choices: OpenToChoices) {
-  return {
-    coffeeChats: choices.coffeeChats,
-    resumeReviews: choices.resumeReviews,
-    portfolioReviews: choices.resumeReviews,
-    partnerReferrals: choices.partnerReferrals,
-    mentoring: choices.mentoring,
-    speaking: choices.speaking,
   };
 }
 

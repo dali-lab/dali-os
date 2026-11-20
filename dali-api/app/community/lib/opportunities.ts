@@ -1,5 +1,5 @@
 // Client-safe limits and rules for the /community/opportunities feed.
-import { ASK_ME_ABOUT_SUGGESTIONS } from "~/lib/alumni-onboarding";
+import { ASK_ME_ABOUT_SUGGESTIONS } from "~/alumni/lib/alumni-onboarding";
 
 export const OPPORTUNITY_REACTION_EMOJI = ["🙌", "❤️", "🔥", "🎉", "👀", "😂"] as const;
 

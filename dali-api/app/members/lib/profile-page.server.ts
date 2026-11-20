@@ -28,8 +28,7 @@ import {
   achievementsForMember,
   type Achievement,
 } from "~/members/lib/achievements.server";
-import { saveAbout, openToPatch } from "~/lib/alumni-onboarding.server";
-import { parseJsonList, type OpenToChoices } from "~/lib/alumni-onboarding";
+import { openToPatch, parseJsonList, type OpenToChoices } from "~/members/lib/open-to";
 import { groupAssignmentsByTerm, type TermGroup } from "./project-history";
 import { listMemberStaffingForms, type MemberStaffingForm } from "~/projects/lib/member-staffing.server";
 import { listMySignedDocuments } from "~/signing/lib/state.server";
@@ -909,11 +908,15 @@ export async function runProfileAction({
 
   if (intent === "update-alumni-details") {
     try {
-      await saveAbout(targetId, {
-        funFact: String(form.get("funFact") ?? ""),
-        outsideOfWork: String(form.get("outsideOfWork") ?? ""),
-        askMeAbout: parseJsonList(String(form.get("askMeAbout") ?? "")),
-      });
+      await updateProfileFields(
+        targetId,
+        {
+          funFact: String(form.get("funFact") ?? ""),
+          outsideOfWork: String(form.get("outsideOfWork") ?? ""),
+          askMeAbout: parseJsonList(String(form.get("askMeAbout") ?? "")),
+        },
+        { allowNetId: false },
+      );
       const on = (key: string) => form.get(key) === "on";
       await updateProfileFields(
         targetId,

@@ -11,7 +11,7 @@ import { prisma } from "~/lib/db.server";
 import { resourceHubRoomName } from "~/collab/roomName";
 import { getCollabToken } from "~/lib/collab-token.server";
 import { isAiEnabled } from "~/lib/ai.server";
-import { loadHubShell } from "~/lib/resource-hub.server";
+import { loadHubShell } from "~/resource-hub/lib/resource-hub.server";
 import { PageRowControls, type PageRowControl } from "~/components/os-page";
 import { useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";

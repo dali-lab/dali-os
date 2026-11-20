@@ -12,7 +12,7 @@
  *   npx tsx --env-file .env scripts/send-alumni-invites.ts --batch 2026-11 --send --only <userId>,<userId> --limit 20 --template alumni.invite
  */
 import { prisma } from "../app/lib/db.server.js";
-import { sendLaunchInvite } from "../app/lib/alumni-invite.server.js";
+import { sendLaunchInvite } from "../app/alumni/lib/alumni-invite.server.js";
 import { parseLaunchArgs, runLaunch } from "./lib/alumni-invite-launch.js";
 
 async function main() {

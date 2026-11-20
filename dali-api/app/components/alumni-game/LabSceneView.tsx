@@ -5,7 +5,7 @@ import { QuestPhone } from "./QuestPhone";
 import { DialogueBox, type DialogueSpec } from "./DialogueBox";
 import { buildAvatarSprite, type AvatarConfig, type AvatarSprites } from "./pixel-avatar";
 import { ART, AVATAR_ASSETS } from "./assets";
-import { questPercent, type QuestionContext, type QuestProfile } from "./quest";
+import { questPercent, type QuestionContext, type QuestProfile } from "~/alumni/lib/quest";
 import { LAB_SERVERS, SERVER_CAPACITY, serverStatus, type LabServerId } from "./servers";
 import "./alumni-game.css";
 

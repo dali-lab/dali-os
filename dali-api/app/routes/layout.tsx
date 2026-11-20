@@ -37,7 +37,7 @@ import {
 } from '~/lib/layout-reads.server'
 import { resolveFeatureFlags } from '~/lib/feature-flags.server'
 import { AlumniGameInvite } from '~/components/alumni-game/AlumniGameInvite'
-import { alumniInviteFor } from '~/lib/alumni-onboarding.server'
+import { alumniInviteFor } from '~/alumni/lib/alumni-onboarding.server'
 import { FeatureFlagsProvider } from '~/components/FeatureFlags'
 import { resolveActiveActivitiesForUser } from '~/lib/activities.server'
 import { ActivitiesProvider } from '~/components/activities/ActivitiesProvider'
@@ -463,7 +463,7 @@ function MemberLayoutRoute() {
       <NavPreloader favorites={favorites} recents={recents} />
       <BannerHost scope="all" />
       <LaunchWelcome firstName={user.firstName || user.email.split('@')[0]} hasCalendarLink={hasCalendarLink} shouldShowTour={shouldShowTour} />
-      {alumniInvite ? <AlumniGameInvite variant={alumniInvite} firstName={user.firstName ?? ''} /> : null}
+      {alumniInvite ? <AlumniGameInvite firstName={user.firstName ?? ''} /> : null}
       <TimeZonePrompt userTimeZone={userTimeZone} userTimeZoneIsExplicit={userTimeZoneIsExplicit} dismissedZone={tzDismissedZone} />
       </ActivitiesProvider>
     </FeatureFlagsProvider>

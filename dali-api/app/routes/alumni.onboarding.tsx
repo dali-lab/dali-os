@@ -13,10 +13,10 @@ import {
   saveHometown,
   saveStudy,
   saveWorkSlot,
-} from "~/lib/alumni-onboarding.server";
-import { reportHistoryCorrection } from "~/lib/alumni-history.server";
-import { listContactEmailOptions, runContactEmailIntent } from "~/lib/contact-email.server";
-import { parseJsonList } from "~/lib/alumni-onboarding";
+} from "~/alumni/lib/alumni-onboarding.server";
+import { reportHistoryCorrection } from "~/alumni/lib/alumni-history.server";
+import { listContactEmailOptions, runContactEmailIntent } from "~/members/lib/contact-email.server";
+import { parseJsonList } from "~/members/lib/open-to";
 import { ProfileConflictError, ProfileValidationError } from "~/members/lib/profile-update.server";
 import { AlumniOnboarding } from "~/components/alumni-onboarding/AlumniOnboarding";
 

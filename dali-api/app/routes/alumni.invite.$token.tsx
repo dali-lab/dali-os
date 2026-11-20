@@ -7,8 +7,8 @@ import { getClientIp } from "~/lib/rate-limit";
 import { clearSessionCookie } from "~/lib/cookies";
 import { mintBetterAuthSession } from "~/lib/betterauth-session.server";
 import { appendBetterAuthSessionCookie } from "~/lib/betterauth-cookie.server";
-import { lookupAlumniInvite, redeemAlumniInvite, sendFreshAlumniInvite } from "~/lib/alumni-invite.server";
-import { adoptInviteAddress } from "~/lib/contact-email.server";
+import { lookupAlumniInvite, redeemAlumniInvite, sendFreshAlumniInvite } from "~/alumni/lib/alumni-invite.server";
+import { adoptInviteAddress } from "~/members/lib/contact-email.server";
 import { AuthButton } from "~/components/auth/AuthButton";
 import { AuthNotice, AuthShellV2 } from "~/components/auth/v2";
 

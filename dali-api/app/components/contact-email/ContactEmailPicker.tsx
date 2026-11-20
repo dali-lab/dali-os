@@ -6,7 +6,7 @@ import { FormField } from "~/components/ui/FormField";
 import { Radio } from "~/components/ui/Radio";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
-import type { ContactEmailOptions, ContactEmailReply } from "~/lib/contact-email.server";
+import type { ContactEmailOptions, ContactEmailReply } from "~/members/lib/contact-email.server";
 
 const OTHER = "__other__";
 

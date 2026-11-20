@@ -16,20 +16,19 @@ import { BlockTile, BlockWall } from "~/components/alumni-onboarding/Wall";
 import { ContactEmailPicker } from "~/components/contact-email/ContactEmailPicker";
 import {
   ASK_ME_ABOUT_SUGGESTIONS,
-  OPEN_TO_CHOICES,
   blockById,
   pluralize,
   wallFilledForStep,
-  type OpenToChoices,
-} from "~/lib/alumni-onboarding";
+} from "~/alumni/lib/alumni-onboarding";
+import { OPEN_TO_CHOICES, type OpenToChoices } from "~/members/lib/open-to";
 import {
   MAX_ASK_ME_ABOUT,
   MAX_ASK_ME_ABOUT_LENGTH,
   MAX_STUDY_ITEMS,
   MAX_STUDY_LENGTH,
 } from "~/members/lib/profile-limits";
-import type { OnboardingData } from "~/lib/alumni-onboarding.server";
-import type { ContactEmailOptions } from "~/lib/contact-email.server";
+import type { OnboardingData } from "~/alumni/lib/alumni-onboarding.server";
+import type { ContactEmailOptions } from "~/members/lib/contact-email.server";
 
 export type OnboardingView = OnboardingData & { contactEmail: ContactEmailOptions };
 

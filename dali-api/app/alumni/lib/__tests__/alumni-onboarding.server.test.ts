@@ -10,12 +10,12 @@ import {
   alumniInviteFor,
   finishOnboarding,
   loadOnboarding,
-  openToPatch,
   saveAbout,
   saveBasedIn,
   saveStudy,
   saveWorkSlot,
 } from "../alumni-onboarding.server";
+import { openToPatch } from "~/members/lib/open-to";
 
 const db = mockedPrisma();
 
@@ -47,21 +47,6 @@ describe("alumniInviteFor", () => {
 
 describe("finishOnboarding", () => {
   const choices = { coffeeChats: true, resumeReviews: true, partnerReferrals: false, mentoring: false, speaking: true };
-
-  it("sets both the resume and portfolio columns from the one resume tile", () => {
-    expect(openToPatch(choices)).toEqual({
-      coffeeChats: true,
-      resumeReviews: true,
-      portfolioReviews: true,
-      partnerReferrals: false,
-      mentoring: false,
-      speaking: true,
-    });
-    expect(openToPatch({ ...choices, resumeReviews: false })).toMatchObject({
-      resumeReviews: false,
-      portfolioReviews: false,
-    });
-  });
 
   it("writes through the shared updater and stamps the finish time once", async () => {
     await finishOnboarding("u1", choices);
