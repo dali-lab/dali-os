@@ -28,7 +28,8 @@ vi.mock("~/lib/roles", () => ({ getUserRoles: m.getUserRoles }));
 vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: m.isFeatureEnabled }));
 vi.mock("../../lib/viewer.server", () => ({ loadExpenseViewer: m.loadExpenseViewer }));
 vi.mock("../../lib/receipts.server", async () => {
-  class ReceiptKeyError extends Error {}
+  const { BadRequestError } = await import("~/lib/http-error");
+  class ReceiptKeyError extends BadRequestError {}
   return { createReceiptUpload: m.createReceiptUpload, ReceiptKeyError };
 });
 vi.mock("../../lib/export.server", () => ({ exportExpensesCsv: m.exportExpensesCsv, exportExpensesPdf: m.exportExpensesPdf }));

@@ -16,7 +16,7 @@ import {
   type NoReceiptFields,
   type UpdateExpenseInput,
 } from "~/expenses/lib/expenses.server";
-import { createReceiptUpload, ReceiptKeyError } from "~/expenses/lib/receipts.server";
+import { createReceiptUpload } from "~/expenses/lib/receipts.server";
 import { isS3Configured } from "~/lib/s3.server";
 import type { McpCtx } from "../../registry";
 import { McpInvalidError, requireForAction } from "../../errors";
@@ -186,21 +186,16 @@ export async function runGetExpense(ctx: McpCtx, args: Args) {
 export async function runCreateExpenseReceiptUpload(ctx: McpCtx, args: Args) {
   await requireExpenseAccess(ctx);
   if (!isS3Configured()) throw new McpInvalidError("File storage is not configured in this environment");
-  try {
-    const { key, post, contentType } = await createReceiptUpload(ctx.user.id, args.contentType as string);
-    const safeName = (args.fileName as string).replace(/[^A-Za-z0-9._-]/g, "_");
-    return {
-      key,
-      contentType,
-      uploadUrl: post.url,
-      fields: post.fields,
-      curl: curlCommand(post.url, post.fields, safeName),
-      next: "Replace /path/to/… with the local file path and run the curl command; a final line of HTTP 204 means stored. Then call manage_expense with action 'create' and this key in receiptKeys.",
-    };
-  } catch (err) {
-    if (err instanceof ReceiptKeyError) throw new McpInvalidError(err.message);
-    throw err;
-  }
+  const { key, post, contentType } = await createReceiptUpload(ctx.user.id, args.contentType as string);
+  const safeName = (args.fileName as string).replace(/[^A-Za-z0-9._-]/g, "_");
+  return {
+    key,
+    contentType,
+    uploadUrl: post.url,
+    fields: post.fields,
+    curl: curlCommand(post.url, post.fields, safeName),
+    next: "Replace /path/to/… with the local file path and run the curl command; a final line of HTTP 204 means stored. Then call manage_expense with action 'create' and this key in receiptKeys.",
+  };
 }
 
 const REQUIRED: Record<(typeof EXPENSE_ACTIONS)[number], string[]> = {

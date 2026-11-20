@@ -13,6 +13,7 @@ const mail = vi.hoisted(() => ({
   deleteMailComment: vi.fn(),
   changeThreadLabels: vi.fn(),
   upsertDraft: vi.fn(),
+  findVisibleDraft: vi.fn(),
   draftVisibleTo: (userId: string) => ({ sentAt: null, OR: [{ shared: true }, { createdById: userId }] }),
 }));
 const access = vi.hoisted(() => ({
@@ -424,15 +425,13 @@ describe("draft_mail", () => {
     );
     expect(r).toEqual({ draftId: "d1", url: "https://os.example.edu/email?view=drafts&inbox=a1" });
     expect(gmail.sendMessage).not.toHaveBeenCalled();
-    expect(db.mailDraft.findFirst).not.toHaveBeenCalled();
+    expect(mail.findVisibleDraft).not.toHaveBeenCalled();
   });
 
   it("updates a visible draft, keeping fields that are left out", async () => {
-    db.mailDraft.findFirst.mockResolvedValue({ id: "d9", threadId: "t5", cc: "c@x.edu", bcc: "", subject: "Old", shared: true });
+    mail.findVisibleDraft.mockResolvedValue({ id: "d9", threadId: "t5", cc: "c@x.edu", bcc: "", subject: "Old", shared: true });
     await call("draft_mail", { accountId: "a1", draftId: "d9", to: "x@example.edu", body: "New" });
-    expect(db.mailDraft.findFirst).toHaveBeenCalledWith({
-      where: { id: "d9", accountId: "a1", sentAt: null, OR: [{ shared: true }, { createdById: "u1" }] },
-    });
+    expect(mail.findVisibleDraft).toHaveBeenCalledWith("d9", "a1", "u1");
     expect(mail.upsertDraft).toHaveBeenCalledWith(
       { draftId: "d9", threadId: "t5", to: "x@example.edu", cc: "c@x.edu", bcc: "", subject: "Old", body: "New", shared: true },
       "a1",
@@ -441,7 +440,7 @@ describe("draft_mail", () => {
   });
 
   it("can't update another user's unshared draft", async () => {
-    db.mailDraft.findFirst.mockResolvedValue(null);
+    mail.findVisibleDraft.mockResolvedValue(null);
     await expect(call("draft_mail", { accountId: "a1", draftId: "theirs", to: "x@example.edu", body: "b" })).rejects.toBeInstanceOf(McpNotFoundError);
     expect(mail.upsertDraft).not.toHaveBeenCalled();
   });

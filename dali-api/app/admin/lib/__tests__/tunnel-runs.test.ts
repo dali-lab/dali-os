@@ -1,96 +1,93 @@
 import { describe, expect, it } from "vitest";
-import { median, summarizeTunnelRuns, type TunnelRunRow } from "../tunnel-runs";
+import { SCORE_BUCKETS, summarizeTunnelRuns, type TunnelRunAggregates } from "../tunnel-runs";
 
-let clock = Date.UTC(2026, 10, 16, 18);
-function run(userId: string, score: number, extra: Partial<TunnelRunRow> = {}): TunnelRunRow {
-  clock += 60_000;
-  return { userId, score, durationMs: score * 25, endedBy: "fall", obstacle: "gap", createdAt: new Date(clock), ...extra };
-}
+const agg = (o: Partial<TunnelRunAggregates> = {}): TunnelRunAggregates => ({
+  totals: { runs: 0, quits: 0, bestScore: null, medianScore: null, medianDurationMs: null },
+  endings: [],
+  scoreBucketCounts: SCORE_BUCKETS.map(() => 0),
+  players: [],
+  learning: { firstRunMedian: null, laterRunMedian: null, laterRuns: 0 },
+  ...o,
+});
 
-describe("median", () => {
-  it("handles empty, odd and even lists", () => {
-    expect(median([])).toBeNull();
-    expect(median([5, 1, 3])).toBe(3);
-    expect(median([1, 2, 3, 4])).toBe(3);
+const player = (userId: string, runs: number, best = 100) => ({
+  userId,
+  runs,
+  best,
+  medianScore: 50,
+  lastPlayed: new Date("2026-11-16T18:00:00Z"),
+});
+
+describe("SCORE_BUCKETS", () => {
+  it("run on without gaps, which the SQL bucketing relies on", () => {
+    SCORE_BUCKETS.slice(1).forEach((b, i) => expect(b.min).toBe(SCORE_BUCKETS[i].max + 1));
+    expect(SCORE_BUCKETS[0].min).toBe(0);
   });
 });
 
 describe("summarizeTunnelRuns", () => {
   it("is empty for no runs", () => {
-    const s = summarizeTunnelRuns([]);
-    expect(s.runs).toBe(0);
-    expect(s.players).toBe(0);
-    expect(s.bestScore).toBeNull();
-    expect(s.medianScore).toBeNull();
-    expect(s.endings).toEqual([]);
-    expect(s.playerRows).toEqual([]);
+    const s = summarizeTunnelRuns(agg());
+    expect(s).toMatchObject({ runs: 0, players: 0, bestScore: null, medianScore: null, endings: [], playerRows: [] });
+    expect(s.scoreBuckets.every((b) => b.count === 0)).toBe(true);
   });
 
-  it("counts runs, players, quits and the best", () => {
-    const s = summarizeTunnelRuns([
-      run("ada", 100),
-      run("ada", 300),
-      run("grace", 50, { endedBy: "quit", obstacle: null }),
-    ]);
-    expect(s.runs).toBe(3);
-    expect(s.players).toBe(2);
-    expect(s.quits).toBe(1);
-    expect(s.bestScore).toBe(300);
-    expect(s.medianScore).toBe(100);
+  it("passes the totals through and counts players and quits", () => {
+    const s = summarizeTunnelRuns(
+      agg({
+        totals: { runs: 3, quits: 1, bestScore: 300, medianScore: 100, medianDurationMs: 4000 },
+        endings: [
+          { endedBy: "fall", obstacle: "gap", count: 2 },
+          { endedBy: "quit", obstacle: null, count: 1 },
+        ],
+        players: [player("ada", 2), player("grace", 1)],
+      }),
+    );
+    expect(s).toMatchObject({ runs: 3, players: 2, quits: 1, bestScore: 300, medianScore: 100, medianDurationMs: 4000 });
   });
 
-  it("says how runs end, leaving out endings nobody hit", () => {
-    const s = summarizeTunnelRuns([
-      run("ada", 10, { obstacle: "strip" }),
-      run("ada", 20, { obstacle: "strip" }),
-      run("ada", 30, { obstacle: null }),
-      run("ada", 40, { endedBy: "quit", obstacle: null }),
-    ]);
+  it("says how runs end, merging by ending and leaving out endings nobody hit", () => {
+    const s = summarizeTunnelRuns(
+      agg({
+        endings: [
+          { endedBy: "fall", obstacle: "strip", count: 2 },
+          { endedBy: "fall", obstacle: null, count: 1 },
+          { endedBy: "quit", obstacle: "gap", count: 1 },
+          { endedBy: "quit", obstacle: null, count: 3 },
+        ],
+      }),
+    );
     expect(s.endings.map((e) => [e.key, e.count])).toEqual([
       ["strip", 2],
-      ["quit", 1],
+      ["quit", 4],
       ["unknown", 1],
     ]);
   });
 
-  it("buckets scores and players", () => {
-    const s = summarizeTunnelRuns([
-      run("ada", 99),
-      run("ada", 100),
-      run("ada", 2500),
-      ...Array.from({ length: 10 }, () => run("grace", 600)),
-    ]);
-    expect(s.scoreBuckets.map((b) => b.count)).toEqual([1, 1, 0, 10, 0, 1]);
-    expect(s.runsPerPlayer.map((b) => b.count)).toEqual([0, 1, 0, 1]);
+  it("labels score buckets in order and fills missing ones with zero", () => {
+    const s = summarizeTunnelRuns(agg({ scoreBucketCounts: [1, 1, 0, 10] }));
+    expect(s.scoreBuckets.map((b) => b.count)).toEqual([1, 1, 0, 10, 0, 0]);
+    expect(s.scoreBuckets.map((b) => b.label)).toEqual(SCORE_BUCKETS.map((b) => b.label));
   });
 
-  it("compares first runs with runs from the fifth on", () => {
-    const s = summarizeTunnelRuns([
-      ...[100, 200, 300, 400, 900, 1100].map((score) => run("ada", score)),
-      run("grace", 50),
-    ]);
-    expect(s.learning.firstRunMedian).toBe(75);
-    expect(s.learning.laterRunMedian).toBe(1000);
-    expect(s.learning.laterRuns).toBe(2);
+  it("groups players by how many runs they made", () => {
+    const s = summarizeTunnelRuns(
+      agg({ players: [player("a", 1), player("b", 3), player("c", 4), player("d", 10), player("e", 25)] }),
+    );
+    expect(s.runsPerPlayer.map((b) => b.count)).toEqual([1, 2, 0, 2]);
   });
 
-  it("orders first runs by time, not by the order rows arrive in", () => {
-    const later = run("ada", 900);
-    const earlier = { ...run("ada", 100), createdAt: new Date(later.createdAt.getTime() - 3_600_000) };
-    expect(summarizeTunnelRuns([later, earlier]).learning.firstRunMedian).toBe(100);
-  });
-
-  it("lists players by how much they play, then by their best", () => {
-    const s = summarizeTunnelRuns([run("ada", 10), run("grace", 500), run("grace", 5), run("alan", 900)]);
+  it("keeps the player order it was given and formats the last played time", () => {
+    const s = summarizeTunnelRuns(agg({ players: [player("grace", 2, 500), player("ada", 1, 10)] }));
     expect(s.playerRows.map((p) => [p.userId, p.runs, p.best])).toEqual([
       ["grace", 2, 500],
-      ["alan", 1, 900],
       ["ada", 1, 10],
     ]);
+    expect(s.playerRows[0].lastPlayed).toBe("2026-11-16T18:00:00.000Z");
   });
 
-  it("ignores missing durations in the median run length", () => {
-    const s = summarizeTunnelRuns([run("ada", 40, { durationMs: null }), run("ada", 40, { durationMs: 8000 })]);
-    expect(s.medianDurationMs).toBe(8000);
+  it("passes the learning comparison through", () => {
+    const learning = { firstRunMedian: 75, laterRunMedian: 1000, laterRuns: 2 };
+    expect(summarizeTunnelRuns(agg({ learning })).learning).toEqual(learning);
   });
 });

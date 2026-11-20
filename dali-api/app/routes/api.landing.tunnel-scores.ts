@@ -1,5 +1,6 @@
 import type { Route } from "./+types/api.landing.tunnel-scores";
 import { requireMemberSession } from "~/lib/auth";
+import { checkRateLimit } from "~/lib/rate-limit";
 import {
   MAX_DURATION_MS,
   MAX_SCORE,
@@ -14,6 +15,8 @@ import {
 //   GET  /api/landing/tunnel-scores  — the top places, plus the caller's own best
 //   POST /api/landing/tunnel-scores  — report a run: { score, durationMs?, endedBy?, obstacle? }
 // Every run is logged; only a fall can set a best, so leaving a run early never moves the board.
+
+export const TUNNEL_RUN_LIMIT = { max: 30, windowMs: 60_000 };
 
 const isWhole = (v: unknown, max: number): v is number =>
   typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= max;
@@ -50,6 +53,8 @@ export async function action({ request }: Route.ActionArgs) {
   }
   const gate = await requireMemberSession(request);
   if (!gate.ok) return gate.response;
+  const limited = checkRateLimit(request, TUNNEL_RUN_LIMIT, `tunnel-run:${gate.auth.user.sub}`);
+  if (limited) return limited;
 
   let body: unknown;
   try {

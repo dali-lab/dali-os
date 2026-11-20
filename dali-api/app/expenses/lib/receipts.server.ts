@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { BadRequestError } from "~/lib/http-error";
 import { getUploadPost } from "~/lib/s3.server";
 
 export const RECEIPT_CONTENT_TYPES = ["image/jpeg", "image/png", "image/webp", "application/pdf"] as const;
@@ -6,7 +7,7 @@ export type ReceiptContentType = (typeof RECEIPT_CONTENT_TYPES)[number];
 
 export const RECEIPT_KEY_PREFIX = "uploads/expense-receipts/";
 
-export class ReceiptKeyError extends Error {
+export class ReceiptKeyError extends BadRequestError {
   constructor(message: string) {
     super(message);
     this.name = "ReceiptKeyError";
