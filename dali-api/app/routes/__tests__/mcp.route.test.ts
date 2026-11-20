@@ -56,7 +56,7 @@ vi.mock("~/mcp/registry", async () => {
     flagged_tool: {
       def: { name: "flagged_tool", description: "f", requiredScope: "mcp:read", inputSchema: { type: "object" } },
       run: vi.fn(),
-      featureFlag: "core-taskboard",
+      featureFlag: "mcp-email",
     },
     admin_tool: {
       def: { name: "admin_tool", description: "a", requiredScope: "mcp:admin", inputSchema: { type: "object" } },

@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation } from "react-router";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import { matchesPage } from "~/core/lib/banners";
 import type { BannerDTO, BannerEvent } from "~/core/lib/banners.server";
 import { BannerOverlay } from "./BannerContent";
@@ -41,7 +40,6 @@ export function pickBanner(
 }
 
 export function BannerHost({ scope }: { scope: BannerScope }) {
-  const enabled = useFeatureFlag("banners");
   const { pathname } = useLocation();
   const [live, setLive] = useState<BannerDTO[] | null>(null);
   const [active, setActive] = useState<BannerDTO | null>(null);
@@ -49,7 +47,6 @@ export function BannerHost({ scope }: { scope: BannerScope }) {
   const firstPath = useRef(pathname);
 
   useEffect(() => {
-    if (!enabled) return;
     let cancelled = false;
     fetch("/api/banners/active", { credentials: "include" })
       .then((r) => (r.ok ? r.json() : { banners: [] }))
@@ -58,7 +55,7 @@ export function BannerHost({ scope }: { scope: BannerScope }) {
     return () => {
       cancelled = true;
     };
-  }, [enabled]);
+  }, []);
 
   useEffect(() => {
     if (!live || active) return;

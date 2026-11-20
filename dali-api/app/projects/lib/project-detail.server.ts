@@ -40,11 +40,8 @@ import {
 import {
   computeProjectStatus,
   computeStatusBreakdown,
-  factsFingerprint,
   type ProjectWorkStatus,
 } from "~/projects/lib/project-status";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
-import { isAiEnabled } from "~/lib/ai.server";
 import { loadProjectDriveScope } from "~/drive/lib/drive-scopes.server";
 import { PROJECT_PAGE_SELECT, PROJECT_FILE_SELECT } from "~/drive/lib/drive.server";
 
@@ -89,9 +86,6 @@ export async function loadProjectDetail({
       description: true,
       status: true,
       maintenancePlans: { where: { endedAt: null }, take: 1, select: { plan: true } },
-      aiTldr: true,
-      aiTldrGeneratedAt: true,
-      aiTldrInputHash: true,
       calendarEmail: true,
       teamGroupEmail: true,
       imageUrl: true,
@@ -821,7 +815,7 @@ export async function loadProjectDetail({
   // renders. Deadlines reuse `epics`, already built for the timeline.
   const tabParam = new URL(request.url).searchParams.get("tab");
   // projectCalendar/projectDriveScope/projectInfra/infraConfigRow/
-  // infraRequests/aiLineEnabled/chartStrings are all independent of each
+  // infraRequests/chartStrings are all independent of each
   // other and need nothing beyond project/epics/roles from Stage 1 (plus
   // pageRows/fileRows from Stage 2 for the Drive scope below) — merged into
   // one wave instead of four separate round trips.
@@ -832,7 +826,6 @@ export async function loadProjectDetail({
     infraConfigRow,
     infraRequests,
     knownOrgs,
-    aiLineEnabled,
     chartStrings,
   ] = await Promise.all([
     tabParam === "meetings"
@@ -875,10 +868,6 @@ export async function loadProjectDetail({
     }),
     canEdit ? listProjectInfraRequests(params.id) : Promise.resolve([]),
     canEdit ? listKnownOrgs() : Promise.resolve({ fly: [], neon: [] }),
-    // Progress tab's AI-line flag — independent of the status facts below.
-    (async () =>
-      isAiEnabled() &&
-      (await isFeatureEnabled("project-tldr-ai", auth.user.sub, roles, request)))(),
     // Core-only: the project's chart string history, for the Payroll panel.
     // Everyone else gets an empty list rather than a filtered one — the rows
     // never reach the payload, the same reasoning as redactCoreOnlyProjectFields.
@@ -901,12 +890,9 @@ export async function loadProjectDetail({
       ? (new URL(request.url).searchParams.get("infraErrors") ?? "").split("\n").filter(Boolean)
       : [],
   };
-  // ── Progress-tab status bar: deterministic work-status facts + the cached
-  // AI summary's freshness. Facts come from the same task rows the board
-  // already loaded (the current sprint is derived from term spans), so the bar
-  // costs no extra query. aiTldrStale compares the current facts fingerprint
-  // against the one the cached summary was written from; the client regenerates
-  // when it differs.
+  // ── Progress-tab status bar: deterministic work-status facts. They come from
+  // the same task rows the board already loaded (the current sprint is derived
+  // from term spans), so the bar costs no extra query.
   const statusNow = new Date();
   const statusFacts = computeProjectStatus(
     {
@@ -937,9 +923,6 @@ export async function loadProjectDetail({
     })),
     statusNow,
   );
-  const aiTldrStale =
-    !project.aiTldrInputHash ||
-    project.aiTldrInputHash !== factsFingerprint(statusFacts);
 
   return {
     infra,
@@ -1015,12 +998,6 @@ export async function loadProjectDetail({
     boardOptions,
     statusFacts,
     statusBreakdown,
-    aiTldr: project.aiTldr,
-    aiTldrGeneratedAt: project.aiTldrGeneratedAt
-      ? project.aiTldrGeneratedAt.toISOString()
-      : null,
-    aiTldrStale,
-    aiLineEnabled,
     canEdit,
     canEditScope,
     canEditAssignmentLevel: core,

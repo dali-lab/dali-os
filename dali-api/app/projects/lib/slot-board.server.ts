@@ -4,8 +4,7 @@ import { ensureStaffingCycle } from "./staffing-cycle";
 import { applySlotColumnOp, type Slot } from "./form-slots";
 import { parseColumnOp } from "~/forms/lib/column-ops";
 import { parseFormDataJson } from "~/lib/safe-json";
-import { currentTerm, getUserRoles } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import { currentTerm } from "~/lib/roles";
 import { resyncIntentSets } from "./intent-validation";
 import { deleteFormResponse } from "~/forms/lib/form-response.server";
 
@@ -60,11 +59,7 @@ export async function setBoardColumn(
   cycleId: string,
   slot: Slot,
   userId: string,
-  request: Request,
 ): Promise<Response> {
-  const roles = await getUserRoles(userId, request);
-  if (!(await isFeatureEnabled("form-response-views", userId, roles, request)))
-    return Response.json({ error: "Forbidden" }, { status: 403 });
   const op = parseColumnOp(parseFormDataJson(form.get("op")));
   if (!op) return Response.json({ error: "Invalid input" }, { status: 400 });
   const result = await applySlotColumnOp(cycleId, slot, op, userId);
@@ -86,9 +81,6 @@ export async function deleteBoardResponse(
   userId: string,
   request: Request,
 ): Promise<Response> {
-  const roles = await getUserRoles(userId, request);
-  if (!(await isFeatureEnabled("form-response-views", userId, roles, request)))
-    return Response.json({ error: "Forbidden" }, { status: 403 });
   const submissionId = form.get("submissionId");
   if (typeof submissionId !== "string" || !submissionId)
     return Response.json({ error: "Invalid input" }, { status: 400 });

@@ -50,7 +50,6 @@ import type { Question } from '~/types'
 import { DocEditor } from '~/components/doc'
 import { referenceSourceChoices, referenceSourceNeedsTerm } from '~/forms/lib/reference-sources.shared'
 import { isPrefillFieldKey, prefillFieldFits, type FillerKind } from '~/forms/lib/prefill-fields'
-import { useFeatureFlag } from '~/components/FeatureFlags'
 import { PrefillPicker } from './PrefillPicker'
 import { QuestionSourceNote } from './QuestionSourceNote'
 import { Checkbox } from '~/components/ui/Checkbox'
@@ -432,7 +431,6 @@ export function FormBuilderTab({
     type !== 'checkbox' || allowCheckbox || editForm.type === 'checkbox'
   const [description, setDescription] = useState<unknown>(initialDescription ?? null)
   const { formTrigger } = useOsChrome()
-  const prefillEnabled = useFeatureFlag('form-prefill')
   if (snapshotRef) snapshotRef.current = () => ({ questions, description })
   const onChangeRef = useRef(onChange)
   onChangeRef.current = onChange
@@ -1059,7 +1057,7 @@ export function FormBuilderTab({
           )}
         </div>
 
-        {prefillEnabled && fillers && editForm.type !== undefined && editForm.data && (
+        {fillers && editForm.type !== undefined && editForm.data && (
           <PrefillPicker
             question={{ type: editForm.type, data: editForm.data }}
             fillers={fillers}

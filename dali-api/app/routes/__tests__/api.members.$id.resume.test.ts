@@ -3,8 +3,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
 vi.mock("~/lib/db.server");
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
-vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn().mockResolvedValue({}), isAdmin: vi.fn() }));
-vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
+vi.mock("~/lib/roles", () => ({ isAdmin: vi.fn() }));
 vi.mock("~/lib/s3.server", () => ({
   isS3Configured: vi.fn(),
   putObject: vi.fn(),
@@ -22,7 +21,6 @@ import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 import { isAdmin } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { deleteObject, getDownloadUrl, isS3Configured, putObject } from "~/lib/s3.server";
 import { recordTokenUsage } from "~/lib/ai-usage.server";
 import { isAiEnabled, resolveAiProvider } from "~/lib/ai.server";
@@ -75,7 +73,6 @@ beforeEach(() => {
   vi.clearAllMocks();
   resetRateLimits();
   signInAs(ME);
-  vi.mocked(isFeatureEnabled).mockResolvedValue(true);
   vi.mocked(isS3Configured).mockReturnValue(true);
   vi.mocked(getDownloadUrl).mockResolvedValue(SIGNED);
   vi.mocked(putObject).mockResolvedValue(undefined as never);
@@ -127,11 +124,6 @@ describe("GET /api/members/:id/resume", () => {
 
   it("returns 404 when there is no resume", async () => {
     vi.mocked(prisma.user.findUnique).mockResolvedValue({ resumeKey: null, resumeFileName: null } as never);
-    expect((await get(ME)).status).toBe(404);
-  });
-
-  it("returns 404 with the flag off", async () => {
-    vi.mocked(isFeatureEnabled).mockResolvedValue(false);
     expect((await get(ME)).status).toBe(404);
   });
 });
@@ -290,14 +282,6 @@ describe("access rules", () => {
     expect((await del(ME)).status).toBe(404);
     expect(prisma.user.update).not.toHaveBeenCalled();
     expect(deleteObject).not.toHaveBeenCalled();
-  });
-
-  it("returns 404 on POST and DELETE with the flag off", async () => {
-    signInAs(ME);
-    vi.mocked(isFeatureEnabled).mockResolvedValue(false);
-    expect((await post(ME, pdf())).status).toBe(404);
-    expect((await del(ME)).status).toBe(404);
-    expect(putObject).not.toHaveBeenCalled();
   });
 
   it("rejects other methods", async () => {

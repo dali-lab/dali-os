@@ -7,7 +7,6 @@ const confirm = vi.fn();
 vi.mock("~/components/ui/dialog", () => ({ useDialog: () => ({ confirm }) }));
 
 import { ShareDialog } from "~/components/sharing/ShareDialog";
-import { FeatureFlagsProvider } from "~/components/FeatureFlags";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -43,22 +42,18 @@ function stubFetch(kind: string, linkAccess = "LabMembers") {
   );
 }
 
-async function mount(props: { fillUrl?: string | null } = {}, flags: Record<string, boolean> = {}) {
+async function mount(props: { fillUrl?: string | null } = {}) {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
   await act(async () => {
     root!.render(
-      createElement(
-        FeatureFlagsProvider,
-        { flags, children: null },
-        createElement(ShareDialog, {
-          page: { id: "f1", title: "Intake", workspaceType: "Lab" },
-          open: true,
-          onClose: () => {},
-          ...props,
-        }),
-      ),
+      createElement(ShareDialog, {
+        page: { id: "f1", title: "Intake", workspaceType: "Lab" },
+        open: true,
+        onClose: () => {},
+        ...props,
+      }),
     );
   });
   await act(async () => {});
@@ -103,19 +98,20 @@ describe("ShareDialog form variant", () => {
     expect(listed.join("|")).not.toContain("Comment");
   });
 
-  it("offers the four fill audiences in lab wording", async () => {
+  it("offers the five fill audiences in lab wording", async () => {
     stubFetch("Form");
     await mount({ fillUrl: "/forms/fill/tok" });
     await click(byLabel("General access audience"));
     const listed = options();
-    expect(listed).toHaveLength(4);
+    expect(listed).toHaveLength(5);
     expect(listed[0]).toContain("Only people you add");
     expect(listed[1]).toContain("Everyone in the lab");
     expect(listed[1]).toContain("Any lab member can fill it");
     expect(listed[2]).toContain("Anyone signed in");
     expect(listed[2]).toContain("Any account, including applicants and partners");
-    expect(listed[3]).toContain("Anyone with the link");
-    expect(listed[3]).toContain("No account needed");
+    expect(listed[3]).toContain("Partners");
+    expect(listed[4]).toContain("Anyone with the link");
+    expect(listed[4]).toContain("No account needed");
   });
 
   it("hides the general access role dropdown", async () => {
@@ -169,9 +165,9 @@ describe("ShareDialog form variant", () => {
 });
 
 describe("ShareDialog Partners audience", () => {
-  it("offers Partners on a form when form-prefill is on, and sends it as View", async () => {
+  it("offers Partners on a form, and sends it as View", async () => {
     stubFetch("Form", "Restricted");
-    await mount({ fillUrl: "/forms/fill/tok" }, { "form-prefill": true });
+    await mount({ fillUrl: "/forms/fill/tok" });
     await click(byLabel("General access audience"));
     const partners = [...document.querySelectorAll('[role="option"]')].find((o) => o.textContent?.startsWith("Partners"));
     expect(partners?.textContent).toContain("Partner accounts that belong to a partner organization");
@@ -182,7 +178,7 @@ describe("ShareDialog Partners audience", () => {
     });
   });
 
-  it("keeps Partners listed on a form already shared that way, flag off", async () => {
+  it("keeps Partners listed on a form already shared that way", async () => {
     stubFetch("Form", "Partners");
     await mount({ fillUrl: "/forms/fill/tok" });
     await click(byLabel("General access audience"));
@@ -191,7 +187,7 @@ describe("ShareDialog Partners audience", () => {
 
   it("never offers Partners on a document", async () => {
     stubFetch("FreeForm", "LabMembers");
-    await mount({}, { "form-prefill": true });
+    await mount();
     await click(byLabel("General access audience"));
     expect(options().some((o) => o.startsWith("Partners"))).toBe(false);
   });

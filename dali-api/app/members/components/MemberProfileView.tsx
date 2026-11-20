@@ -67,7 +67,6 @@ import { DateField } from "~/components/ui/DateField";
 import { Radio } from "~/components/ui/Radio";
 import { useConfirmSubmit, useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import { Button } from "~/components/ui/Button";
 import { IconButton } from "~/components/ui/IconButton";
 import { Modal, ModalHeader } from "~/components/Modal";
@@ -1147,7 +1146,6 @@ function WorkExperienceCard({
   // null = closed, "new" = adding, an item = editing it.
   const [editing, setEditing] = useState<WorkExperienceItem | "new" | null>(null);
   const [importing, setImporting] = useState(false);
-  const importEnabled = useFeatureFlag("work-history-import");
   const remove = useFetcher();
   const { confirm } = useDialog();
 
@@ -1170,7 +1168,7 @@ function WorkExperienceCard({
         trailing={
           canEdit && (
             <div className="flex items-center gap-1.5">
-              {importEnabled && isSelf && (
+              {isSelf && (
                 <button type="button" onClick={() => setImporting(true)} className={CARD_PILL_CLASS}>
                   <Upload className="w-3 h-3" />
                   Import
@@ -1184,7 +1182,7 @@ function WorkExperienceCard({
           )
         }
       />
-      {importEnabled && resume && (
+      {resume && (
         <ResumeLine memberId={memberId} resume={resume} isSelf={isSelf} />
       )}
       <div className="px-5 pb-5">

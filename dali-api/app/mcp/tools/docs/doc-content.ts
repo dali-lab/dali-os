@@ -1,6 +1,4 @@
 import { prisma } from "~/lib/db.server";
-import { getUserRoles } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { authorizeCollabDoc } from "~/lib/collabAuth.server";
 import { findBlogPost } from "~/blog/lib/blog-post.server";
 import { blocksToMarkdown, markdownToBlocks, type DocBlock } from "~/collab/blocknote-server";
@@ -30,7 +28,6 @@ import { pageArray, pageProps, type PageArgs } from "../../pagination";
 import { loadEditablePage } from "../set-page-content";
 import { requireViewer } from "./blog-posts";
 
-const FLAG = "mcp-block-edits";
 const MARKDOWN = { inlineRefs: true };
 const STYLE_PROPS = new Set(["backgroundColor", "textColor", "textAlignment", "isToggleable"]);
 const MAX_OPS = 50;
@@ -50,13 +47,6 @@ const TARGET_SCHEMA = {
   required: ["type", "id"],
   additionalProperties: false,
 };
-
-async function requireFlag(ctx: McpCtx) {
-  const roles = await getUserRoles(ctx.user.id, ctx.request);
-  if (!(await isFeatureEnabled(FLAG, ctx.user.id, roles, ctx.request))) {
-    throw new McpForbiddenError("Block-level editing is not turned on for you yet. Use read_page / set_page_content.");
-  }
-}
 
 async function resolveTarget(callerId: string, target: Target, mode: "read" | "write"): Promise<ResolvedTarget> {
   if (target.type === "blogPost") {
@@ -103,7 +93,6 @@ export const OUTLINE_CONTENT_TOOL = {
 };
 
 export async function runOutlineContent(ctx: McpCtx, input: PageArgs & { target: Target }) {
-  await requireFlag(ctx);
   const resolved = await resolveTarget(ctx.user.id, input.target, "read");
   const { blocks } = await outlineDoc(resolved.docName);
   const { rows, page } = pageArray(blocks, input, OUTLINE_LIMITS);
@@ -143,7 +132,6 @@ export async function runGetContentBlocks(
   ctx: McpCtx,
   input: { target: Target; blockIds?: string[]; format?: "markdown" | "json" },
 ) {
-  await requireFlag(ctx);
   const resolved = await resolveTarget(ctx.user.id, input.target, "read");
   let found;
   try {
@@ -395,7 +383,6 @@ function toMcpError(err: unknown): unknown {
 }
 
 export async function runEditContent(ctx: McpCtx, input: { target: Target; ops: InputOp[] }) {
-  await requireFlag(ctx);
   const resolved = await resolveTarget(ctx.user.id, input.target, "write");
   const warnings: string[] = [];
   const ops: DocOp[] = [];
@@ -474,7 +461,6 @@ export async function runPointAtContent(
   ctx: McpCtx,
   input: { target: Target; blockId: string; offset?: number; at?: "start" | "end"; selectTo?: PointInput },
 ) {
-  await requireFlag(ctx);
   const resolved = await resolveTarget(ctx.user.id, input.target, "write");
   try {
     const { blocks } = await outlineDoc(resolved.docName);

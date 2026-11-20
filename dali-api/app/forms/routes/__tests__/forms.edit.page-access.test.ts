@@ -7,8 +7,6 @@ vi.mock("~/lib/db.server", () => ({
     formVersion: { findMany: vi.fn() },
   },
 }));
-vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn() }));
-vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
 vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
   forbidden: vi.fn(() => new Response("Forbidden", { status: 403 })),
@@ -52,7 +50,6 @@ import { loadVersionResponses } from "~/forms/lib/version-responses.server";
 import { loadVersionSummary } from "~/forms/lib/version-summary.server";
 import { deleteFormResponse } from "~/forms/lib/form-response.server";
 import { loadTrackerCounts, loadTrackerList, sendFormReminder } from "~/forms/lib/form-tracker.server";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { loader, action, handle } from "~/forms/routes/forms.edit.$formId";
 
 const request = new Request("http://os.test/forms/edit/f1");
@@ -85,9 +82,10 @@ describe("forms.edit loader results paging", () => {
       folderPageId: null,
       versions: [{ id: "v2", versionNumber: 2, questions: [] }],
       workspaceType: "Project",
+      responseColumns: [{ id: "member:termsInLab" }],
     } as never);
     vi.mocked(loadVersionResponses).mockResolvedValue({ versionId: "v2" } as never);
-    const req = new Request("http://os.test/forms/edit/f1?view=results&version=2&show=responses&page=3&q=ada&slot=Tue&member=termsInLab");
+    const req = new Request("http://os.test/forms/edit/f1?view=results&version=2&show=responses&page=3&q=ada&slot=Tue");
     await loader({ request: req, params: { formId: "f1" } } as never);
     expect(loadVersionResponses).toHaveBeenCalledWith("f1", "v2", {
       page: 3,
@@ -105,6 +103,7 @@ describe("forms.edit loader results paging", () => {
       folderPageId: null,
       versions: [{ id: "v2", versionNumber: 2, questions: [] }],
       workspaceType: "Project",
+      responseColumns: [],
     } as never);
     const req = new Request("http://os.test/forms/edit/f1?view=results&show=responses&page=-4");
     await loader({ request: req, params: { formId: "f1" } } as never);
@@ -130,21 +129,13 @@ describe("forms.edit saved response columns", () => {
     } as never);
   const resultsReq = new Request("http://os.test/forms/edit/f1?view=results&show=responses&member=projectHistory");
 
-  it("loads the form's saved columns and ignores the URL when the flag is on", async () => {
+  it("loads the form's saved columns and ignores the URL", async () => {
     withVersion([{ id: "member:hiredRoles" }, { id: "q1", label: "Role" }]);
-    vi.mocked(isFeatureEnabled).mockResolvedValue(true);
     await loader({ request: resultsReq, params: { formId: "f1" } } as never);
     expect(vi.mocked(loadVersionResponses).mock.calls[0][2]?.columns).toEqual([
       { id: "member:hiredRoles" },
       { id: "q1", label: "Role" },
     ]);
-  });
-
-  it("keeps reading the URL when the flag is off", async () => {
-    withVersion([{ id: "member:hiredRoles" }]);
-    vi.mocked(isFeatureEnabled).mockResolvedValue(false);
-    await loader({ request: resultsReq, params: { formId: "f1" } } as never);
-    expect(vi.mocked(loadVersionResponses).mock.calls[0][2]?.columns).toEqual([{ id: "member:projectHistory" }]);
   });
 
   const save = (op: unknown) => {
@@ -171,7 +162,6 @@ describe("forms.edit saved response columns", () => {
   };
 
   it("applies the op against every version's questions and saves the full list", async () => {
-    vi.mocked(isFeatureEnabled).mockResolvedValue(true);
     savedForm(["member:termsInLab"]);
     expect(await save({ op: "move", id: "member:termsInLab", dir: -1 })).toEqual({ ok: true });
     expect((prisma as any).form.update).toHaveBeenCalledWith({
@@ -181,23 +171,14 @@ describe("forms.edit saved response columns", () => {
   });
 
   it("rejects a malformed op or an unknown column without saving", async () => {
-    vi.mocked(isFeatureEnabled).mockResolvedValue(true);
     savedForm(null);
     expect((await save({ op: "drop", id: "q1" })).status).toBe(400);
     expect((await save({ op: "hide", id: "q9" })).status).toBe(400);
     expect((prisma as any).form.update).not.toHaveBeenCalled();
   });
 
-  it("refuses to save while the flag is off", async () => {
-    vi.mocked(isFeatureEnabled).mockResolvedValue(false);
-    const res = await save({ op: "show", id: "member:hiredRoles" });
-    expect(res.status).toBe(403);
-    expect((prisma as any).form.update).not.toHaveBeenCalled();
-  });
-
   it("refuses someone who can't build the form", async () => {
     vi.mocked(canBuildForm).mockResolvedValue(false);
-    vi.mocked(isFeatureEnabled).mockResolvedValue(true);
     const res = await save({ op: "show", id: "member:hiredRoles" });
     expect(res.status).toBe(403);
     expect((prisma as any).form.update).not.toHaveBeenCalled();
@@ -500,6 +481,7 @@ describe("forms.edit summary", () => {
       folderPageId: null,
       versions: [version],
       workspaceType: "Project",
+      responseColumns: [],
     } as never);
     vi.mocked(loadVersionSummary).mockResolvedValue({ versionId: "v1" } as never);
     vi.mocked(loadVersionResponses).mockResolvedValue({ versionId: "v1" } as never);

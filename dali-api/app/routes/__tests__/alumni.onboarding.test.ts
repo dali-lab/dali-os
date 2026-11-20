@@ -5,7 +5,6 @@ vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
 vi.mock("~/lib/login-next", () => ({ redirectToLogin: vi.fn(() => new Response(null, { status: 302 })) }));
 vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn() }));
 vi.mock("~/lib/read-only-roles.server", () => ({ readOnlyRoles: vi.fn() }));
-vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
 vi.mock("~/lib/alumni-onboarding.server", () => ({
   loadOnboarding: vi.fn(),
   finishOnboarding: vi.fn(),
@@ -45,7 +44,6 @@ vi.mock("~/components/alumni-onboarding/AlumniOnboarding", () => ({ AlumniOnboar
 import { requireAuth } from "~/lib/auth";
 import { getUserRoles } from "~/lib/roles";
 import { readOnlyRoles } from "~/lib/read-only-roles.server";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { BadRequestError } from "~/lib/http-error";
 import { listContactEmailOptions, runContactEmailIntent } from "~/lib/contact-email.server";
 import {
@@ -60,9 +58,6 @@ import {
 import { reportHistoryCorrection } from "~/lib/alumni-history.server";
 import { ProfileValidationError } from "~/members/lib/profile-update.server";
 import { action, loader } from "../alumni.onboarding";
-
-const flags = (onboarding: boolean, game = false) =>
-  vi.mocked(isFeatureEnabled).mockImplementation(async (key) => (key === "alumni-onboarding" ? onboarding : game));
 
 const request = () => new Request("https://os.example/alumni/onboarding");
 const runLoader = () => loader({ request: request() } as never) as Promise<Response | Record<string, unknown>>;
@@ -80,7 +75,6 @@ beforeEach(() => {
   vi.mocked(requireAuth).mockResolvedValue({ ok: true, user: { sub: "u1" } } as never);
   vi.mocked(readOnlyRoles).mockResolvedValue({ isAlumni: true } as never);
   vi.mocked(getUserRoles).mockResolvedValue({ isAlumni: true } as never);
-  flags(true);
   vi.mocked(loadOnboarding).mockResolvedValue({ firstName: "Ada" } as never);
   vi.mocked(listContactEmailOptions).mockResolvedValue({ options: [], preselected: null });
   vi.mocked(runContactEmailIntent).mockResolvedValue(null);
@@ -101,13 +95,6 @@ describe("loader", () => {
     expect(loadOnboarding).not.toHaveBeenCalled();
   });
 
-  it("redirects when the alumni-onboarding flag is off", async () => {
-    flags(false, true);
-    const res = (await runLoader()) as Response;
-    expect(res.headers.get("Location")).toBe("/");
-    expect(loadOnboarding).not.toHaveBeenCalled();
-  });
-
   it("returns the profile data with the contact email options", async () => {
     const contactEmail = { options: [{ address: "ada@example.com", proven: true, current: true }], preselected: "ada@example.com" };
     vi.mocked(listContactEmailOptions).mockResolvedValue(contactEmail);
@@ -117,16 +104,12 @@ describe("loader", () => {
 });
 
 describe("action", () => {
-  it("rejects a signed-out request, a non-alumnus and a flag that is off", async () => {
+  it("rejects a signed-out request and a non-alumnus", async () => {
     vi.mocked(requireAuth).mockResolvedValue({ ok: false } as never);
     expect((await post({ intent: "finish" })).status).toBe(401);
 
     vi.mocked(requireAuth).mockResolvedValue({ ok: true, user: { sub: "u1" } } as never);
     vi.mocked(getUserRoles).mockResolvedValue({ isAlumni: false } as never);
-    expect((await post({ intent: "finish" })).status).toBe(403);
-
-    vi.mocked(getUserRoles).mockResolvedValue({ isAlumni: true } as never);
-    flags(false);
     expect((await post({ intent: "finish" })).status).toBe(403);
     expect(finishOnboarding).not.toHaveBeenCalled();
   });

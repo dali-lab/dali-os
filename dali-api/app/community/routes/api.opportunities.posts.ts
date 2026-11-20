@@ -1,5 +1,5 @@
 import type { Route } from "./+types/api.opportunities.posts";
-import { requireOpportunityViewerEnabled } from "~/community/lib/opportunities-viewer.server";
+import { requireOpportunityViewer } from "~/community/lib/opportunities-viewer.server";
 import {
   loadOpportunityPage,
   loadOpportunityPostsByIds,
@@ -8,7 +8,7 @@ import {
 } from "~/community/lib/opportunities-feed.server";
 
 export async function loader({ request }: Route.LoaderArgs) {
-  const viewer = await requireOpportunityViewerEnabled(request);
+  const viewer = await requireOpportunityViewer(request);
   const profile = await loadViewerMatchProfile(viewer.userId);
   const params = new URL(request.url).searchParams;
   const ids = params.get("ids");

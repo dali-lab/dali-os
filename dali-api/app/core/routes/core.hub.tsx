@@ -2,8 +2,7 @@ import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/core.hub";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { getUserRoles, isCore } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import { isCore } from "~/lib/roles";
 import { OsPageHeader } from "~/components/os-section";
 import { getOpenCycles } from "~/hiring/lib/cycles";
 import { isCoreCycleEligible } from "~/hiring/lib/core-hiring.server";
@@ -23,12 +22,6 @@ export async function loader({ request }: Route.LoaderArgs) {
       return redirect("/core/apply");
     }
     return redirect("/");
-  }
-
-  const roles = await getUserRoles(auth.user.sub, request);
-  if (!(await isFeatureEnabled("core-taskboard", auth.user.sub, roles, request))) {
-    const embed = new URL(request.url).searchParams.has("embed");
-    return redirect(embed ? "/core/staffing?embed=1" : "/core/staffing");
   }
 
   const board = await loadCoreTaskboard(auth.user.sub, request);

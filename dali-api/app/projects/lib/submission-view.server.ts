@@ -1,6 +1,6 @@
 // Server-side resolver shared by the Project Bids / Intent to Work boards and
 // their per-submission detail pages. Turns raw FormSubmission rows into the
-// view model the SubmissionDatabase component renders: ordered columns + each
+// view model the response board renders: ordered columns + each
 // row's resolved cell strings. DB lookups live here; the ordering/visibility
 // logic is the pure submission-columns.ts.
 

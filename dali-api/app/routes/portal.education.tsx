@@ -5,11 +5,9 @@ import { redirectToLogin } from "~/lib/login-next";
 import { listCatalog } from "~/education/lib/offerings.server";
 import { getStudentDashboard } from "~/education/lib/lms.server";
 import { OfferingCard } from "~/education/components/OfferingCard";
-import { OfferingCatalog } from "~/education/components/OfferingCatalog";
 import { StudentDashboard } from "~/education/components/StudentDashboard";
 import { BookOpen, Compass } from "lucide-react";
 import { PageTabRow } from "~/components/os-page";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 
 export const meta: Route.MetaFunction = () => [
@@ -37,7 +35,6 @@ const TABS = [
 
 export default function PortalEducation() {
   const { offerings, dashboard } = useLoaderData<typeof loader>();
-  const redesign = useFeatureFlag("education-redesign-v2");
   const tz = useUserTimeZone();
   // Enrolled courses show in the dashboard's "My courses"; the list below is
   // offerings still open to apply to or RSVP for.
@@ -95,12 +92,7 @@ export default function PortalEducation() {
           </div>
         ))}
 
-      {tab !== "browse" ? null : redesign ? (
-        <OfferingCatalog
-          offerings={offerings}
-          to={(id) => `/portal/education/${id}`}
-        />
-      ) : (
+      {tab !== "browse" ? null : (
         <section className="flex flex-col gap-3">
           {openOfferings.length === 0 ? (
             <div className="bg-os-card rounded-os-card p-8 text-center">

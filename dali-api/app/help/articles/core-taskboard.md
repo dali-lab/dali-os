@@ -2,7 +2,6 @@
 title: Core taskboard and milestones
 summary: Track Core's own tasks on a board and plan each week of the term with milestones and plan items.
 audience: [core]
-flag: core-taskboard
 paths: [/core, /core/milestones]
 keywords: [core, taskboard, /task, milestones, plan, term, week, goals, kanban, fill from last year]
 ---

@@ -15,7 +15,6 @@ import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db.server";
 import { getUserRoles, currentTerm, currentTermMemberWhere } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { loadGalleryHighlights, type GalleryTileData } from "~/community/lib/gallery.server";
 import { BLOG_LISTING_ORDER } from "~/blog/lib/blog-post.server";
 import { blogListing, DEFAULT_BLOG_COVER } from "~/blog/lib/blog-preview";
@@ -42,7 +41,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (portalRedirect) return portalRedirect;
 
   const roles = await getUserRoles(auth.user.sub, request);
-  const community = await isFeatureEnabled("community", auth.user.sub, roles, request);
   const term = await currentTerm(request);
   const viewer = { id: auth.user.sub, core: roles.isCore, name: "" };
   const alumni = roles.isAlumni;
@@ -84,26 +82,24 @@ export async function loader({ request }: Route.LoaderArgs) {
         showcase: { select: { status: true } },
       },
     }),
-    community
-      ? prisma.blogPost.findMany({
-          where: { publishedAt: { not: null } },
-          orderBy: BLOG_LISTING_ORDER,
-          take: STORY_COUNT,
-          select: {
-            id: true,
-            title: true,
-            summary: true,
-            excerpt: true,
-            customCoverUrl: true,
-            coverImageUrl: true,
-            visibility: true,
-            publishedAt: true,
-            author: { select: { firstName: true, lastName: true } },
-          },
-        })
-      : [],
-    community ? prisma.blogPost.count({ where: { publishedAt: { not: null } } }) : 0,
-    community ? loadGalleryHighlights(viewer, GALLERY_COUNT) : [],
+    prisma.blogPost.findMany({
+      where: { publishedAt: { not: null } },
+      orderBy: BLOG_LISTING_ORDER,
+      take: STORY_COUNT,
+      select: {
+        id: true,
+        title: true,
+        summary: true,
+        excerpt: true,
+        customCoverUrl: true,
+        coverImageUrl: true,
+        visibility: true,
+        publishedAt: true,
+        author: { select: { firstName: true, lastName: true } },
+      },
+    }),
+    prisma.blogPost.count({ where: { publishedAt: { not: null } } }),
+    loadGalleryHighlights(viewer, GALLERY_COUNT),
     alumni ? listShowcaseCards(PROJECT_COUNT) : [],
     prisma.user.count({ where: await currentTermMemberWhere(request) }),
     prisma.project.count({ where: projectWhere }),
@@ -118,11 +114,10 @@ export async function loader({ request }: Route.LoaderArgs) {
           where: { date: { gte: term.startDate, lte: term.endDate } },
         })
       : null,
-    community ? prisma.galleryPost.count({ where: { hiddenAt: null } }) : 0,
+    prisma.galleryPost.count({ where: { hiddenAt: null } }),
   ]);
 
   return {
-    community,
     alumni,
     termCode: term?.code ?? null,
     stats: {
@@ -175,7 +170,6 @@ type Story = {
 
 export default function Currently() {
   const {
-    community,
     alumni,
     termCode,
     stats,
@@ -193,69 +187,63 @@ export default function Currently() {
     ...(stats.hours !== null
       ? [{ label: "Hours logged this term", value: stats.hours, icon: Clock, tint: "accent" } as Tile]
       : []),
-    ...(community
-      ? [{ label: "Photos shared", value: stats.photos, icon: Images, tint: "red" } as Tile]
-      : []),
+    { label: "Photos shared", value: stats.photos, icon: Images, tint: "red" },
   ];
 
   return (
     <div className="flex flex-col gap-8 md:min-h-0 md:flex-1 md:gap-4">
       <StatBand tiles={tiles} />
 
-      {community && (
-        <Section id="stories-h" grow={1.1}>
-          <SectionHeader
-            id="stories-h"
-            title="Stories"
-            meta={stories.length > 0 ? `${storiesTotal} published` : null}
-            cta="See all stories"
-            to="/resources"
-          />
-          {stories.length > 0 ? (
-            <Row>
-              {stories.map((p) => (
-                <StoryCard key={p.id} post={p} />
-              ))}
-            </Row>
-          ) : (
-            <Empty text="Nothing published yet. New stories from the lab will show up here." />
-          )}
-        </Section>
-      )}
+      <Section id="stories-h" grow={1.1}>
+        <SectionHeader
+          id="stories-h"
+          title="Stories"
+          meta={stories.length > 0 ? `${storiesTotal} published` : null}
+          cta="See all stories"
+          to="/resources"
+        />
+        {stories.length > 0 ? (
+          <Row>
+            {stories.map((p) => (
+              <StoryCard key={p.id} post={p} />
+            ))}
+          </Row>
+        ) : (
+          <Empty text="Nothing published yet. New stories from the lab will show up here." />
+        )}
+      </Section>
 
-      {community && (
-        <Section id="gallery-h" grow={1} divider>
-          <SectionHeader
-            id="gallery-h"
-            title="Gallery"
-            meta={gallery.length > 0 ? "Latest photos from members, staff and alumni" : null}
-            cta="See all photos"
-            to="/community/gallery"
-          />
-          {gallery.length > 0 ? (
-            <Row>
-              {(gallery as GalleryTileData[]).map((post) => (
-                <Link
-                  key={post.id}
-                  to={galleryPostHref(post.id)}
-                  className="group shrink-0 snap-start overflow-hidden rounded-os-card md:h-full"
-                >
-                  <img
-                    src={post.imageUrl}
-                    alt={post.caption ?? ""}
-                    style={{ aspectRatio: `${post.width} / ${post.height}` }}
-                    className="h-48 w-auto object-cover transition-transform duration-300 ease-out motion-safe:group-hover:scale-[1.03] md:h-full"
-                  />
-                </Link>
-              ))}
-            </Row>
-          ) : (
-            <Empty text="Nothing posted yet. Photos from the lab will show up here." />
-          )}
-        </Section>
-      )}
+      <Section id="gallery-h" grow={1} divider>
+        <SectionHeader
+          id="gallery-h"
+          title="Gallery"
+          meta={gallery.length > 0 ? "Latest photos from members, staff and alumni" : null}
+          cta="See all photos"
+          to="/community/gallery"
+        />
+        {gallery.length > 0 ? (
+          <Row>
+            {(gallery as GalleryTileData[]).map((post) => (
+              <Link
+                key={post.id}
+                to={galleryPostHref(post.id)}
+                className="group shrink-0 snap-start overflow-hidden rounded-os-card md:h-full"
+              >
+                <img
+                  src={post.imageUrl}
+                  alt={post.caption ?? ""}
+                  style={{ aspectRatio: `${post.width} / ${post.height}` }}
+                  className="h-48 w-auto object-cover transition-transform duration-300 ease-out motion-safe:group-hover:scale-[1.03] md:h-full"
+                />
+              </Link>
+            ))}
+          </Row>
+        ) : (
+          <Empty text="Nothing posted yet. Photos from the lab will show up here." />
+        )}
+      </Section>
 
-      <Section id="projects-h" grow={1.3} divider={community}>
+      <Section id="projects-h" grow={1.3} divider>
         <SectionHeader
           id="projects-h"
           title="Projects"

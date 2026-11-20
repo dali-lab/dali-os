@@ -1,7 +1,6 @@
 
 import { canEditProject } from "./access";
-import { getUserRoles, isCore } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import { isCore } from "~/lib/roles";
 import { getCoreBoardProject } from "~/projects/lib/core-board.server";
 import { TASK_STATUSES } from "~/projects/lib/task-board";
 import { createTask, TaskCreateError } from "~/projects/lib/task-create.server";
@@ -90,9 +89,6 @@ export async function runCreateTask(callerId: string, rawInput: Input) {
   let projectId = rawInput.projectId ?? "";
   if (rawInput.core) {
     if (!(await isCore(callerId))) throw new CreateTaskError("Forbidden", 403);
-    if (!(await isFeatureEnabled("core-taskboard", callerId, await getUserRoles(callerId)))) {
-      throw new CreateTaskError("The Core taskboard isn't on for you", 403);
-    }
     projectId = (await getCoreBoardProject()).id;
   } else if (!projectId) {
     throw new CreateTaskError("projectId or core is required", 400);

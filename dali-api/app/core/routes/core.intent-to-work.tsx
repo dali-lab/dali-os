@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { redirect, useLoaderData, useSearchParams } from "react-router";
+import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/core.intent-to-work";
 import { coreHandle } from "~/core/coreNav";
 import type { ShouldRevalidateFunctionArgs } from "react-router";
@@ -23,13 +23,10 @@ import {
   setSlotPublished,
 } from "~/projects/lib/form-slots";
 import { ColumnFilters, useColumnFilters } from "~/projects/components/ColumnFilters";
-import { SlotAdvancedSettingsModal } from "~/projects/components/SlotAdvancedSettingsModal";
-import { SubmissionDatabase } from "~/projects/components/SubmissionDatabase";
 import { BoardCsvLink, BoardTable } from "~/projects/components/BoardTable";
 import { BoardSettings } from "~/projects/components/BoardSettings";
 import { AddResponseDialog } from "~/projects/components/AddResponseDialog";
 import { Button } from "~/components/ui/Button";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { TermFilter } from "~/components/TermFilter";
 import { DomainFilter } from "~/projects/components/DomainFilter";
@@ -246,7 +243,7 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   if (intent === "set-slot-column")
-    return setBoardColumn(form, cycle.id, SLOT, auth.user.sub, request);
+    return setBoardColumn(form, cycle.id, SLOT, auth.user.sub);
 
   if (intent === "delete-response")
     return deleteBoardResponse(form, cycle.id, SLOT, auth.user.sub, request);
@@ -301,15 +298,10 @@ function Loaded({
     { gate: "ok" }
   >;
 }) {
-  const [searchParams] = useSearchParams();
-  const [settingsOpen, setSettingsOpen] = useState(
-    () => searchParams.get("settings") === "1",
-  );
 
   const [domainId, setDomainId] = useSearchParamState("domain");
   const [search, setSearch] = useSearchParamState("q", { debounceMs: 300 });
   const columnFilters = useColumnFilters(data.tableColumns, [], { inUrl: true });
-  const responseTable = useFeatureFlag("form-response-views");
   const [adding, setAdding] = useState(false);
 
   const { filtered } = useFilteredList(data.submissions, {
@@ -327,33 +319,11 @@ function Loaded({
     [data.domainOptions],
   );
 
-  const canOpenSettings = !data.isAll && !responseTable;
-
   return (
     <div className="flex flex-col gap-4">
-      <Header
-        cycleName={data.cycle.name}
-        onOpenSettings={
-          canOpenSettings ? () => setSettingsOpen(true) : undefined
-        }
-        settingsLabel={data.canManage ? "Advanced settings" : "View settings"}
-      />
+      <Header />
 
-      {canOpenSettings && (
-        <SlotAdvancedSettingsModal
-          open={settingsOpen}
-          onClose={() => setSettingsOpen(false)}
-          slot="intent-to-work"
-          slotLabel="Intent to Work"
-          binding={data.binding}
-          selectableForms={data.selectableForms}
-          formQuestions={data.formQuestions}
-          cycleTerms={data.allTerms}
-          canManage={data.canManage}
-        />
-      )}
-
-      {responseTable && !data.isAll && (
+      {!data.isAll && (
         <BoardSettings
           slotLabel="Intent to Work"
           binding={data.binding}
@@ -398,10 +368,10 @@ function Loaded({
             shownCount={filtered.length}
           />
         </div>
-        {responseTable && !data.noFormConnected && (
+        {!data.noFormConnected && (
           <BoardCsvLink slot={SLOT} matching={filtered.length} total={data.submissions.length} />
         )}
-        {responseTable && data.canManage && data.cycle.id && data.binding && (
+        {data.canManage && data.cycle.id && data.binding && (
           <Button variant="secondary" size="sm" className="h-8" onClick={() => setAdding(true)}>
             Add response
           </Button>
@@ -414,17 +384,11 @@ function Loaded({
           "rounded-os-card bg-os-card",
         )}
       >
-        {data.noFormConnected && responseTable ? (
+        {data.noFormConnected ? (
           <div className="px-4 py-8 text-center text-sm text-muted-foreground">
             Connect a form from the ⋯ menu above so members can submit.
           </div>
-        ) : data.noFormConnected ? (
-          <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-            No Intent to Work form is connected for this term. Open{" "}
-            <em>Advanced settings</em> to connect one so members can submit —
-            intent only exists through the form.
-          </div>
-        ) : responseTable ? (
+        ) : (
           <BoardTable
             columns={data.tableColumns}
             addable={data.addableColumns}
@@ -438,52 +402,17 @@ function Loaded({
                 : "No members match the current filters."
             }
           />
-        ) : (
-          <SubmissionDatabase
-            columns={data.tableColumns}
-            rows={filtered}
-            // Carry the viewed term to the detail page; without it the detail
-            // loader falls back to currentTerm() and opens the wrong term.
-            detailBase={`/core/intent-to-work?term=${encodeURIComponent(data.selectedTerm)}`}
-            emptyMessage={
-              data.submissions.length === 0
-                ? "No intent submissions yet."
-                : "No members match the current filters."
-            }
-          />
         )}
       </div>
     </div>
   );
 }
 
-function Header({
-  cycleName,
-  onOpenSettings,
-  settingsLabel,
-}: {
-  cycleName?: string;
-  onOpenSettings?: () => void;
-  settingsLabel?: string;
-}) {
+function Header() {
   const { pageTitle } = useOsChrome();
   return (
-    <>
     <header className="flex items-start justify-between gap-3">
       <h1 className={pageTitle}>Intent to Work</h1>
-      {onOpenSettings && (
-        <button
-          type="button"
-          onClick={onOpenSettings}
-          className={cn(
-            "shrink-0",
-            "os-edit-btn",
-          )}
-        >
-          {settingsLabel ?? "Advanced settings"}
-        </button>
-      )}
     </header>
-    </>
   );
 }

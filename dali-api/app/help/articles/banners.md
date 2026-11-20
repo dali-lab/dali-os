@@ -2,7 +2,6 @@
 title: Banners
 summary: Show a message, image or video over DALI OS to a chosen audience, and keep it up until people fill a form.
 audience: [core, admin]
-flag: banners
 paths: [/core/communications/banners, /core/communications/banners/:bannerId]
 keywords: [banner, popup, announcement, overlay, form, reminder]
 ---

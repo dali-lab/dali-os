@@ -168,21 +168,14 @@ describe("layout loader gate order", () => {
       return (await run().result) as unknown as { alumniInvite: string | null };
     };
 
-    it("asks which invite to show when the onboarding flag is on", async () => {
-      vi.mocked(alumniInviteFor).mockResolvedValue("onboarding");
-      const flags = { "alumni-onboarding": true, "alumni-game": true };
-      expect((await loadAs(flags)).alumniInvite).toBe("onboarding");
-      expect(alumniInviteFor).toHaveBeenCalledWith("ada", true, flags);
+    it("asks which invite to show for an alumnus", async () => {
+      vi.mocked(alumniInviteFor).mockResolvedValue("choice");
+      expect((await loadAs({})).alumniInvite).toBe("choice");
+      expect(alumniInviteFor).toHaveBeenCalledWith("ada", true);
     });
 
-    it("still asks for the game invite when only the game flag is on", async () => {
-      vi.mocked(alumniInviteFor).mockResolvedValue("game");
-      expect((await loadAs({ "alumni-game": true })).alumniInvite).toBe("game");
-    });
-
-    it("shows no invite when both flags are off or the member is not an alumnus", async () => {
-      expect((await loadAs({})).alumniInvite).toBeNull();
-      expect((await loadAs({ "alumni-onboarding": true }, false)).alumniInvite).toBeNull();
+    it("shows no invite when the member is not an alumnus", async () => {
+      expect((await loadAs({}, false)).alumniInvite).toBeNull();
       expect(alumniInviteFor).not.toHaveBeenCalled();
     });
   });

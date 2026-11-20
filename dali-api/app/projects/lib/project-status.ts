@@ -3,8 +3,7 @@
 // work-status facts the bar renders (progress, current sprint, and the
 // attention flags — overdue / unscheduled / in-review / stale). No Prisma
 // import, so it lives beside the other client-safe board helpers and unit-tests
-// without a DB. The AI-TLDR route runs the SAME function to build its prompt
-// facts, so the summary and the chips can never disagree.
+// without a DB.
 
 import { currentSprintBand, TASK_STATUS_LABELS, type TaskStatus, type Priority } from "./task-board";
 import type { TimelineTermSpan } from "./timeline-days";
@@ -58,14 +57,12 @@ export interface ProjectStatusFacts {
   inReview: number;
   /** InProgress tasks untouched for STALE_DAYS. */
   stale: number;
-  /** Ids of the overdue / stale tasks (sorted). Not rendered — they ride in the
-   *  fingerprint so the cached AI summary regenerates when the *specific*
-   *  problem tasks change, not just when the totals do. */
+  /** Ids of the overdue / stale tasks (sorted). */
   overdueIds: string[];
   staleIds: string[];
   activeSprint: ActiveSprintFacts | null;
   /** False for a project with no tasks — the bar shows a calm "no work yet"
-   *  state and callers skip the AI summary. */
+   *  state. */
   hasWork: boolean;
 }
 
@@ -132,121 +129,11 @@ export function computeProjectStatus(
   };
 }
 
-/**
- * A stable fingerprint of the facts that should trigger an AI-summary refresh.
- * Deliberately excludes the active sprint's daysRemaining (only its label + end
- * date) so the countdown ticking over doesn't force a daily regeneration — the
- * 24h TTL handles time drift, and the live countdown lives on the chip anyway.
- */
-export function factsFingerprint(f: ProjectStatusFacts): string {
-  return JSON.stringify([
-    f.projectStatus,
-    f.totalTasks,
-    f.doneTasks,
-    f.unscheduled,
-    f.inReview,
-    // Identity, not just counts: the AI summary names specific overdue/stalled
-    // tasks, so it must regenerate when *which* tasks those are changes.
-    f.overdueIds,
-    f.staleIds,
-    f.activeSprint?.label ?? null,
-    f.activeSprint?.endsAt ?? null,
-  ]);
-}
-
-// ── AI summary detail ─────────────────────────────────────────────────────────
-// The deterministic facts above drive the chips; the AI line needs richer,
-// specific material to say something the chips don't. This builds that material
-// (named tasks, priority mix, team size) for the prompt. Pure + testable; the
-// TLDR route is its only caller.
-
-export interface TldrTaskInput extends StatusTaskInput {
-  title: string;
-  priority: Priority;
-  assigneeIds: string[];
-}
-
-export interface TldrDetail {
-  /** Most-overdue first, capped. */
-  overdue: { title: string; priority: Priority; daysOver: number }[];
-  /** Longest-stalled first, capped. */
-  stale: { title: string; daysStale: number }[];
-  /** In-review task titles, capped. */
-  inReview: string[];
-  /** Open (non-closed) tasks at each urgent tier. */
-  urgentOpen: number;
-  highOpen: number;
-  /** High/Urgent tasks that are unscheduled (in motion, no dates). */
-  unscheduledHighPriority: number;
-  /** Distinct assignees across all loaded tasks — a rough active-team size. */
-  teamSize: number;
-}
-
-const OVERDUE_CAP = 5;
-const STALE_CAP = 3;
-const IN_REVIEW_CAP = 4;
-
-export function buildTldrDetail(tasks: TldrTaskInput[], now: Date): TldrDetail {
-  const nowMs = now.getTime();
-  const staleBefore = nowMs - STALE_DAYS * DAY_MS;
-
-  const overdue: TldrDetail["overdue"] = [];
-  const stale: TldrDetail["stale"] = [];
-  const inReview: string[] = [];
-  const assignees = new Set<string>();
-  let urgentOpen = 0;
-  let highOpen = 0;
-  let unscheduledHighPriority = 0;
-
-  for (const t of tasks) {
-    const closed = CLOSED.includes(t.status);
-    for (const a of t.assigneeIds) assignees.add(a);
-    if (!closed) {
-      if (t.priority === "Urgent") urgentOpen++;
-      else if (t.priority === "High") highOpen++;
-    }
-    if (!closed && t.dueAt != null && ms(t.dueAt) < nowMs) {
-      overdue.push({
-        title: t.title,
-        priority: t.priority,
-        daysOver: Math.floor((nowMs - ms(t.dueAt)) / DAY_MS),
-      });
-    }
-    if (t.status === "InProgress" && ms(t.activityAt) < staleBefore) {
-      stale.push({ title: t.title, daysStale: Math.floor((nowMs - ms(t.activityAt)) / DAY_MS) });
-    }
-    if (t.status === "InReview") inReview.push(t.title);
-    if (
-      t.startsAt == null &&
-      t.dueAt == null &&
-      SCHEDULABLE.includes(t.status) &&
-      (t.priority === "High" || t.priority === "Urgent")
-    ) {
-      unscheduledHighPriority++;
-    }
-  }
-
-  overdue.sort((a, b) => b.daysOver - a.daysOver);
-  stale.sort((a, b) => b.daysStale - a.daysStale);
-
-  return {
-    overdue: overdue.slice(0, OVERDUE_CAP),
-    stale: stale.slice(0, STALE_CAP),
-    inReview: inReview.slice(0, IN_REVIEW_CAP),
-    urgentOpen,
-    highOpen,
-    unscheduledHighPriority,
-    teamSize: assignees.size,
-  };
-}
-
 // ── Status-bar hover detail ───────────────────────────────────────────────────
 // The chips show counts; each chip's hover tooltip needs the *named* tasks
 // behind its count so a reader can see WHY — which tasks are overdue/stalled,
 // what's left on the board. Pure + capped; the projects.$id loader is its only
-// caller. Kept separate from computeProjectStatus so the AI fingerprint (which
-// keys off the counts, not the titles) is unaffected by this presentational
-// layer.
+// caller. Kept separate from computeProjectStatus as a presentational layer.
 
 export interface BreakdownTaskInput extends StatusTaskInput {
   title: string;
