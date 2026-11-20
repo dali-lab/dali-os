@@ -8,6 +8,19 @@ export type ExpenseViewer = {
   groupIds?: readonly string[];
 };
 
+export type ExpenseDenial = "non_member" | "alumni" | "impersonated_write";
+
+export function expenseAccessDenial(a: {
+  isLabMemberOrAlum: boolean;
+  isAlumni: boolean;
+  readOnlyImpersonation: boolean;
+}): ExpenseDenial | null {
+  if (!a.isLabMemberOrAlum) return "non_member";
+  if (a.isAlumni) return "alumni";
+  if (a.readOnlyImpersonation) return "impersonated_write";
+  return null;
+}
+
 export type ExpenseRef = {
   submitterId: string;
   paidWith: "STAFF_CARD" | "OWN_CARD" | null;

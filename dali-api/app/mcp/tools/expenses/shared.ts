@@ -1,4 +1,6 @@
+import { expenseAccessDenial } from "~/expenses/lib/access";
 import { ExpenseError } from "~/expenses/lib/errors";
+import { getUserRoles } from "~/lib/roles";
 import { centsToDecimalString, parseMoneyToCents } from "~/expenses/lib/money";
 import { loadExpenseViewer } from "~/expenses/lib/viewer.server";
 import type { ExpenseViewer } from "~/expenses/lib/access";
@@ -14,7 +16,14 @@ export function toMcpError(err: unknown): unknown {
   return new McpInvalidError(err.message);
 }
 
+export async function requireExpenseAccess(ctx: McpCtx): Promise<void> {
+  const roles = await getUserRoles(ctx.user.id, ctx.request);
+  const denial = expenseAccessDenial({ isLabMemberOrAlum: roles.isLabMemberOrAlum, isAlumni: roles.isAlumni, readOnlyImpersonation: false });
+  if (denial) throw new McpForbiddenError("Expenses are available to current lab members.");
+}
+
 export async function withViewer<T>(ctx: McpCtx, fn: (viewer: ExpenseViewer) => Promise<T>): Promise<T> {
+  await requireExpenseAccess(ctx);
   try {
     return await fn(await loadExpenseViewer(ctx.user.id, ctx.request));
   } catch (err) {
