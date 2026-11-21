@@ -167,7 +167,6 @@ jobs:
     needs: changes
     if: needs.changes.outputs.api == 'true'
     runs-on: blacksmith-2vcpu-ubuntu-2404
-    continue-on-error: true
     defaults:
       run:
         working-directory: dali-api
