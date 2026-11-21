@@ -1,26 +1,16 @@
 import { expect, type Browser, type BrowserContext, type Page } from '@playwright/test';
 import pg from 'pg';
+import { dismissFirstRunPrompts } from './fixtures';
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://dali:dali@localhost:5432/dali';
 const BASE_URL = 'http://localhost:3001';
-
-// Same first-run suppression the shared `page` fixture applies; extra contexts
-// built with browser.newContext() don't get it.
-const LAUNCH_WELCOME_SEEN_KEY = 'dalios-launch-welcome-seen-v1';
 
 export type DocUser = { context: BrowserContext; page: Page };
 
 /** A fresh browser context logged in as `daliEmail`, for multi-user specs. */
 export async function openAs(browser: Browser, daliEmail: string): Promise<DocUser> {
   const context = await browser.newContext({ baseURL: BASE_URL });
-  await context.addInitScript((key) => {
-    try {
-      window.localStorage.setItem(key, 'e2e');
-    } catch {
-      /* ignore */
-    }
-  }, LAUNCH_WELCOME_SEEN_KEY);
-  await context.addCookies([{ name: 'dali_pk_prompt', value: '1', url: BASE_URL }]);
+  await dismissFirstRunPrompts(context, BASE_URL);
   const page = await context.newPage();
   await page.goto(`/dev-login-as?${new URLSearchParams({ daliEmail })}`);
   await page.waitForLoadState('networkidle');

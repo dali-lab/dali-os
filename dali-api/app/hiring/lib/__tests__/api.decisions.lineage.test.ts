@@ -146,7 +146,7 @@ describe("Decision lineage (parentDecisionId)", () => {
       application: {
         userId: "applicant-user-id",
         applicationCycleId: "cycle-1",
-        applicationCycle: { applicants: "Students" },
+        applicationCycle: { applicants: "Students", startTermIds: [] },
         user: { firstName: "Test", dartmouthEmail: null, netId: null },
       },
     });

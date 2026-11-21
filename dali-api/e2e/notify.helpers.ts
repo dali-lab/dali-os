@@ -1,5 +1,6 @@
 import type { Browser, BrowserContext, Page } from '@playwright/test';
 import pg from 'pg';
+import { dismissFirstRunPrompts } from './fixtures';
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://dali:dali@localhost:5432/dali';
 
@@ -13,8 +14,6 @@ export const USERS = {
   recipient: 'eng.lead@dali.dartmouth.edu',
 } as const;
 
-const LAUNCH_WELCOME_SEEN_KEY = 'dalios-launch-welcome-seen-v1';
-
 /** A second signed-in browser context, so one test can act as two people. */
 export async function signedInPage(
   browser: Browser,
@@ -22,14 +21,7 @@ export async function signedInPage(
   daliEmail: string,
 ): Promise<{ page: Page; context: BrowserContext }> {
   const context = await browser.newContext({ baseURL });
-  await context.addInitScript((key) => {
-    try {
-      window.localStorage.setItem(key, 'e2e');
-    } catch {
-      // localStorage unavailable (e.g. about:blank)
-    }
-  }, LAUNCH_WELCOME_SEEN_KEY);
-  await context.addCookies([{ name: 'dali_pk_prompt', value: '1', url: baseURL }]);
+  await dismissFirstRunPrompts(context, baseURL);
   const page = await context.newPage();
   const res = await context.request.get(`/dev-login-as?${new URLSearchParams({ daliEmail })}`, {
     maxRedirects: 0,

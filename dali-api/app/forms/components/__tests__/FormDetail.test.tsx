@@ -212,6 +212,7 @@ describe("FormDetail", () => {
       page: 1,
       hasNext: false,
       columns: [{ key: "q1", label: "Name" }],
+      hiddenColumns: [],
       slotOptions: [],
       filterQuestions: [],
       responses: [
