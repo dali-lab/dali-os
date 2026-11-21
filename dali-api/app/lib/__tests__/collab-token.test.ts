@@ -1,7 +1,3 @@
-// getCollabToken picks the credential a route loader hands to the collab client:
-// the legacy __dali_sid cookie when present, otherwise the BetterAuth session
-// token — and never throws on a BetterAuth fault.
-
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 const mockGetBaCollab = vi.hoisted(() => vi.fn());
@@ -18,9 +14,9 @@ const withSid = (sid: string) =>
 beforeEach(() => vi.clearAllMocks());
 
 describe("getCollabToken", () => {
-  it("returns the legacy __dali_sid cookie without touching BetterAuth", async () => {
-    expect(await getCollabToken(withSid("legacy-tok"))).toBe("legacy-tok");
-    expect(mockGetBaCollab).not.toHaveBeenCalled();
+  it("ignores a legacy __dali_sid cookie and resolves through BetterAuth", async () => {
+    mockGetBaCollab.mockResolvedValue("ba-sess-tok");
+    expect(await getCollabToken(withSid("legacy-tok"))).toBe("ba-sess-tok");
   });
 
   it("falls back to the BetterAuth session token when no legacy cookie is present", async () => {
