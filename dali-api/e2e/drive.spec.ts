@@ -1,4 +1,4 @@
-import { test, expect } from './fixtures';
+import { test, expect, dismissFirstRunPrompts } from './fixtures';
 import type { Page, Locator } from '@playwright/test';
 
 // E2E tests for the Finder/Google-Drive-style Drive hub.
@@ -72,7 +72,7 @@ test.describe('Drive hub', () => {
     const reviewerCtx = await page.context().browser()!.newContext();
     const reviewerPage = await reviewerCtx.newPage();
     const baseURL = page.url().replace(/\/drive.*/, '');
-    await reviewerCtx.addCookies([{ name: 'dali_pk_prompt', value: '1', url: baseURL }]);
+    await dismissFirstRunPrompts(reviewerCtx, baseURL);
 
     await reviewerPage.goto(`${baseURL}/dev-login-as?daliEmail=reviewer1@dali.dartmouth.edu`);
     await reviewerPage.waitForLoadState('networkidle');

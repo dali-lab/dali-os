@@ -6,7 +6,7 @@ import { skipClientOnlySearchChange } from "~/lib/should-revalidate";
 import { canManageStaffing } from "~/lib/roles";
 import { prisma } from "~/lib/db.server";
 import { applyEligibilityWithNotify } from "~/admin/lib/eligibility.server";
-import { getSlotBinding } from "~/projects/lib/form-slots";
+import type { SlotBinding } from "~/projects/lib/form-slots";
 import { buttonClasses } from "~/components/ui/Button";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { loadSlotBoard, slotBoardAction } from "~/projects/lib/slot-board-page.server";
@@ -59,7 +59,7 @@ export type TargetPromotion = {
 async function resolveTargetPromotions(
   userIds: string[],
   cycleIds: string[],
-  binding: Awaited<ReturnType<typeof getSlotBinding>>,
+  binding: SlotBinding,
 ): Promise<Map<string, TargetPromotion>> {
   const result = new Map<string, TargetPromotion>();
   if (!binding?.mapping || userIds.length === 0) return result;
