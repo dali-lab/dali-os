@@ -1,19 +1,15 @@
 import { prisma } from "~/lib/db.server";
-import { isCore, isLabMemberOrAlum, isProjectMember } from "~/lib/roles";
+import { isLabMemberOrAlum } from "~/lib/roles";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { canEditProject } from "~/mcp/tools/access";
 import { requireForAction } from "~/mcp/registry";
 import { duplicatePage } from "~/drive/lib/page-copy.server";
 import { setFavorite } from "~/lib/user-pages.server";
-import { canManageSharing } from "~/lib/page-share-access.server";
 import { logAuditEvent } from "~/lib/audit";
-import { pageDepth, MAX_PAGE_DEPTH, isAncestorOf } from "~/lib/pages.server";
-import { isRoot, ROOT_MOVE_ERROR } from "~/drive/lib/drive-roots";
-import { clearTypeIfLeavingRoot } from "~/drive/lib/drive-receivers.server";
+import { movePage } from "~/drive/lib/page-move.server";
 import { runUpdatePage } from "~/mcp/tools/update-page";
 import { runSetPageVisibility } from "~/mcp/tools/projects-extra/set-page-visibility";
 import type { McpCtx, McpTool } from "~/mcp/registry";
-import type { Prisma } from "~/generated/prisma/client";
 
 export const MANAGE_PAGE_TOOL_DEF = {
   name: "manage_page",
@@ -223,160 +219,23 @@ export async function runManagePage(callerId: string, input: ManagePageInput) {
     return { ok: true };
   }
 
-  // move
-  const page = await prisma.page.findUnique({
-    where: { id: input.pageId },
-    select: {
-      id: true,
-      workspaceType: true,
-      workspaceId: true,
-      kind: true,
-      archivedAt: true,
-      createdById: true,
-      folderType: true,
-      partnerVisible: true,
-      publicVisible: true,
-      projectAsOverview: { select: { id: true } },
-      projectAsPRD: { select: { id: true } },
+  const result = await movePage({
+    pageId: input.pageId,
+    userId: callerId,
+    input: {
+      parentPageId: input.parentPageId ?? null,
+      beforeId: input.beforeId ?? null,
+      ...(input.workspaceType
+        ? { workspaceType: input.workspaceType, workspaceId: input.workspaceType === "Lab" ? null : (input.workspaceId ?? null) }
+        : {}),
     },
   });
-  if (
-    !page ||
-    (page.workspaceType !== "Lab" && page.workspaceType !== "Project") ||
-    page.archivedAt !== null
-  ) {
-    throw new ManagePageError("Document not found", 404);
+  if (result.ok) return { ok: true, clearedReceivers: result.clearedReceivers };
+  if ("response" in result) {
+    const body = (await result.response.json().catch(() => ({}))) as { error?: string };
+    throw new ManagePageError(body.error ?? "Couldn't move this document", result.response.status);
   }
-  if (isRoot(page)) throw new ManagePageError(ROOT_MOVE_ERROR, 400);
-
-  let dest: { type: "Lab" | "Project"; id: string | null };
-  if (!input.workspaceType) {
-    dest = { type: page.workspaceType as "Lab" | "Project", id: page.workspaceId };
-  } else if (input.workspaceType === "Lab") {
-    dest = { type: "Lab", id: null };
-  } else {
-    if (!input.workspaceId) throw new ManagePageError("Project destination needs a workspaceId", 400);
-    dest = { type: "Project", id: input.workspaceId };
-  }
-  const sameWorkspace = dest.type === page.workspaceType && dest.id === page.workspaceId;
-
-  const canManageSource = await canManageSharing(
-    { id: page.id, workspaceType: page.workspaceType, workspaceId: page.workspaceId, createdById: page.createdById },
-    callerId,
-  );
-  if (!canManageSource) throw new ManagePageError("You can't move this document", 403);
-
-  if (!sameWorkspace) {
-    const canDest =
-      dest.type === "Lab"
-        ? await isLabMemberOrAlum(callerId)
-        : (await isCore(callerId)) || (await isProjectMember(callerId, dest.id!));
-    if (!canDest) throw new ManagePageError("You can't move documents into that destination", 403);
-  }
-
-  if (input.parentPageId === input.pageId) throw new ManagePageError("A document can't be moved into itself", 400);
-  if (page.kind === "Folder" && input.parentPageId) {
-    throw new ManagePageError("Folders can't be nested inside another folder", 400);
-  }
-
-  if (!sameWorkspace) {
-    if (page.projectAsOverview || page.projectAsPRD) {
-      throw new ManagePageError("The Overview and PRD docs can't be moved out of their project", 400);
-    }
-  }
-
-  const parentPageId: string | null = input.parentPageId ?? null;
-  if (parentPageId) {
-    const parent = await prisma.page.findUnique({
-      where: { id: parentPageId },
-      select: { workspaceType: true, workspaceId: true, parentPageId: true, kind: true, archivedAt: true },
-    });
-    if (
-      !parent ||
-      parent.archivedAt !== null ||
-      parent.workspaceType !== dest.type ||
-      parent.workspaceId !== dest.id
-    ) {
-      throw new ManagePageError("Folder not found", 404);
-    }
-    if (parent.kind !== "Folder") {
-      throw new ManagePageError("Documents can only nest inside a folder", 400);
-    }
-    const depth = await pageDepth(parentPageId);
-    if (depth < 0 || depth >= MAX_PAGE_DEPTH) {
-      throw new ManagePageError("Folder is too deeply nested", 400);
-    }
-    // Cycle guard: the destination can't be a descendant of the page being moved.
-    if (await isAncestorOf(input.pageId, parentPageId)) {
-      throw new ManagePageError("A document can't be moved into its own descendant", 400);
-    }
-  }
-
-  // When moving a Folder cross-workspace, carry its children along.
-  const childIds =
-    page.kind === "Folder" && !sameWorkspace
-      ? (
-          await prisma.page.findMany({
-            where: { parentPageId: input.pageId, archivedAt: null },
-            select: { id: true },
-          })
-        ).map((c) => c.id)
-      : [];
-
-  // Compute the new sibling order in the destination.
-  const siblings = await prisma.page.findMany({
-    where: { workspaceType: dest.type, workspaceId: dest.id, parentPageId, archivedAt: null },
-    orderBy: { position: "asc" },
-    select: { id: true },
-  });
-  const order = siblings.map((s) => s.id).filter((id) => id !== input.pageId);
-  const beforeIndex = input.beforeId ? order.indexOf(input.beforeId) : -1;
-  if (beforeIndex >= 0) order.splice(beforeIndex, 0, input.pageId);
-  else order.push(input.pageId);
-
-  const leavesProject = page.workspaceType === "Project" && dest.type !== "Project";
-  const destGeneralAccess: Prisma.PageUncheckedUpdateInput =
-    dest.type === "Lab"
-      ? { linkAccess: "LabMembers", linkPermission: "Edit" }
-      : { linkAccess: "Restricted", linkPermission: "View" };
-  const crossData: Prisma.PageUncheckedUpdateInput = sameWorkspace
-    ? {}
-    : {
-        workspaceType: dest.type,
-        workspaceId: dest.id,
-        pinnedAt: null,
-        ...(leavesProject ? { partnerVisible: false, publicVisible: false } : {}),
-        ...destGeneralAccess,
-      };
-  const childData: Prisma.PageUncheckedUpdateInput = {
-    workspaceType: dest.type,
-    workspaceId: dest.id,
-    ...(leavesProject ? { partnerVisible: false, publicVisible: false } : {}),
-    ...destGeneralAccess,
-  };
-
-  await prisma.$transaction([
-    prisma.page.update({ where: { id: input.pageId }, data: { parentPageId, ...crossData } }),
-    ...childIds.map((id) => prisma.page.update({ where: { id }, data: childData })),
-    ...order.map((id, index) => prisma.page.update({ where: { id }, data: { position: index } })),
-  ]);
-
-  const clearedReceivers = await clearTypeIfLeavingRoot(page.kind === "Folder" ? [input.pageId, ...childIds] : []);
-
-  if (!sameWorkspace) {
-    await logAuditEvent({
-      action: "page.move-workspace",
-      userId: callerId,
-      targetId: input.pageId,
-      metadata: {
-        from: { type: page.workspaceType, id: page.workspaceId },
-        to: { type: dest.type, id: dest.id },
-        kind: page.kind,
-        childCount: childIds.length,
-      },
-    }).catch((err) => console.error("manage_page move audit failed", err));
-  }
-  return { ok: true, clearedReceivers };
+  throw new ManagePageError(result.error, result.status);
 }
 
 export const MANAGE_PAGE: McpTool = {

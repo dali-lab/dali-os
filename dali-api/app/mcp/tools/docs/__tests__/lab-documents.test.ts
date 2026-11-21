@@ -7,11 +7,15 @@ vi.mock("~/lib/roles", async (orig) => {
 });
 vi.mock("~/lib/pages.server", () => ({
   createLabPage: vi.fn(),
+  pageDepth: vi.fn(),
+  MAX_PAGE_DEPTH: 6,
 }));
+vi.mock("~/lib/pageAccess.server", () => ({ getPageAccess: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
 import { isCore, isLabMemberOrAlum } from "~/lib/roles";
-import { createLabPage } from "~/lib/pages.server";
+import { createLabPage, pageDepth } from "~/lib/pages.server";
+import { getPageAccess } from "~/lib/pageAccess.server";
 import {
   LIST_LAB_DOCUMENTS_TOOL,
   runListLabDocuments,
@@ -103,11 +107,64 @@ describe("create_lab_document", () => {
     expect(createLabPage).toHaveBeenCalledWith(expect.objectContaining({ title: "New doc", createdById: "u1" }));
   });
 
-  it("rejects Folder with a parentPageId", async () => {
-    vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
-    await expect(
-      runCreateLabDocument("u1", { title: "Nested folder", kind: "Folder", parentPageId: "parent1" }),
-    ).rejects.toMatchObject({ name: "LabDocumentError", status: 400 });
+  describe("inside a folder", () => {
+    const labFolder = { workspaceType: "Lab", workspaceId: null, kind: "Folder", archivedAt: null };
+
+    beforeEach(() => {
+      vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
+      vi.mocked(createLabPage).mockResolvedValue({ id: "decks" } as never);
+      mockPrisma.page.findUnique.mockResolvedValue(labFolder);
+      vi.mocked(pageDepth).mockResolvedValue(1);
+      vi.mocked(getPageAccess).mockResolvedValue({ canEdit: true } as never);
+    });
+
+    it("nests a folder inside a nested folder the caller can edit", async () => {
+      const out = await runCreateLabDocument("u1", { title: "Decks", kind: "Folder", parentPageId: "core-partners" });
+      expect(out).toEqual({ id: "decks" });
+      expect(pageDepth).toHaveBeenCalledWith("core-partners");
+      expect(getPageAccess).toHaveBeenCalledWith("u1", "core-partners");
+      expect(createLabPage).toHaveBeenCalledWith({
+        title: "Decks",
+        createdById: "u1",
+        kind: "Folder",
+        parentPageId: "core-partners",
+      });
+    });
+
+    it("nests a document two folders down", async () => {
+      vi.mocked(pageDepth).mockResolvedValue(2);
+      await runCreateLabDocument("u1", { title: "Notes", parentPageId: "deep" });
+      expect(createLabPage).toHaveBeenCalledWith(expect.objectContaining({ parentPageId: "deep" }));
+    });
+
+    it.each([6, 7, -1])("refuses a folder at depth %i", async (depth) => {
+      vi.mocked(pageDepth).mockResolvedValue(depth);
+      await expect(
+        runCreateLabDocument("u1", { title: "Too deep", kind: "Folder", parentPageId: "deep" }),
+      ).rejects.toMatchObject({ status: 400, message: "Folder is too deeply nested" });
+      expect(createLabPage).not.toHaveBeenCalled();
+    });
+
+    it("refuses a folder the caller can't edit, such as a Core-only one", async () => {
+      vi.mocked(getPageAccess).mockResolvedValue({ canEdit: false } as never);
+      await expect(
+        runCreateLabDocument("u1", { title: "Decks", kind: "Folder", parentPageId: "core-partners" }),
+      ).rejects.toMatchObject({ status: 403, message: "You can't put things in that folder" });
+      expect(createLabPage).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ["missing", null, 404],
+      ["archived", { ...labFolder, archivedAt: new Date() }, 404],
+      ["in a project", { ...labFolder, workspaceType: "Project", workspaceId: "p1" }, 404],
+      ["a document", { ...labFolder, kind: "FreeForm" }, 400],
+    ])("refuses a parent that is %s", async (_label, parent, status) => {
+      mockPrisma.page.findUnique.mockResolvedValue(parent);
+      await expect(
+        runCreateLabDocument("u1", { title: "Decks", kind: "Folder", parentPageId: "x" }),
+      ).rejects.toMatchObject({ status });
+      expect(createLabPage).not.toHaveBeenCalled();
+    });
   });
 });
 

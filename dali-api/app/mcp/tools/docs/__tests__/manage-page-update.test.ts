@@ -10,7 +10,7 @@ vi.mock("~/drive/lib/page-copy.server", () => ({ duplicatePage: vi.fn() }));
 vi.mock("~/lib/user-pages.server", () => ({ setFavorite: vi.fn() }));
 vi.mock("~/lib/page-share-access.server", () => ({ canManageSharing: vi.fn() }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
-vi.mock("~/drive/lib/drive-receivers.server", () => ({ clearTypeIfLeavingRoot: vi.fn() }));
+vi.mock("~/drive/lib/page-move.server", () => ({ movePage: vi.fn() }));
 vi.mock("~/mcp/tools/access", () => ({ canEditProject: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
