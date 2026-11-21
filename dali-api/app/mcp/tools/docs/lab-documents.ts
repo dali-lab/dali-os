@@ -4,7 +4,8 @@
 
 import { prisma } from "~/lib/db.server";
 import { isCore, isLabMemberOrAlum } from "~/lib/roles";
-import { createLabPage } from "~/lib/pages.server";
+import { createLabPage, pageDepth, MAX_PAGE_DEPTH } from "~/lib/pages.server";
+import { getPageAccess } from "~/lib/pageAccess.server";
 import { duplicatePage } from "~/drive/lib/page-copy.server";
 import { isRoot, ROOT_DELETE_ERROR, CLEARED_FOLDER_TYPE } from "~/drive/lib/drive-roots";
 import { offsetPage, offsetWindow, pageProps, type PageArgs } from "../../pagination";
@@ -95,7 +96,7 @@ export async function runListLabDocuments(callerId: string, input: ListInput) {
 export const CREATE_LAB_DOCUMENT_TOOL = {
   name: "create_lab_document",
   description:
-    "Create a new lab-wide document, folder, or slide deck. Any lab member may create. Folders can't be nested inside another folder (2-level cap). Fill a new slide deck with manage_slide_deck.",
+    "Create a new lab-wide document, folder, or slide deck. Any lab member may create at the top level; inside a folder you need edit access to it. Documents and folders nest inside any folder, up to 6 levels deep, as in the Drive. Fill a new slide deck with manage_slide_deck.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -108,7 +109,7 @@ export const CREATE_LAB_DOCUMENT_TOOL = {
       parentPageId: {
         type: "string",
         description:
-          "Nest this document under an existing top-level Lab folder. Omit for a top-level page.",
+          "Nest it inside this Lab folder (any depth up to 6 levels). Omit for a top-level page.",
       },
       fromTemplatePageId: {
         type: "string",
@@ -136,9 +137,6 @@ export async function runCreateLabDocument(callerId: string, input: CreateInput)
 
   const kind = input.kind ?? "FreeForm";
 
-  if (kind === "Folder" && input.parentPageId) {
-    throw new LabDocumentError("Folders can't be nested inside another folder", 400);
-  }
   const fromTemplateId =
     input.fromTemplatePageId && input.fromTemplatePageId !== "" ? input.fromTemplatePageId : null;
   if (fromTemplateId && kind === "Folder") {
@@ -151,7 +149,6 @@ export async function runCreateLabDocument(callerId: string, input: CreateInput)
       select: {
         workspaceType: true,
         workspaceId: true,
-        parentPageId: true,
         kind: true,
         archivedAt: true,
       },
@@ -167,8 +164,12 @@ export async function runCreateLabDocument(callerId: string, input: CreateInput)
     if (parent.kind !== "Folder") {
       throw new LabDocumentError("Documents can only nest inside a folder", 400);
     }
-    if (parent.parentPageId !== null) {
-      throw new LabDocumentError("Pages only nest one level deep", 400);
+    const depth = await pageDepth(input.parentPageId);
+    if (depth < 0 || depth >= MAX_PAGE_DEPTH) {
+      throw new LabDocumentError("Folder is too deeply nested", 400);
+    }
+    if (!(await getPageAccess(callerId, input.parentPageId)).canEdit) {
+      throw new LabDocumentError("You can't put things in that folder", 403);
     }
   }
 
