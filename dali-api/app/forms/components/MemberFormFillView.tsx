@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ChevronLeft } from "lucide-react";
-import { useNavigate } from "react-router";
+import { ChevronLeft, Pencil } from "lucide-react";
+import { Link, useNavigate } from "react-router";
+import { Tooltip } from "~/components/ui/floating";
 import { desktopVersion } from "~/lib/desktop";
 import { FormQuestionField } from "~/components/form-builder/QuestionField";
 import { FormFieldList } from "~/forms/components/FormField";
@@ -435,14 +436,16 @@ export function MemberFormShell({
   children,
   allowExit = false,
   flush = false,
+  editFormHref = null,
 }: {
   children: React.ReactNode;
   allowExit?: boolean;
   flush?: boolean;
+  editFormHref?: string | null;
 }) {
   return (
     <div className="min-h-screen bg-section-bg p-4 sm:p-8 pt-10 sm:pt-16">
-      <MemberFormCard allowExit={allowExit} flush={flush}>
+      <MemberFormCard allowExit={allowExit} flush={flush} editFormHref={editFormHref}>
         {children}
       </MemberFormCard>
     </div>
@@ -453,19 +456,32 @@ export function MemberFormCard({
   children,
   allowExit = false,
   flush = false,
+  editFormHref = null,
 }: {
   children: React.ReactNode;
   allowExit?: boolean;
   flush?: boolean;
+  editFormHref?: string | null;
 }) {
   return (
     <div
       className={
         flush
-          ? "mx-auto max-w-2xl bg-card border border-border rounded-os-card overflow-hidden"
-          : "mx-auto max-w-2xl bg-card border border-border rounded-os-card p-5 sm:p-8"
+          ? "relative mx-auto max-w-2xl bg-card border border-border rounded-os-card overflow-hidden"
+          : "relative mx-auto max-w-2xl bg-card border border-border rounded-os-card p-5 sm:p-8"
       }
     >
+      {editFormHref && (
+        <Tooltip content="Edit form">
+          <Link
+            to={editFormHref}
+            aria-label="Edit form"
+            className="absolute right-3 top-3 z-10 flex items-center justify-center rounded-md bg-card/90 p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            <Pencil className="h-4 w-4" aria-hidden />
+          </Link>
+        </Tooltip>
+      )}
       {!flush && (
         <div className="flex items-center gap-2 mb-6">
           {allowExit && <FormExitButton />}

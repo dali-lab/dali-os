@@ -15,6 +15,7 @@ import {
   loadResponseForEditing,
 } from "~/forms/lib/form-response.server";
 import { canFillEducationForm } from "~/education/lib/feedback.server";
+import { canBuildForm } from "~/forms/lib/form-access.server";
 import {
   MemberFormFillView,
   MemberFormShell,
@@ -83,6 +84,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     }
   }
 
+  const editFormHref =
+    userId && (await canBuildForm(userId, meta.id, request)) ? `/forms/edit/${meta.id}` : null;
+
   // Pass the user's id (when signed in) so member-scoped reference sources
   // (e.g. a bid's domain dropdown limited to the member's own eligibility)
   // populate; they resolve to [] on anonymous fills.
@@ -104,6 +108,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         tileSeed: null,
         saveProgress: false,
         userId,
+        editFormHref,
       };
     }
   }
@@ -150,6 +155,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     tileSeed: form.formId,
     saveProgress: true,
     userId,
+    editFormHref,
   };
 }
 
@@ -176,7 +182,7 @@ export default function MemberFormFill() {
   if (data.alreadySubmitted) {
     return (
       <div className="os-shell min-h-screen bg-os-bg text-foreground">
-        <MemberFormShell allowExit>
+        <MemberFormShell allowExit editFormHref={data.editFormHref}>
           <div className="text-center py-10">
             <h1 className="font-heading text-xl font-bold text-foreground">
               You've already filled out this form
@@ -210,7 +216,7 @@ export default function MemberFormFill() {
   }
   return (
     <div className="os-shell min-h-screen bg-os-bg text-foreground">
-      <MemberFormShell allowExit flush={Boolean(data.tileSeed)}>
+      <MemberFormShell allowExit flush={Boolean(data.tileSeed)} editFormHref={data.editFormHref}>
         <MemberFormFillView
           data={data}
           next={data.next}
