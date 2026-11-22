@@ -27,7 +27,7 @@ const page = (o: Partial<RenamablePage> = {}): RenamablePage => ({
   workspaceType: "Lab",
   workspaceId: null,
   parentPageId: "parent",
-  kind: "Page",
+  kind: "FreeForm",
   ...o,
 });
 
@@ -82,7 +82,7 @@ describe("resolveRenameTitle", () => {
       workspaceType: "Lab",
       workspaceId: null,
       parentPageId: "parent",
-      kind: "Page",
+      kind: "FreeForm",
       title: "New name",
       excludeId: "p1",
     });

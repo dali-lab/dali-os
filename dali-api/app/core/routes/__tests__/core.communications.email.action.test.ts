@@ -62,7 +62,7 @@ describe("admin.email action", () => {
     beforeEach(() => {
       vi.mocked(prisma.user.findUnique).mockResolvedValue({ daliEmail: "ada@example.edu" } as never);
       vi.mocked(renderAuthEmail).mockImplementation(
-        async ({ subject, bodyHtml }) => ({ subject, html: bodyHtml, text: subject }) as never,
+        ({ subject, bodyHtml }) => ({ subject, html: bodyHtml, text: subject }),
       );
       vi.mocked(enqueueOutbound).mockResolvedValue({ id: "o1" } as never);
     });

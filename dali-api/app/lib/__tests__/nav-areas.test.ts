@@ -614,8 +614,7 @@ describe("onboarding placement", () => {
 });
 
 describe("area tones and descriptions", () => {
-  const everyone = { community: true } as const;
-  const all = areasFor(everyone);
+  const all = areasFor();
 
   it("gives every area a tone and a description", () => {
     for (const a of all) {

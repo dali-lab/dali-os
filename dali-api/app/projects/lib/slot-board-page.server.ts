@@ -143,8 +143,9 @@ export type SlotBoardData<Row extends ResolvedRow = ResolvedRow> = Extract<
   { gate: "ok" }
 >;
 
-export type SlotBoardLoad<Row extends ResolvedRow = ResolvedRow> = Awaited<
-  ReturnType<typeof loadSlotBoard<Row>>
+export type SlotBoardLoad<Row extends ResolvedRow = ResolvedRow> = Exclude<
+  Awaited<ReturnType<typeof loadSlotBoard<Row>>>,
+  Response
 >;
 
 const SETTINGS_INTENTS = new Set([

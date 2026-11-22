@@ -3,7 +3,7 @@ import { test, expect } from './fixtures';
 import { resetCycleStatus } from './helpers';
 
 const cycleId = 'cycle-fall-2026';
-const baseURL = 'http://localhost:3001';
+const baseURL = () => test.info().project.use.baseURL ?? 'http://localhost:3001';
 
 // My work's review queue is the shared KanbanBoard: a column's name is a plain
 // div inside the column shell, not a heading, so match the column by its
@@ -13,7 +13,7 @@ const boardColumn = (page: Page, name: string) =>
 
 /** Log in as hiring lead and advance the cycle to the given status. */
 async function advanceCycleTo(browser: any, status: string) {
-  const ctx = await browser.newContext({ baseURL });
+  const ctx = await browser.newContext({ baseURL: baseURL() });
   const page = await ctx.newPage();
   await page.goto(`/dev-login-as?daliEmail=jordan.taylor@dali.dartmouth.edu`);
   await page.waitForLoadState('networkidle');
