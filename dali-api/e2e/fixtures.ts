@@ -1,18 +1,33 @@
-import { test as base } from '@playwright/test';
+import { test as base, type BrowserContext } from '@playwright/test';
 
 type LoginOptions = { netId?: string; daliEmail?: string; personalEmail?: string };
 
-// First-run launch welcome modal (app/components/LaunchWelcome.tsx) renders a
-// full-screen dialog overlay that intercepts pointer events on a fresh
-// localStorage. Mark it seen before any page script runs so it never blocks
-// clicks in tests. Keep this key in sync with DONE_KEY in that component.
+// Keys must match DONE_KEY in LaunchWelcome.tsx and DISMISS_KEY in AlumniGameInvite.tsx.
 const LAUNCH_WELCOME_SEEN_KEY = 'dalios-launch-welcome-seen-v1';
+const ALUMNI_INVITE_DISMISSED_KEY = 'dalios-alumni-game-invite-dismissed-v1';
+
+/** Marks the full-screen first-run prompts seen so their overlays never block clicks. */
+export async function dismissFirstRunPrompts(context: BrowserContext, baseURL: string | undefined) {
+  await context.addInitScript(
+    ([welcome, invite]) => {
+      try {
+        window.localStorage.setItem(welcome, 'e2e');
+        window.sessionStorage.setItem(invite, 'e2e');
+      } catch {
+        // Storage unavailable (e.g. about:blank)
+      }
+    },
+    [LAUNCH_WELCOME_SEEN_KEY, ALUMNI_INVITE_DISMISSED_KEY],
+  );
+  // dali_pk_prompt=1 is "passkey offer dismissed" (PASSKEY_PROMPT_COOKIE in app/lib/passkey-prompt.server.ts).
+  if (baseURL) await context.addCookies([{ name: 'dali_pk_prompt', value: '1', url: baseURL }]);
+}
 
 export const test = base.extend<{ loginAs: (opts: LoginOptions) => Promise<void> }>({
   page: async ({ page, baseURL }, use) => {
-    await page.addInitScript((key) => {
+    await dismissFirstRunPrompts(page.context(), baseURL);
+    await page.addInitScript(() => {
       try {
-        window.localStorage.setItem(key, 'e2e');
         // The Drive suite predates the Miller-columns view and exercises
         // list/grid behaviour (bulk-select, drag-and-drop, dblclick nav). Pin
         // List view so those specs run against the UI they were written for;
@@ -21,13 +36,7 @@ export const test = base.extend<{ loginAs: (opts: LoginOptions) => Promise<void>
       } catch {
         // localStorage unavailable (e.g. about:blank) — ignore.
       }
-    }, LAUNCH_WELCOME_SEEN_KEY);
-    // dali_pk_prompt=1 is "passkey offer dismissed" (PASSKEY_PROMPT_COOKIE in
-    // app/lib/passkey-prompt.server.ts); otherwise the offer's modal covers the
-    // page for every signed-in user, none of whom has a passkey.
-    if (baseURL) {
-      await page.context().addCookies([{ name: 'dali_pk_prompt', value: '1', url: baseURL }]);
-    }
+    });
     await page.route(
       (url) => !['localhost', '127.0.0.1'].includes(url.hostname),
       (route) => (route.request().resourceType() === 'image' ? route.abort() : route.continue()),
