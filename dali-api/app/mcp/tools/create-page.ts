@@ -1,8 +1,7 @@
 // MCP `create_page` — creates a Page in a project workspace: a FreeForm
 // document (optionally seeded with Markdown content via the collab write
 // pipeline) or a Folder container. Mirrors api.projects.$id.documents — same
-// nesting rules (documents nest only inside Folders up to MAX_PAGE_DEPTH;
-// folders never nest) and same gate (Core, or staffed on the project).
+// nesting rules and same gate (Core, or staffed on the project).
 
 import { prisma } from "~/lib/db.server";
 import { canEditProject } from "./access";
@@ -17,7 +16,7 @@ const MAX_MARKDOWN_LENGTH = 300_000;
 export const CREATE_PAGE_TOOL = {
   name: "create_page",
   description:
-    "Create a page in a project's workspace: a FreeForm document (optionally with Markdown content) or a Folder. Documents can nest under a top-level Folder; folders can't nest. Requires Core or being staffed on the project.",
+    "Create a page in a project's workspace: a FreeForm document (optionally with Markdown content) or a Folder. Documents and folders nest inside any folder, up to 6 levels deep, as in the Drive. Requires Core or being staffed on the project.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -30,7 +29,7 @@ export const CREATE_PAGE_TOOL = {
       },
       parentPageId: {
         type: "string",
-        description: "Optional. Nest under this top-level Folder page (FreeForm only).",
+        description: "Optional. Nest inside this folder (any depth up to 6 levels).",
       },
       content: {
         type: "string",
@@ -77,9 +76,6 @@ export async function runCreatePage(callerId: string, input: Input) {
   if (!title) throw new CreatePageError("Title is required", 400);
 
   const kind = input.kind ?? "FreeForm";
-  if (kind === "Folder" && input.parentPageId) {
-    throw new CreatePageError("Folders can't be nested inside another folder", 400);
-  }
   if (kind === "Folder" && input.content !== undefined) {
     throw new CreatePageError("Folders have no body — omit content", 400);
   }

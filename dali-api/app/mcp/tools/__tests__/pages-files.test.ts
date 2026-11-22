@@ -226,11 +226,21 @@ describe("pages + files tools", () => {
     ).rejects.toThrow(/inside a folder/);
   });
 
-  it("create_page rejects a folder-in-folder", async () => {
+  it("create_page nests a folder inside a folder, like the Drive", async () => {
     vi.mocked(isCore).mockResolvedValue(true);
-    await expect(
-      runCreatePage("u1", { projectId: "p1", title: "x", kind: "Folder", parentPageId: "f1" }),
-    ).rejects.toBeInstanceOf(CreatePageError);
+    mockPrisma.project.findUnique.mockResolvedValue({ id: "p1" });
+    mockPrisma.page.findUnique.mockResolvedValue({
+      id: "f1",
+      parentPageId: null,
+      workspaceType: "Project",
+      workspaceId: "p1",
+      kind: "Folder",
+      archivedAt: null,
+    });
+    mockPrisma.page.findFirst.mockResolvedValue(null);
+    mockPrisma.page.create.mockResolvedValue({ id: "f2" });
+    const out = await runCreatePage("u1", { projectId: "p1", title: "Specs", kind: "Folder", parentPageId: "f1" });
+    expect(out).toMatchObject({ id: "f2", kind: "Folder", parentPageId: "f1" });
   });
 
   it("create_page rejects content on a Folder", async () => {
