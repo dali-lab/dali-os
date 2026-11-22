@@ -83,12 +83,12 @@ describe("pageBarCrumbs for alumni", () => {
   const ALUM = { isAlumni: true, isNewMember: false };
   const ID = "clxyzabcdefghijklmnop";
   const leaf = (pathname: string, label: string) => [{ pathname, handle: { breadcrumb: () => label }, data: {} }];
-  const crumbsAt = (path: string, matches: unknown[], title: string, roles?: typeof ALUM, community = true) =>
+  const crumbsAt = (path: string, matches: unknown[], title: string, roles?: typeof ALUM) =>
     pageBarCrumbs({
       path,
       trail: resolvePageBarTrail(matches as never, path, "")?.crumbs ?? [],
       title,
-      flags: { community, "refer-a-partner": true },
+      flags: { "refer-a-partner": true },
       roles,
     }).map((c) => (c.to ? `${c.label} → ${c.to}` : c.label));
 
@@ -97,12 +97,10 @@ describe("pageBarCrumbs for alumni", () => {
   });
 
   it("puts Community under Lab, like the rail", () => {
-    for (const community of [true, false]) {
-      expect(crumbsAt("/community", leaf("/community", "Community"), "Community", ALUM, community)).toEqual([
-        "Lab → /currently",
-        "Community",
-      ]);
-    }
+    expect(crumbsAt("/community", leaf("/community", "Community"), "Community", ALUM)).toEqual([
+      "Lab → /currently",
+      "Community",
+    ]);
   });
 
   it("files the community pages under Community, which claims /community/*", () => {

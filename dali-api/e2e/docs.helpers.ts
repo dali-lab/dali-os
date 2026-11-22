@@ -1,16 +1,16 @@
-import { expect, type Browser, type BrowserContext, type Page } from '@playwright/test';
+import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
 import pg from 'pg';
 import { dismissFirstRunPrompts } from './fixtures';
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://dali:dali@localhost:5432/dali';
-const BASE_URL = 'http://localhost:3001';
 
 export type DocUser = { context: BrowserContext; page: Page };
 
 /** A fresh browser context logged in as `daliEmail`, for multi-user specs. */
 export async function openAs(browser: Browser, daliEmail: string): Promise<DocUser> {
-  const context = await browser.newContext({ baseURL: BASE_URL });
-  await dismissFirstRunPrompts(context, BASE_URL);
+  const baseURL = test.info().project.use.baseURL ?? 'http://localhost:3001';
+  const context = await browser.newContext({ baseURL });
+  await dismissFirstRunPrompts(context, baseURL);
   const page = await context.newPage();
   await page.goto(`/dev-login-as?${new URLSearchParams({ daliEmail })}`);
   await page.waitForLoadState('networkidle');

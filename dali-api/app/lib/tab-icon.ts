@@ -13,8 +13,8 @@ export function tabIcon(url: string): LucideIcon {
   if (p === '/email' || p.startsWith('/email/')) return Mail
   if (p === '/currently' || p.startsWith('/currently/')) return Sparkles
   if (p.startsWith('/documents/')) return FileText
-  if (isPinnedActive(url, '/drive', { community: true })) return HardDrive
-  const area = areaForPath(url, { community: true })
+  if (isPinnedActive(url, '/drive')) return HardDrive
+  const area = areaForPath(url)
   if (!area) return FileText
   const href = activeSubtabHref(area, url)
   const exact = area.subtabs.find((t) => t.href === href)

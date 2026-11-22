@@ -140,7 +140,7 @@ describe("access", () => {
   ])("refuses %s on every tool without touching the services", async (_n, roles) => {
     rolesMod.getUserRoles.mockResolvedValue(roles);
     for (const [name, args] of every) {
-      expect(await code(call(name, args), name)).toBe(FORBIDDEN);
+      expect(await code(call(name, args)), name).toBe(FORBIDDEN);
     }
     expect(svc.listExpenses).not.toHaveBeenCalled();
     expect(svc.listCategories).not.toHaveBeenCalled();
