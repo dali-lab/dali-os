@@ -66,6 +66,36 @@
     return { h12: String(h12), min: MM, ampm: H < 12 ? "AM" : "PM" };
   }
 
+  const MONTHS = ["january", "february", "march", "april", "may", "june",
+    "july", "august", "september", "october", "november", "december"];
+
+  function entrySig(key, sh, sm, sap, eh, em, eap) {
+    return `${key} ${+sh}:${sm}${sap.toUpperCase()}-${+eh}:${em}${eap.toUpperCase()}`;
+  }
+
+  // Entries JobX already has, read from its saved rows: a th.date like
+  // "Sunday, November 8, 2026" plus td.start / td.end like "9:35 AM".
+  function savedOnPage() {
+    const set = new Set();
+    document.querySelectorAll("tr.QuickDisplayRow").forEach((tr) => {
+      const th = tr.querySelector("th.date");
+      const s = (tr.querySelector("td.start") || {}).textContent || "";
+      const e = (tr.querySelector("td.end") || {}).textContent || "";
+      const d = ((th && th.firstChild && th.firstChild.textContent) || "").match(/([A-Za-z]+)\s+(\d{1,2}),\s*(\d{4})/);
+      const t = /(\d{1,2}):(\d{2})\s*(AM|PM)/i;
+      const sm = s.match(t), em = e.match(t);
+      if (!d || !sm || !em) return;
+      const mo = MONTHS.indexOf(d[1].toLowerCase()) + 1;
+      if (!mo) return;
+      const key = String(mo).padStart(2, "0") + d[2].padStart(2, "0") + d[3];
+      set.add(entrySig(key, sm[1], sm[2], sm[3], em[1], em[2], em[3]));
+    });
+    return set;
+  }
+  function stepSig(step) {
+    return entrySig(step.key, step.sh, step.sm, step.sap, step.eh, step.em, step.eap);
+  }
+
   function highlight(el) {
     el.style.outline = "2px solid #0f6e7d";
     el.style.outlineOffset = "1px";
@@ -144,7 +174,9 @@
   // reload. `skipped` carries the rest with the reason, for the panel to show.
   function buildPlan(payload) {
     const present = daysOnPage();
+    const saved = savedOnPage();
     const steps = [], skipped = [];
+    let alreadySaved = 0;
     for (const e of (payload.entries || [])) {
       const key = dayKey(e.date);
       if (!present.has(key)) { skipped.push({ entry: e, reason: "Not on this JobX page" }); continue; }
@@ -152,15 +184,21 @@
       // entered as-is, so leave it for the member rather than save it wrong.
       if (e.end <= e.start) { skipped.push({ entry: e, reason: "Runs past midnight" }); continue; }
       const s = clockParts(e.start), en = clockParts(e.end);
-      steps.push({
+      const step = {
         key,
         sh: s.h12, sm: s.min, sap: s.ampm,
         eh: en.h12, em: en.min, eap: en.ampm,
         note: (e.description || "").trim() || payload.hireLabel || "",
         label: `${formatDate(e.date)}, ${formatTime(e.start)}–${formatTime(e.end)}`,
-      });
+      };
+      if (saved.has(stepSig(step))) {
+        skipped.push({ entry: e, reason: "Already in JobX" });
+        alreadySaved++;
+        continue;
+      }
+      steps.push(step);
     }
-    return { steps, skipped, hireLabel: payload.hireLabel || "this role", stepsDone: 0, total: steps.length };
+    return { steps, skipped, alreadySaved, hireLabel: payload.hireLabel || "this role", stepsDone: 0, total: steps.length };
   }
 
   async function startPlan(payload) {
@@ -205,6 +243,16 @@
     if (!present.has(step.key)) {
       // This day isn't on the current page — skip it and move on next tick.
       plan.steps.shift();
+      await chrome.storage.local.set({ [PLAN_KEY]: plan });
+      runPlanStep();
+      return;
+    }
+
+    // Re-checked on every reload so a restarted or double-started fill never
+    // saves the same entry twice.
+    if (savedOnPage().has(stepSig(step))) {
+      plan.steps.shift();
+      plan.total = Math.max(0, (plan.total || 0) - 1);
       await chrome.storage.local.set({ [PLAN_KEY]: plan });
       runPlanStep();
       return;
@@ -687,8 +735,12 @@
       notice = h("div", { class: "notice" }, "This JobX page has no editable days. Open the Manage Time Sheet page for an open pay period.");
     } else if (selected && !onPage(selected)) {
       notice = h("div", { class: "notice" }, `This JobX page is a different pay period. Open ${selected.label} in JobX to fill it.`);
-    } else if (plan.skipped.length && plan.steps.length) {
-      notice = h("div", { class: "notice" }, `${plural(plan.skipped.length, "entry", "entries")} can't be filled and will be skipped.`);
+    } else {
+      const cantFill = plan.skipped.length - plan.alreadySaved;
+      const lines = [];
+      if (plan.alreadySaved) lines.push(`${plural(plan.alreadySaved, "entry is", "entries are")} already in JobX and will be skipped.`);
+      if (cantFill && plan.steps.length) lines.push(`${plural(cantFill, "entry", "entries")} can't be filled and will be skipped.`);
+      if (lines.length) notice = h("div", { class: plan.alreadySaved && !cantFill ? "notice neutral" : "notice" }, lines.join(" "));
     }
 
     const n = plan.steps.length;
@@ -698,7 +750,7 @@
         h("button", {
           class: "primary", type: "button", disabled: state.loading || !n,
           onclick: () => startPlan(d).catch(handleError),
-        }, n ? `Fill & save ${plural(n, "entry", "entries")}` : "Nothing to fill"),
+        }, n ? `Fill & save ${plural(n, "entry", "entries")}` : plan.alreadySaved ? "All entries are already in JobX" : "Nothing to fill"),
         h("div", { class: "fine" }, "Saves each day in JobX, one at a time. It never submits your timesheet."),
       ),
     ];
