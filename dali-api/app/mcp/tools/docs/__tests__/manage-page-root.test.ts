@@ -1,152 +1,90 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/mcp/registry", () => {
-  class McpInvalidError extends Error {
-    status: number;
-    constructor(message = "Invalid params") {
-      super(message);
-      this.name = "McpInvalidError";
-      this.status = 400;
-    }
-  }
-  function requireForAction(action: string, args: Record<string, unknown>, spec: Record<string, string[]>) {
-    const required = spec[action];
-    if (!required) throw new McpInvalidError(`Unknown action '${action}'`);
-    const missing = required.filter((k) => args[k] === undefined || args[k] === null);
-    if (missing.length) throw new McpInvalidError(`action '${action}' requires: ${missing.join(", ")}`);
-  }
-  return { requireForAction, REGISTRY_TOOLS: [], findRegistryTool: () => undefined, registryToolDefs: () => [] };
-});
+vi.mock("~/mcp/registry", async () => ({ requireForAction: (await import("~/mcp/errors")).requireForAction }));
+vi.mock("~/lib/db.server", () => ({ prisma: { page: { findUnique: vi.fn(), update: vi.fn() } } }));
+vi.mock("~/drive/lib/page-move.server", () => ({ movePage: vi.fn() }));
+vi.mock("~/lib/roles", () => ({ isLabMemberOrAlum: vi.fn() }));
+vi.mock("~/lib/pageAccess.server", () => ({ getPageAccess: vi.fn() }));
+vi.mock("~/drive/lib/page-copy.server", () => ({ duplicatePage: vi.fn() }));
+vi.mock("~/lib/user-pages.server", () => ({ setFavorite: vi.fn() }));
+vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn().mockResolvedValue(undefined) }));
+vi.mock("~/mcp/tools/access", () => ({ canEditProject: vi.fn() }));
+vi.mock("~/mcp/tools/update-page", () => ({ runUpdatePage: vi.fn() }));
+vi.mock("~/mcp/tools/projects-extra/set-page-visibility", () => ({ runSetPageVisibility: vi.fn() }));
 
-vi.mock("~/lib/db.server", () => ({
-  prisma: {
-    page: {
-      findUnique: vi.fn(),
-      update: vi.fn(),
-      findMany: vi.fn(),
-      delete: vi.fn(),
-    },
-    $transaction: vi.fn(),
-  },
-}));
-
-vi.mock("~/drive/lib/drive-receivers.server", () => ({ clearTypeIfLeavingRoot: vi.fn() }));
-
-vi.mock("~/lib/roles", () => ({
-  isCore: vi.fn(),
-  isLabMemberOrAlum: vi.fn(),
-  isProjectMember: vi.fn(),
-}));
-
-vi.mock("~/lib/pageAccess.server", () => ({
-  getPageAccess: vi.fn(),
-  PAGE_ACCESS_SELECT: {},
-}));
-
-vi.mock("~/drive/lib/page-copy.server", () => ({
-  duplicatePage: vi.fn(),
-}));
-
-vi.mock("~/lib/user-pages.server", () => ({
-  setFavorite: vi.fn(),
-}));
-
-vi.mock("~/lib/page-share-access.server", () => ({
-  canManageSharing: vi.fn(),
-}));
-
-vi.mock("~/lib/audit", () => ({
-  logAuditEvent: vi.fn().mockResolvedValue(undefined),
-}));
-
-vi.mock("~/lib/pages.server", () => ({
-  pageDepth: vi.fn(),
-  MAX_PAGE_DEPTH: 2,
-  isAncestorOf: vi.fn(),
-}));
-
-vi.mock("~/mcp/tools/access", () => ({
-  canEditProject: vi.fn(),
-}));
-
-import { prisma } from "~/lib/db.server";
+import { movePage } from "~/drive/lib/page-move.server";
 import { MANAGE_PAGE_TOOL_DEF, runManagePage } from "~/mcp/tools/docs/manage-page";
-import { canManageSharing } from "~/lib/page-share-access.server";
-import { clearTypeIfLeavingRoot } from "~/drive/lib/drive-receivers.server";
 
-const mockPrisma = prisma as unknown as {
-  page: { findUnique: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn> };
-};
+const from = { workspaceType: "Lab" as const, workspaceId: null, parentPageId: null };
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(movePage).mockResolvedValue({ ok: true, clearedReceivers: [], from });
 });
 
-describe("manage_page move — Drive roots", () => {
-  it("refuses to move a root and writes nothing", async () => {
-    mockPrisma.page.findUnique.mockResolvedValue({
-      id: "root1", workspaceType: "Lab", workspaceId: null, kind: "Folder", archivedAt: null,
-      createdById: "u1", folderType: "Root", projectAsOverview: null, projectAsPRD: null,
+describe("manage_page move goes through the Drive's own move", () => {
+  it("moves a folder into a nested folder as the caller", async () => {
+    const result = await runManagePage("u1", { action: "move", pageId: "decks", parentPageId: "core-partners" });
+    expect(movePage).toHaveBeenCalledWith({
+      pageId: "decks",
+      userId: "u1",
+      input: { parentPageId: "core-partners", beforeId: null },
     });
+    expect(result).toEqual({ ok: true, clearedReceivers: [] });
+  });
 
-    await expect(
-      runManagePage("u1", { action: "move", pageId: "root1", parentPageId: null }),
-    ).rejects.toMatchObject({
+  it("moves to the top level and reorders before a sibling", async () => {
+    await runManagePage("u1", { action: "move", pageId: "d1", parentPageId: null, beforeId: "d0" });
+    expect(movePage).toHaveBeenCalledWith(
+      expect.objectContaining({ input: { parentPageId: null, beforeId: "d0" } }),
+    );
+  });
+
+  it("treats a missing parentPageId as the top level", async () => {
+    await runManagePage("u1", { action: "move", pageId: "d1" });
+    expect(movePage).toHaveBeenCalledWith(expect.objectContaining({ input: { parentPageId: null, beforeId: null } }));
+  });
+
+  it("passes a project destination with its id", async () => {
+    await runManagePage("u1", { action: "move", pageId: "d1", parentPageId: null, workspaceType: "Project", workspaceId: "p1" });
+    expect(movePage).toHaveBeenCalledWith(
+      expect.objectContaining({ input: { parentPageId: null, beforeId: null, workspaceType: "Project", workspaceId: "p1" } }),
+    );
+  });
+
+  it("sends a Lab destination with no workspace id, even if one is passed", async () => {
+    await runManagePage("u1", { action: "move", pageId: "d1", parentPageId: null, workspaceType: "Lab", workspaceId: "p1" });
+    expect(movePage).toHaveBeenCalledWith(
+      expect.objectContaining({ input: { parentPageId: null, beforeId: null, workspaceType: "Lab", workspaceId: null } }),
+    );
+  });
+
+  it("reports the receivers the move cleared", async () => {
+    vi.mocked(movePage).mockResolvedValue({ ok: true, clearedReceivers: ["f1", "c1"], from });
+    expect(await runManagePage("u1", { action: "move", pageId: "f1", parentPageId: null })).toEqual({
+      ok: true,
+      clearedReceivers: ["f1", "c1"],
+    });
+  });
+
+  it("surfaces a refusal with its status and message", async () => {
+    vi.mocked(movePage).mockResolvedValue({ ok: false, status: 400, error: "Drive roots can't be moved" });
+    await expect(runManagePage("u1", { action: "move", pageId: "root1", parentPageId: null })).rejects.toMatchObject({
       name: "ManagePageError",
       status: 400,
       message: "Drive roots can't be moved",
     });
-    expect(mockPrisma.page.update).not.toHaveBeenCalled();
-  });
-});
-
-describe("manage_page move: receiver lifecycle", () => {
-  function folder(over: Record<string, unknown> = {}) {
-    return {
-      id: "f1", workspaceType: "Lab", workspaceId: null, kind: "Folder", archivedAt: null,
-      createdById: "u1", folderType: "HiringForms", projectAsOverview: null, projectAsPRD: null, ...over,
-    };
-  }
-
-  beforeEach(() => {
-    vi.mocked(canManageSharing).mockResolvedValue(true);
-    (prisma as any).page.findMany.mockResolvedValue([]);
-    (prisma as any).$transaction.mockResolvedValue([]);
-    vi.mocked(clearTypeIfLeavingRoot).mockResolvedValue([]);
   });
 
-  it("checks the moved folder after the move and reports what it cleared", async () => {
-    mockPrisma.page.findUnique.mockResolvedValue(folder());
-    vi.mocked(clearTypeIfLeavingRoot).mockResolvedValue(["f1"]);
-
-    const result = await runManagePage("u1", { action: "move", pageId: "f1", parentPageId: null });
-
-    expect(clearTypeIfLeavingRoot).toHaveBeenCalledWith(["f1"]);
-    expect(result).toEqual({ ok: true, clearedReceivers: ["f1"] });
-    expect(vi.mocked(clearTypeIfLeavingRoot).mock.invocationCallOrder[0]).toBeGreaterThan(
-      (prisma as any).$transaction.mock.invocationCallOrder[0],
-    );
-  });
-
-  it("includes the children a cross-workspace folder move carries", async () => {
-    mockPrisma.page.findUnique.mockResolvedValue(folder());
-    (prisma as any).page.findMany.mockImplementation(({ where }: any) =>
-      Promise.resolve(where.parentPageId === "f1" ? [{ id: "c1" }] : []),
-    );
-    const { isLabMemberOrAlum, isCore } = await import("~/lib/roles");
-    vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
-    vi.mocked(isCore).mockResolvedValue(true);
-
-    await runManagePage("u1", { action: "move", pageId: "f1", parentPageId: null, workspaceType: "Project", workspaceId: "p1" });
-
-    expect(clearTypeIfLeavingRoot).toHaveBeenCalledWith(["f1", "c1"]);
-  });
-
-  it("has nothing to check for a plain document", async () => {
-    mockPrisma.page.findUnique.mockResolvedValue(folder({ kind: "FreeForm", folderType: null }));
-    const result = await runManagePage("u1", { action: "move", pageId: "f1", parentPageId: null });
-    expect(clearTypeIfLeavingRoot).toHaveBeenCalledWith([]);
-    expect(result).toEqual({ ok: true, clearedReceivers: [] });
+  it("surfaces a refusal that came back as a response", async () => {
+    vi.mocked(movePage).mockResolvedValue({
+      ok: false,
+      response: Response.json({ error: "You can't manage this notebook" }, { status: 403 }),
+    });
+    await expect(runManagePage("u1", { action: "move", pageId: "d1", parentPageId: "nb1" })).rejects.toMatchObject({
+      status: 403,
+      message: "You can't manage this notebook",
+    });
   });
 });
 

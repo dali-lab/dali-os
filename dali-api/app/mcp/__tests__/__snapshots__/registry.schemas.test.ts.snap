@@ -940,7 +940,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
 }
 {
   "name": "create_page",
-  "description": "Create a page in a project's workspace: a FreeForm document (optionally with Markdown content) or a Folder. Documents can nest under a top-level Folder; folders can't nest. Requires Core or being staffed on the project.",
+  "description": "Create a page in a project's workspace: a FreeForm document (optionally with Markdown content) or a Folder. Documents and folders nest inside any folder, up to 6 levels deep, as in the Drive. Requires Core or being staffed on the project.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -963,7 +963,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
       },
       "parentPageId": {
         "type": "string",
-        "description": "Optional. Nest under this top-level Folder page (FreeForm only)."
+        "description": "Optional. Nest inside this folder (any depth up to 6 levels)."
       },
       "content": {
         "type": "string",
@@ -3400,7 +3400,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
 }
 {
   "name": "create_lab_document",
-  "description": "Create a new lab-wide document, folder, or slide deck. Any lab member may create. Folders can't be nested inside another folder (2-level cap). Fill a new slide deck with manage_slide_deck.",
+  "description": "Create a new lab-wide document, folder, or slide deck. Any lab member may create at the top level; inside a folder you need edit access to it. Documents and folders nest inside any folder, up to 6 levels deep, as in the Drive. Fill a new slide deck with manage_slide_deck.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -3420,7 +3420,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
       },
       "parentPageId": {
         "type": "string",
-        "description": "Nest this document under an existing top-level Lab folder. Omit for a top-level page."
+        "description": "Nest it inside this Lab folder (any depth up to 6 levels). Omit for a top-level page."
       },
       "fromTemplatePageId": {
         "type": "string",
