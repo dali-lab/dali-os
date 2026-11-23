@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 const getUserRoles = vi.hoisted(() => vi.fn());
 vi.mock("~/lib/roles", () => ({ getUserRoles }));
+const runListMyRoles = vi.hoisted(() => vi.fn());
+vi.mock("../time-entries", () => ({ runListMyRoles }));
 
 import { runWhoami, WHOAMI_TOOL } from "~/mcp/tools/whoami";
 
@@ -45,5 +47,26 @@ describe("whoami", () => {
   ])("reports the highest tier for %o as %s", async (roles, tier) => {
     getUserRoles.mockResolvedValue({ ...NO_ROLES, ...roles });
     expect((await runWhoami(USER)).tier).toBe(tier);
+  });
+
+  it("leaves roles out unless asked", async () => {
+    getUserRoles.mockResolvedValue(NO_ROLES);
+    expect(await runWhoami(USER, { allTerms: true })).not.toHaveProperty("roles");
+    expect(runListMyRoles).not.toHaveBeenCalled();
+  });
+
+  it("adds the caller's paid roles with includeRoles, current term by default", async () => {
+    getUserRoles.mockResolvedValue({ ...NO_ROLES, isLabMemberOrAlum: true });
+    runListMyRoles.mockResolvedValue({ roles: [{ assignmentType: "Project", roleRefId: "a1" }] });
+    const out = await runWhoami(USER, { includeRoles: true });
+    expect(out).toMatchObject({ id: "u1", tier: "member", roles: [{ assignmentType: "Project", roleRefId: "a1" }] });
+    expect(runListMyRoles).toHaveBeenCalledWith("u1", { allTerms: undefined });
+  });
+
+  it("passes allTerms through to the roles lookup", async () => {
+    getUserRoles.mockResolvedValue(NO_ROLES);
+    runListMyRoles.mockResolvedValue({ roles: [] });
+    await runWhoami(USER, { includeRoles: true, allTerms: true });
+    expect(runListMyRoles).toHaveBeenCalledWith("u1", { allTerms: true });
   });
 });

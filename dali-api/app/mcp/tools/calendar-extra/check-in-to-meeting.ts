@@ -1,30 +1,7 @@
-// MCP `check_in_to_meeting` — self check-in for SelfCheckIn-mode meetings.
-// Mirrors the logic of api.scheduled-meetings.$id.check-in.ts exactly.
-// Requires the `mcp:write` scope.
-
 import { prisma } from "~/lib/db.server";
 import { markMeetingAttendance } from "~/calendar/lib/meeting-roster.server";
 import { isWithinCheckInWindow } from "~/calendar/lib/meeting-occurrences";
 import { McpNotFoundError, McpInvalidError, McpForbiddenError } from "../../registry";
-
-export const CHECK_IN_TO_MEETING_DEF = {
-  name: "check_in_to_meeting",
-  description:
-    "Self check-in to a meeting with SelfCheckIn attendance mode. Only allowed within ±15 minutes of the meeting window.",
-  inputSchema: {
-    type: "object" as const,
-    properties: {
-      meetingId: {
-        type: "string",
-        minLength: 1,
-        description: "ScheduledMeeting.id to check in to.",
-      },
-    },
-    required: ["meetingId"],
-    additionalProperties: false,
-  },
-  requiredScope: "mcp:write" as const,
-};
 
 type Input = { meetingId: string };
 
@@ -56,8 +33,6 @@ export async function runCheckInToMeeting(userId: string, input: Input) {
     throw new McpInvalidError("This meeting doesn't have a scheduled time yet");
   }
 
-  // Shared window helper so the ±grace math has one definition across the
-  // self-check-in route, the scan route, and this tool.
   if (!isWithinCheckInWindow(meeting, meeting.exceptions)) {
     throw new McpForbiddenError("Check-in window has closed");
   }

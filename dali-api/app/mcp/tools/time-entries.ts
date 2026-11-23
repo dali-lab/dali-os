@@ -5,7 +5,7 @@
 // route and the mobile app use, so the Google Timesheet mirror and the
 // cross-machine calendar marker stay in step with every surface.
 //
-// `add` and `update` are gated on `confirmed: true` server-side: an agent
+// `create` and `update` are gated on `confirmed: true` server-side: an agent
 // logging payroll-adjacent hours must show the user the preview first.
 
 import { prisma } from "~/lib/db.server";
@@ -41,28 +41,7 @@ export class TimeEntryInvalidError extends Error {
   }
 }
 
-// ─── list_my_roles ───────────────────────────────────────────────────────────
-// Attribution needs an (assignmentType, roleRefId) pair, and those ids aren't
-// discoverable anywhere else over MCP, so this is a prerequisite for logging.
-
-export const LIST_MY_ROLES_TOOL = {
-  name: "list_my_roles",
-  description:
-    "List the authenticated member's paid roles for the current term, each with the assignmentType and roleRefId needed to attribute a time entry or a work block. Call this before adding time.",
-  inputSchema: {
-    type: "object" as const,
-    properties: {
-      allTerms: {
-        type: "boolean",
-        description:
-          "Include roles from every term rather than just the current one. Defaults to false.",
-      },
-    },
-    required: [],
-    additionalProperties: false,
-  },
-  requiredScope: "mcp:read" as const,
-};
+// ─── my roles ────────────────────────────────────────────────────────────────
 
 export type MyRole = {
   assignmentType: AssignmentType;
@@ -278,9 +257,9 @@ export const ADD_TIME_ENTRY_PROPERTIES = {
   assignmentType: {
     type: "string",
     enum: [...ASSIGNMENT_TYPES],
-    description: "Role kind, from `list_my_roles`.",
+    description: "Role kind, from `whoami` with includeRoles.",
   },
-  roleRefId: { type: "string", description: "Role id, from `list_my_roles`." },
+  roleRefId: { type: "string", description: "Role id, from `whoami` with includeRoles." },
   note: {
     type: "string",
     description:
@@ -340,7 +319,7 @@ export async function runAddTimeEntry(
       ok: false,
       needsConfirmation: true,
       preview: {
-        action: "add",
+        action: "create",
         date: input.date,
         hours: input.hours,
         assignmentType: input.assignmentType,

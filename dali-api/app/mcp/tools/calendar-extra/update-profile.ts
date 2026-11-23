@@ -19,6 +19,7 @@ import {
   ProfileValidationError,
   type ProfileField,
 } from "~/members/lib/profile-update.server";
+import { prisma } from "~/lib/db.server";
 import { McpInvalidError } from "../../errors";
 
 export const UPDATE_PROFILE_DEF = {
@@ -28,6 +29,7 @@ export const UPDATE_PROFILE_DEF = {
     "firstName and lastName must both be non-empty if either is provided. " +
     "birthday must be YYYY-MM-DD. classYear must be 1900–2100. " +
     "personalEmail must contain @. Empty string clears a nullable field. " +
+    "hideActivity true hides your online presence from other members. " +
     "bio is a collaborative document and cannot be changed here.",
   inputSchema: {
     type: "object" as const,
@@ -49,6 +51,7 @@ export const UPDATE_PROFILE_DEF = {
       dietaryRestrictions: { type: "string", description: "Dietary restrictions / allergies. Empty string clears." },
       phoneNumber: { type: "string", description: "Phone number. Empty string clears." },
       personalEmail: { type: "string", description: "Personal (non-Dartmouth) email. Must contain @. Empty string clears." },
+      hideActivity: { type: "boolean", description: "True to hide your activity from other members, false to show it." },
     },
     additionalProperties: false,
   },
@@ -73,6 +76,7 @@ type Input = {
   dietaryRestrictions?: string;
   phoneNumber?: string;
   personalEmail?: string;
+  hideActivity?: boolean;
 };
 
 const MESSAGES: Record<ProfileField, string> = {
@@ -89,16 +93,28 @@ const MESSAGES: Record<ProfileField, string> = {
   unique: "A unique constraint was violated",
 };
 
-export async function runUpdateProfile(userId: string, input: Input) {
-  const { timezone, ...rest } = input;
+type Updated = Awaited<ReturnType<typeof updateProfileFields>>["updated"];
+
+export async function runUpdateProfile(userId: string, input: Input): Promise<{ ok: true; updated: Updated }> {
+  const { timezone, hideActivity, ...rest } = input;
   try {
-    const { updated } = await updateProfileFields(
-      userId,
-      { ...rest, ...(timezone !== undefined ? { timeZone: timezone } : {}) },
-      { allowNetId: false },
-    );
+    const fields = { ...rest, ...(timezone !== undefined ? { timeZone: timezone } : {}) };
+    const { updated } =
+      Object.keys(fields).length > 0 || hideActivity === undefined
+        ? await updateProfileFields(userId, fields, { allowNetId: false })
+        : { updated: {} as Updated };
+    if (hideActivity !== undefined) {
+      await prisma.user.update({ where: { id: userId }, data: { hideActivity } });
+    }
     const { timeZone, ...others } = updated;
-    return { ok: true, updated: timeZone !== undefined ? { ...others, timezone: timeZone } : others };
+    return {
+      ok: true,
+      updated: {
+        ...others,
+        ...(timeZone !== undefined ? { timezone: timeZone } : {}),
+        ...(hideActivity !== undefined ? { hideActivity } : {}),
+      },
+    };
   } catch (e) {
     if (e instanceof ProfileValidationError || e instanceof ProfileConflictError) {
       throw new McpInvalidError(MESSAGES[e.field]);

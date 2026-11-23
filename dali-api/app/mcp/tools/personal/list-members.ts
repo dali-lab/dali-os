@@ -1,11 +1,5 @@
-// MCP `list_members` — directory browse. Returns the current-term-active member
-// list (same default as the web People page) with optional filters. No query
-// required — callers can list everyone. Reuses the same Prisma select + tier
-// derivation as `search_directory`, but without the required query param and
-// with additional optional filters. Requires the `mcp:read` scope.
-
 import { prisma } from "~/lib/db.server";
-import { userTextWhere } from "~/lib/person-search";
+import { directoryTextWhere } from "~/members/lib/directory-search.server";
 import { currentTerm, currentTermMemberWhere, isAdminViaEnv } from "~/lib/roles";
 import { offsetPage, offsetWindow, pageArray, pageProps, type PageArgs } from "~/mcp/pagination";
 
@@ -14,8 +8,8 @@ const PAGE_LIMITS = { defaultLimit: 50, maxLimit: 100 };
 export const LIST_MEMBERS_DEF = {
   name: "list_members",
   description:
-    "Browse the DALI member directory. Returns current-term-active members by default. " +
-    "Optionally filter by domain name/code, tier, or a name/email substring. " +
+    "Search or browse the DALI member directory. Returns current-term-active members by default. " +
+    "Optionally filter by domain name/code, tier, or a search query. " +
     "Use `includeInactive` to also include alumni and members inactive this term. " +
     "Pass page.nextCursor as cursor to read the next page until page.hasMore is false; page.total is the full match count.",
   inputSchema: {
@@ -24,7 +18,7 @@ export const LIST_MEMBERS_DEF = {
       q: {
         type: "string",
         maxLength: 100,
-        description: "Optional substring to match against name or daliEmail (case-insensitive).",
+        description: "Optional search text, matched case-insensitively against name, daliEmail, netId, domain names and role titles.",
       },
       domain: {
         type: "string",
@@ -68,7 +62,7 @@ export async function runListMembers(input: Input) {
   if (input.q) {
     const q = input.q.trim();
     if (q.length > 0) {
-      andFilters.push(userTextWhere(q, ["firstName", "lastName", "daliEmail"]));
+      andFilters.push(directoryTextWhere(q));
     }
   }
 

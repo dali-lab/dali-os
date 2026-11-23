@@ -1,18 +1,3 @@
-// MCP `get_project_settings` — the project's configuration, as shown on the
-// detail page's settings surfaces.
-//
-// Read-only by design. `get_project_overview` already covers the working state
-// (roster, active sprint, task counts, description); this fills the other half:
-// the term set, declared domains, the per-(domain, term) scope grid, and the
-// integration identities. Nothing here writes — the project record is edited on
-// its detail page, where the term/domain pickers carry validation an agent
-// shouldn't be reimplementing from a flat argument list.
-//
-// Chart strings are deliberately NOT returned. They're Dartmouth payroll GL
-// codes, and this tool is member-accessible; Core reads them through
-// list_project_chart_strings — the same reasoning that keeps the payroll
-// TimesheetEntry model out of the timesheet tools.
-
 import { prisma } from "~/lib/db.server";
 import { resolvePhotoUrl } from "~/lib/photo";
 
@@ -23,25 +8,6 @@ export class ProjectSettingsNotFoundError extends Error {
     this.name = "ProjectSettingsNotFoundError";
   }
 }
-
-export const GET_PROJECT_SETTINGS_TOOL = {
-  name: "get_project_settings",
-  description:
-    "Read a project's configuration: its planned terms, declared domains, the per-domain-per-term scope grid, repos, Figma files, deployment URL, and its Slack/GitHub/Google identities. Complements `get_project_overview`, which covers the live working state instead. Payroll chart strings are not included.",
-  inputSchema: {
-    type: "object" as const,
-    properties: {
-      projectId: {
-        type: "string",
-        minLength: 1,
-        description: "Project.id, as returned by `list_projects` or `list_my_projects`.",
-      },
-    },
-    required: ["projectId"],
-    additionalProperties: false,
-  },
-  requiredScope: "mcp:read" as const,
-};
 
 export type ProjectSettings = {
   id: string;

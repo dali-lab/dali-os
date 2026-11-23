@@ -1,7 +1,7 @@
 // MCP `list_project_chart_strings` / `set_project_chart_string` — Core-only
 // read and write for a project's payroll chart strings, with history.
 //
-// Why these aren't fields on get_project_settings / update_project: those are
+// Why these aren't fields on get_project (include settings) / update_project: those are
 // member-accessible (Core OR anyone staffed on the project), and chart strings
 // are Dartmouth payroll GL codes that only Core has reason to see. The write
 // also takes `mcp:admin` rather than `mcp:write`, so a client trusted to edit
@@ -39,14 +39,14 @@ async function requireCore(callerId: string): Promise<void> {
 export const LIST_PROJECT_CHART_STRINGS_TOOL = {
   name: "list_project_chart_strings",
   description:
-    "Read a project's payroll chart strings for one term or all terms, including superseded history. Returns both the project's own entries and the effective string per term — what payroll charges — which may be inherited from the lab-wide default, or be the lab's built-in projects GL when no default is recorded. Core-only; chart strings are deliberately absent from `get_project_settings`.",
+    "Read a project's payroll chart strings for one term or all terms, including superseded history. Returns both the project's own entries and the effective string per term — what payroll charges — which may be inherited from the lab-wide default, or be the lab's built-in projects GL when no default is recorded. Core-only; chart strings are deliberately absent from `get_project (include settings)`.",
   inputSchema: {
     type: "object" as const,
     properties: {
       projectId: {
         type: "string",
         minLength: 1,
-        description: "Project.id, as returned by `list_projects` or `list_my_projects`.",
+        description: "Project.id, as returned by `list_projects`.",
       },
       termCode: {
         type: "string",

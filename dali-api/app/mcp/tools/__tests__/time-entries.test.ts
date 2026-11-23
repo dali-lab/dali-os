@@ -56,7 +56,7 @@ describe("add_time_entry confirmation gate", () => {
     expect(res.ok).toBe(false);
     expect((res as any).needsConfirmation).toBe(true);
     expect((res as any).preview).toMatchObject({
-      action: "add",
+      action: "create",
       hours: 1,
       note: "Fixed the importer",
       projectId: "proj-1",

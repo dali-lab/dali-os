@@ -25,7 +25,7 @@ export const STANDUP_PROMPT: PromptDefinition = {
             `Generate today's standup notes for project ${projectId}. Use the dalios MCP tools:`,
             "",
             `1. Read resource \`dali://projects/${projectId}/board\` for the full current sprint state.`,
-            `2. Call \`get_project_overview\` for the active sprint and current epic context.`,
+            `2. Call \`get_project\` for the active sprint and current epic context.`,
             "",
             "Then write a short standup briefing:",
             "",

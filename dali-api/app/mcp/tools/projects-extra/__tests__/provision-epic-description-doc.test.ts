@@ -31,10 +31,7 @@ import { isCore, isProjectMember } from "~/lib/roles";
 import { replaceCollabDocContent } from "~/collab/write";
 import { readDocAsBlocks } from "~/collab/read";
 import { blocksToPlainText } from "~/components/doc/schema/configs";
-import {
-  runProvisionEpicDescriptionDoc,
-  PROVISION_EPIC_DESCRIPTION_DOC_TOOL,
-} from "~/mcp/tools/projects-extra/provision-epic-description-doc";
+import { runProvisionEpicDescriptionDoc } from "~/mcp/tools/projects-extra/provision-epic-description-doc";
 
 const mockPrisma = prisma as unknown as {
   epic: {
@@ -48,10 +45,6 @@ beforeEach(() => {
 });
 
 describe("provision_epic_description_doc", () => {
-  it("requires mcp:write scope", () => {
-    expect(PROVISION_EPIC_DESCRIPTION_DOC_TOOL.requiredScope).toBe("mcp:write");
-  });
-
   it("throws McpNotFoundError for unknown epic", async () => {
     vi.mocked(isCore).mockResolvedValue(true);
     mockPrisma.epic.findUnique.mockResolvedValue(null);

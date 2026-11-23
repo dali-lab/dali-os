@@ -1,7 +1,7 @@
 import rrulePkg from "rrule";
 import type { RRule as RRuleType } from "rrule";
 import { prisma } from "~/lib/db.server";
-import { fetchBusyEvents } from "~/calendar/lib/google-calendar.server";
+import { fetchBusyEvents, type EventReadReport } from "~/calendar/lib/google-calendar.server";
 import { APPLICATION_TZ as DEFAULT_TIMEZONE, getZonedYMD, pickUserTimezone, zonedWallTimeUtc } from "~/lib/timezone";
 
 const { RRule, rrulestr } = rrulePkg as unknown as {
@@ -195,7 +195,7 @@ function formatDtstart(d: Date): string {
 // ─── Multi-user mutual-availability helpers ─────────────────────────────────
 //
 // These power the in-app meeting scheduler (api.calendar.group-availability)
-// and the MCP `find_mutual_freebusy` tool. The route still owns its own
+// and the MCP `find_free_times` tool. The route still owns its own
 // per-day grid bucketing; this module owns the cross-user math.
 
 const DEFAULT_BUFFER_MIN = 15;
@@ -212,6 +212,7 @@ export async function computeUserFreeBusy(
   windowStart: Date,
   windowEnd: Date,
   fallbackTimezone: string = DEFAULT_TIMEZONE,
+  report?: EventReadReport,
 ): Promise<{
   userId: string;
   free: Interval[];
@@ -236,7 +237,7 @@ export async function computeUserFreeBusy(
     prisma.userAvailabilitySettings.findUnique({ where: { userId } }),
     prisma.user.findUnique({ where: { id: userId }, select: { timeZone: true } }),
     prisma.workingHoursDay.findMany({ where: { userId } }),
-    fetchBusyEvents(userId, windowStart, windowEnd).catch(
+    fetchBusyEvents(userId, windowStart, windowEnd, undefined, undefined, "availability", report).catch(
       () => [] as { start: string; end: string }[],
     ),
     // Coverage signal. Read concurrently with the fetch above: `hasCalendar`

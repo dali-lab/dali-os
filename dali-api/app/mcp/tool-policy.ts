@@ -82,10 +82,8 @@ export const TOOL_AUDIENCE: Record<string, McpAudience> = {
     "remind_ce_noncompliant",
     "respond_partner_meeting_request",
     "send_announcement",
-    "set_domain_eligibility",
     "set_partner_application_scope",
     "set_project_chart_string",
-    "set_staffing_assignment",
   ]),
   ...byAudience("admin", [
     "backfill_hiring_cycle",
@@ -99,11 +97,8 @@ export const TOOL_AUDIENCE: Record<string, McpAudience> = {
 
 // Writes that only add records. Every other write keeps MCP's destructive default.
 export const ADDITIVE_TOOLS = new Set<string>([
-  "add_task_comment",
   "book_room",
-  "check_in_to_meeting",
-  "check_in_to_session",
-  "complete_onboarding_tour",
+  "check_in",
   "create_card_statement_upload",
   "create_expense_receipt_upload",
   "create_gallery_upload",
@@ -119,7 +114,6 @@ export const ADDITIVE_TOOLS = new Set<string>([
   "issue_term_agreements",
   "name_collab_version",
   "post_education_announcement",
-  "provision_epic_description_doc",
   "remind_ce_noncompliant",
   "schedule_meeting",
   "send_announcement",

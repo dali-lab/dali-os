@@ -21,14 +21,6 @@ vi.mock("../list-my-upcoming-meetings", () => ({
   LIST_MY_UPCOMING_MEETINGS_TOOL: h.def("list_my_upcoming_meetings"),
   runListMyUpcomingMeetings: h.run("runListMyUpcomingMeetings"),
 }));
-vi.mock("../find-mutual-freebusy", () => ({
-  FIND_MUTUAL_FREEBUSY_TOOL: h.def("find_mutual_freebusy"),
-  runFindMutualFreebusy: h.run("runFindMutualFreebusy"),
-}));
-vi.mock("../search-directory", () => ({
-  SEARCH_DIRECTORY_TOOL: h.def("search_directory"),
-  runSearchDirectory: h.run("runSearchDirectory"),
-}));
 vi.mock("../get-member-profile", () => ({
   GET_MEMBER_PROFILE_TOOL: h.def("get_member_profile"),
   runGetMemberProfile: h.run("runGetMemberProfile"),
@@ -60,19 +52,15 @@ vi.mock("../cancel-meeting", () => ({
   runCancelMeeting: h.run("runCancelMeeting"),
 }));
 vi.mock("../list-groups", () => ({ LIST_GROUPS_TOOL: h.def("list_groups"), runListGroups: h.run("runListGroups") }));
-vi.mock("../list-my-projects", () => ({
-  LIST_MY_PROJECTS_TOOL: h.def("list_my_projects"),
-  runListMyProjects: h.run("runListMyProjects"),
-}));
 vi.mock("../list-projects", () => ({
   LIST_PROJECTS_TOOL: h.def("list_projects"),
   runListProjects: h.run("runListProjects"),
 }));
-vi.mock("../list-terms", () => ({ LIST_TERMS_TOOL: h.def("list_terms"), runListTerms: h.run("runListTerms") }));
-vi.mock("../get-project-overview", () => ({
-  GET_PROJECT_OVERVIEW_TOOL: h.def("get_project_overview"),
-  runGetProjectOverview: h.run("runGetProjectOverview"),
+vi.mock("../get-project", () => ({
+  GET_PROJECT_TOOL: h.def("get_project"),
+  runGetProject: h.run("runGetProject"),
 }));
+vi.mock("../list-terms", () => ({ LIST_TERMS_TOOL: h.def("list_terms"), runListTerms: h.run("runListTerms") }));
 vi.mock("../list-my-tasks", () => ({
   LIST_MY_TASKS_TOOL: h.def("list_my_tasks"),
   runListMyTasks: h.run("runListMyTasks"),
@@ -81,10 +69,6 @@ vi.mock("../get-task", () => ({ GET_TASK_TOOL: h.def("get_task"), runGetTask: h.
 vi.mock("../create-project", () => ({
   CREATE_PROJECT_TOOL: h.def("create_project"),
   runCreateProject: h.run("runCreateProject"),
-}));
-vi.mock("../add-task-comment", () => ({
-  ADD_TASK_COMMENT_TOOL: h.def("add_task_comment"),
-  runAddTaskComment: h.run("runAddTaskComment"),
 }));
 vi.mock("../list-sprints", () => ({ LIST_SPRINTS_TOOL: h.def("list_sprints"), runListSprints: h.run("runListSprints") }));
 vi.mock("../list-epics", () => ({ LIST_EPICS_TOOL: h.def("list_epics"), runListEpics: h.run("runListEpics") }));
@@ -107,28 +91,16 @@ vi.mock("../upload-project-file", () => ({
   runUploadProjectFile: h.run("runUploadProjectFile"),
 }));
 vi.mock("../time-entries", () => ({
-  LIST_MY_ROLES_TOOL: h.def("list_my_roles"),
-  runListMyRoles: h.run("runListMyRoles"),
   LIST_MY_TIME_ENTRIES_TOOL: h.def("list_my_time_entries"),
   runListMyTimeEntries: h.run("runListMyTimeEntries"),
 }));
-vi.mock("../project-settings", () => ({
-  GET_PROJECT_SETTINGS_TOOL: h.def("get_project_settings"),
-  runGetProjectSettings: h.run("runGetProjectSettings"),
-}));
 vi.mock("../project-showcase", () => ({
-  GET_PROJECT_SHOWCASE_TOOL: h.def("get_project_showcase"),
-  runGetProjectShowcase: h.run("runGetProjectShowcase"),
   UPDATE_PROJECT_SHOWCASE_TOOL: h.def("update_project_showcase"),
   runUpdateProjectShowcase: h.run("runUpdateProjectShowcase"),
 }));
 vi.mock("../staffing", () => ({
   GET_STAFFING_BOARD_TOOL: h.def("get_staffing_board"),
   runGetStaffingBoard: h.run("runGetStaffingBoard"),
-  SET_STAFFING_ASSIGNMENT_TOOL: h.def("set_staffing_assignment"),
-  runSetStaffingAssignment: h.run("runSetStaffingAssignment"),
-  SET_DOMAIN_ELIGIBILITY_TOOL: h.def("set_domain_eligibility"),
-  runSetDomainEligibility: h.run("runSetDomainEligibility"),
 }));
 vi.mock("../document-curation", () => ({
   LIST_DOCUMENT_SHARING_TOOL: h.def("list_document_sharing"),
@@ -163,11 +135,9 @@ const ARGS = { id: "x1" };
 type Shape = "caller" | "callerArgs" | "user" | "args" | "callerOnly" | "userOnly" | "none";
 
 const EXPECTED: [string, string, Shape][] = [
-  ["whoami", "runWhoami", "userOnly"],
+  ["whoami", "runWhoami", "user"],
   ["list_my_notifications", "runListMyNotifications", "callerArgs"],
   ["list_my_upcoming_meetings", "runListMyUpcomingMeetings", "callerArgs"],
-  ["find_mutual_freebusy", "runFindMutualFreebusy", "caller"],
-  ["search_directory", "runSearchDirectory", "args"],
   ["get_member_profile", "runGetMemberProfile", "caller"],
   ["schedule_meeting", "runScheduleMeeting", "user"],
   ["list_my_calendar_links", "runListMyCalendarLinks", "callerOnly"],
@@ -177,14 +147,12 @@ const EXPECTED: [string, string, Shape][] = [
   ["set_notification_preference", "runSetNotificationPreference", "caller"],
   ["cancel_meeting", "runCancelMeeting", "caller"],
   ["list_groups", "runListGroups", "caller"],
-  ["list_my_projects", "runListMyProjects", "caller"],
   ["list_projects", "runListProjects", "caller"],
+  ["get_project", "runGetProject", "caller"],
   ["list_terms", "runListTerms", "none"],
-  ["get_project_overview", "runGetProjectOverview", "args"],
   ["list_my_tasks", "runListMyTasks", "caller"],
   ["get_task", "runGetTask", "caller"],
   ["create_project", "runCreateProject", "caller"],
-  ["add_task_comment", "runAddTaskComment", "caller"],
   ["list_sprints", "runListSprints", "caller"],
   ["list_epics", "runListEpics", "caller"],
   ["list_project_pages", "runListProjectPages", "caller"],
@@ -193,14 +161,9 @@ const EXPECTED: [string, string, Shape][] = [
   ["set_page_content", "runSetPageContent", "caller"],
   ["list_project_files", "runListProjectFiles", "caller"],
   ["upload_project_file", "runUploadProjectFile", "caller"],
-  ["list_my_roles", "runListMyRoles", "caller"],
   ["list_my_time_entries", "runListMyTimeEntries", "caller"],
-  ["get_project_settings", "runGetProjectSettings", "caller"],
-  ["get_project_showcase", "runGetProjectShowcase", "caller"],
   ["update_project_showcase", "runUpdateProjectShowcase", "caller"],
   ["get_staffing_board", "runGetStaffingBoard", "caller"],
-  ["set_staffing_assignment", "runSetStaffingAssignment", "caller"],
-  ["set_domain_eligibility", "runSetDomainEligibility", "caller"],
   ["list_document_sharing", "runListDocumentSharing", "caller"],
   ["list_file_shares", "runListFileShares", "caller"],
   ["list_page_shares", "runListPageShares", "caller"],

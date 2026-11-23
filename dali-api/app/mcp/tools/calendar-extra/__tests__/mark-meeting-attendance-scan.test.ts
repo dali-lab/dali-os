@@ -42,7 +42,10 @@ import { prisma } from "~/lib/db.server";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { markMeetingAttendance } from "~/calendar/lib/meeting-roster.server";
 import { walletTokensConfigured, memberIdFromToken, verifyWalletToken } from "~/wallet/lib/wallet-token.server";
-import { runScanAttendee, SCAN_ATTENDEE_DEF } from "~/mcp/tools/calendar-extra/scan-attendee";
+import { runMarkMeetingAttendance, MARK_MEETING_ATTENDANCE_DEF } from "~/mcp/tools/calendar-extra/mark-meeting-attendance";
+
+const runScanAttendee = (callerId: string, input: { meetingId: string; memberToken: string }) =>
+  runMarkMeetingAttendance(callerId, input);
 
 const mockPrisma = prisma as unknown as {
   scheduledMeeting: { findUnique: ReturnType<typeof vi.fn> };
@@ -62,9 +65,45 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe("scan_attendee", () => {
-  it("requires mcp:write scope", () => {
-    expect(SCAN_ATTENDEE_DEF.requiredScope).toBe("mcp:write");
+describe("mark_meeting_attendance with memberToken", () => {
+  it("requires mcp:write scope and offers memberToken beside userId", () => {
+    expect(MARK_MEETING_ATTENDANCE_DEF.requiredScope).toBe("mcp:write");
+    expect(MARK_MEETING_ATTENDANCE_DEF.inputSchema.properties).toHaveProperty("memberToken");
+    expect(MARK_MEETING_ATTENDANCE_DEF.inputSchema.required).toEqual(["meetingId"]);
+  });
+
+  it("needs exactly one of userId or memberToken", async () => {
+    await expect(runMarkMeetingAttendance("u-org", { meetingId: "m1", present: true })).rejects.toMatchObject({
+      name: "McpInvalidError",
+    });
+    await expect(
+      runMarkMeetingAttendance("u-org", { meetingId: "m1", userId: "u2", memberToken: "tok", present: true }),
+    ).rejects.toMatchObject({ name: "McpInvalidError" });
+    expect(mockPrisma.scheduledMeeting.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("requires present with userId and refuses to mark a scanned pass absent", async () => {
+    await expect(runMarkMeetingAttendance("u-org", { meetingId: "m1", userId: "u2" })).rejects.toMatchObject({
+      name: "McpInvalidError",
+    });
+    await expect(
+      runMarkMeetingAttendance("u-org", { meetingId: "m1", memberToken: "tok", present: false }),
+    ).rejects.toMatchObject({ name: "McpInvalidError" });
+    expect(markMeetingAttendance).not.toHaveBeenCalled();
+  });
+
+  it("scans a meeting that has no attendance roster", async () => {
+    vi.mocked(walletTokensConfigured).mockReturnValue(true);
+    mockPrisma.scheduledMeeting.findUnique.mockResolvedValue({ id: "m1", organizerId: "u-org", projectId: null });
+    vi.mocked(isCore).mockResolvedValue(false);
+    vi.mocked(isProjectMember).mockResolvedValue(false);
+    vi.mocked(memberIdFromToken).mockReturnValue("u-member");
+    mockPrisma.user.findUnique.mockResolvedValue({ id: "u-member", firstName: "D", lastName: "B", photoUrl: null, walletPassSecret: "s" });
+    vi.mocked(verifyWalletToken).mockReturnValue({ ok: true, memberId: "u-member" });
+    vi.mocked(markMeetingAttendance).mockResolvedValue({ ok: true });
+    const out = await runScanAttendee("u-org", { meetingId: "m1", memberToken: "tok" });
+    expect(out.ok).toBe(true);
+    expect(markMeetingAttendance).toHaveBeenCalledWith("m1", "u-member", true, "u-org", expect.any(Date));
   });
 
   it("throws McpInvalidError when wallet tokens not configured", async () => {

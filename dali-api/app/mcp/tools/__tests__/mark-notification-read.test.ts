@@ -138,7 +138,7 @@ describe("mark_notification_read", () => {
 
   // ── Form todo handling ────────────────────────────────────────────────────
 
-  it("skips a self-clearing form todo without dismiss intent", async () => {
+  it("skips a self-clearing form todo without the dismiss action", async () => {
     mockPrisma.notification.findUnique.mockResolvedValue({
       recipientUserId: "u1",
       readAt: null,
@@ -153,7 +153,7 @@ describe("mark_notification_read", () => {
     expect(mockPrisma.notification.update).not.toHaveBeenCalled();
   });
 
-  it("force-clears a form todo with intent=dismiss", async () => {
+  it("force-clears a form todo with action=dismiss", async () => {
     mockPrisma.notification.findUnique.mockResolvedValue({
       recipientUserId: "u1",
       readAt: null,
@@ -164,14 +164,14 @@ describe("mark_notification_read", () => {
       form: { published: true, publicToken: "tok" },
     });
     mockPrisma.notification.update.mockResolvedValue({});
-    const out = await runMarkNotificationRead("u1", { notificationId: "n1", intent: "dismiss" });
+    const out = await runMarkNotificationRead("u1", { notificationId: "n1", action: "dismiss" });
     expect(out).toEqual({ ok: true, alreadyRead: false });
     expect(mockPrisma.notification.update).toHaveBeenCalled();
   });
 
-  // ── intent=unread ─────────────────────────────────────────────────────────
+  // ── action=unread ─────────────────────────────────────────────────────────
 
-  it("re-opens a cleared notification with intent=unread", async () => {
+  it("re-opens a cleared notification with action=unread", async () => {
     mockPrisma.notification.findUnique.mockResolvedValue({
       recipientUserId: "u1",
       readAt: new Date("2026-09-01T00:00:00Z"),
@@ -182,14 +182,14 @@ describe("mark_notification_read", () => {
       form: null,
     });
     mockPrisma.notification.update.mockResolvedValue({});
-    const out = await runMarkNotificationRead("u1", { notificationId: "n1", intent: "unread" });
+    const out = await runMarkNotificationRead("u1", { notificationId: "n1", action: "unread" });
     expect(out).toEqual({ ok: true, alreadyRead: false });
     expect(mockPrisma.notification.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: { readAt: null } }),
     );
   });
 
-  it("no-ops intent=unread on a meeting-invite (returns skipped)", async () => {
+  it("no-ops action=unread on a meeting-invite (returns skipped)", async () => {
     mockPrisma.notification.findUnique.mockResolvedValue({
       recipientUserId: "u1",
       readAt: new Date(),
@@ -199,7 +199,7 @@ describe("mark_notification_read", () => {
       isTodo: false,
       form: null,
     });
-    const out = await runMarkNotificationRead("u1", { notificationId: "n1", intent: "unread" });
+    const out = await runMarkNotificationRead("u1", { notificationId: "n1", action: "unread" });
     expect(out).toEqual({ ok: true, skipped: "meeting-invite" });
     expect(mockPrisma.notification.update).not.toHaveBeenCalled();
   });

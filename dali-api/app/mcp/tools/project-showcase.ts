@@ -43,22 +43,7 @@ export class ShowcaseInvalidError extends Error {
   }
 }
 
-// ─── get_project_showcase ────────────────────────────────────────────────────
-
-export const GET_PROJECT_SHOWCASE_TOOL = {
-  name: "get_project_showcase",
-  description:
-    "Read a project's public showcase card — the statement, tags, links and publication status shown on dali.website — plus which page is its public write-up. Returns nulls when the project has no showcase row yet.",
-  inputSchema: {
-    type: "object" as const,
-    properties: {
-      projectId: { type: "string", minLength: 1, description: "Project.id." },
-    },
-    required: ["projectId"],
-    additionalProperties: false,
-  },
-  requiredScope: "mcp:read" as const,
-};
+// ─── showcase ───────────────────────────────────────────────────────────────
 
 export type ShowcaseOut = {
   projectId: string;

@@ -17,10 +17,7 @@ vi.mock("~/lib/roles", async (orig) => {
 
 import { prisma } from "~/lib/db.server";
 import { isCore, isProjectMember } from "~/lib/roles";
-import {
-  runManageTaskFiles,
-  MANAGE_TASK_FILES_TOOL,
-} from "~/mcp/tools/projects-extra/manage-task-files";
+import { runManageTaskFiles } from "~/mcp/tools/projects-extra/manage-task-files";
 
 const mockPrisma = prisma as unknown as {
   task: { findUnique: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn> };
@@ -35,11 +32,7 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe("manage_task_files", () => {
-  it("requires mcp:write scope", () => {
-    expect(MANAGE_TASK_FILES_TOOL.requiredScope).toBe("mcp:write");
-  });
-
+describe("task file link and unlink", () => {
   it("throws McpNotFoundError for unknown task", async () => {
     vi.mocked(isCore).mockResolvedValue(true);
     vi.mocked(isProjectMember).mockResolvedValue(false);

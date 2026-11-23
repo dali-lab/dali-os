@@ -1,11 +1,5 @@
-// MCP `list_projects` — the whole project directory, mirroring the web
-// projects hub (requireAuth only: any member browses all projects, all
-// statuses). Complements list_my_projects (staffing-scoped): this is how an
-// agent discovers a project it isn't staffed on — e.g. Core targeting another
-// team's hub for a Notion-export sync. `staffed` marks the caller's own
-// projects so agents can tell the two sets apart.
-
 import { prisma } from "~/lib/db.server";
+import { listMyProjects } from "~/projects/lib/my-projects.server";
 import { offsetPage, offsetWindow, pageProps, type PageArgs } from "../pagination";
 
 const PAGE_LIMITS = { defaultLimit: 50, maxLimit: 200 };
@@ -13,12 +7,20 @@ const PAGE_LIMITS = { defaultLimit: 50, maxLimit: 200 };
 export const LIST_PROJECTS_TOOL = {
   name: "list_projects",
   description:
-    "List every project in the lab (id, name, status, terms, partner orgs): the full directory, not just the caller's assignments. Use list_my_projects for staffed-on detail; get_project_overview to drill into one. Pass page.nextCursor as cursor to read the next page until page.hasMore is false.",
+    "List projects. Default: every project in the lab (id, name, status, terms, partner orgs, staffed flag), paged. With mine: only projects the caller is staffed on (any term), each with current-term role, current sprint and open task count, unpaged. Use get_project to drill into one.",
   inputSchema: {
     type: "object" as const,
     properties: {
+      mine: {
+        type: "boolean",
+        description: "Only the caller's staffed projects, with current-term detail. Ignores status and paging.",
+      },
+      currentTermOnly: {
+        type: "boolean",
+        description: "mine only: limit to projects staffed for the current term. Default false.",
+      },
       status: {
-        description: "Restrict to these statuses. Default: all (Active, Paused, Archived).",
+        description: "Restrict to these statuses. Default: all (Active, Paused, Archived). Ignored with mine.",
         type: "array",
         items: { enum: ["Active", "Paused", "Archived"], type: "string" },
         maxItems: 3,
@@ -30,9 +32,24 @@ export const LIST_PROJECTS_TOOL = {
   requiredScope: "mcp:read" as const,
 };
 
-type Input = PageArgs & { status?: ("Active" | "Paused" | "Archived")[] };
+type Input = PageArgs & {
+  mine?: boolean;
+  currentTermOnly?: boolean;
+  status?: ("Active" | "Paused" | "Archived")[];
+};
 
+export async function runListProjects(callerId: string, input: Input & { mine: true }): ReturnType<typeof listMyProjects>;
+export async function runListProjects(callerId: string, input: Input & { mine?: false }): ReturnType<typeof listAllProjects>;
+export async function runListProjects(
+  callerId: string,
+  input: Input,
+): Promise<Awaited<ReturnType<typeof listMyProjects | typeof listAllProjects>>>;
 export async function runListProjects(callerId: string, input: Input) {
+  if (input.mine) return listMyProjects(callerId, { currentTermOnly: input.currentTermOnly });
+  return listAllProjects(callerId, input);
+}
+
+async function listAllProjects(callerId: string, input: Input) {
   const window = offsetWindow(input, PAGE_LIMITS);
   const where = input.status?.length ? { status: { in: input.status } } : undefined;
   const [fetched, total, assignments] = await Promise.all([

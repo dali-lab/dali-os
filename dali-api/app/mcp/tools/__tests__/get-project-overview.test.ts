@@ -10,7 +10,6 @@ import { prisma } from "~/lib/db.server";
 import { currentTerm } from "~/lib/roles";
 import {
   runGetProjectOverview,
-  GET_PROJECT_OVERVIEW_TOOL,
   ProjectNotFoundError,
 } from "~/mcp/tools/get-project-overview";
 
@@ -29,11 +28,7 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe("get_project_overview", () => {
-  it("requires the mcp:read scope", () => {
-    expect(GET_PROJECT_OVERVIEW_TOOL.requiredScope).toBe("mcp:read");
-  });
-
+describe("project overview", () => {
   it("returns project + current-term roster + active sprint + counts", async () => {
     vi.mocked(currentTerm).mockResolvedValue({ id: "t1", code: "26S" } as never);
     mockPrisma.project.findUnique.mockResolvedValue({

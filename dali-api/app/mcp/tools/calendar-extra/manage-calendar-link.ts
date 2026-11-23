@@ -14,11 +14,11 @@ export const MANAGE_CALENDAR_LINK_DEF = {
   inputSchema: {
     type: "object" as const,
     properties: {
-      intent: {
+      action: {
         type: "string",
-        enum: ["remove-calendar-link", "toggle-sub-calendar"],
+        enum: ["remove", "toggle_sub_calendar"],
         description:
-          "'remove-calendar-link' disconnects the calendar account. 'toggle-sub-calendar' shows/hides a sub-calendar layer.",
+          "'remove' disconnects the calendar account. 'toggle_sub_calendar' shows/hides a sub-calendar layer.",
       },
       linkId: {
         type: "string",
@@ -28,26 +28,26 @@ export const MANAGE_CALENDAR_LINK_DEF = {
       calendarId: {
         type: "string",
         minLength: 1,
-        description: "Sub-calendar ID — required for 'toggle-sub-calendar'.",
+        description: "Sub-calendar ID — required for 'toggle_sub_calendar'.",
       },
       enabled: {
         type: "boolean",
         description:
-          "true = show this sub-calendar in DALI; false = hide it. Required for 'toggle-sub-calendar'.",
+          "true = show this sub-calendar in DALI; false = hide it. Required for 'toggle_sub_calendar'.",
       },
     },
-    required: ["intent", "linkId"],
+    required: ["action", "linkId"],
     additionalProperties: false,
   },
   requiredScope: "mcp:write" as const,
 };
 
 type Input =
-  | { intent: "remove-calendar-link"; linkId: string }
-  | { intent: "toggle-sub-calendar"; linkId: string; calendarId: string; enabled: boolean };
+  | { action: "remove"; linkId: string }
+  | { action: "toggle_sub_calendar"; linkId: string; calendarId: string; enabled: boolean };
 
 export async function runManageCalendarLink(userId: string, input: Input) {
-  if (input.intent === "remove-calendar-link") {
+  if (input.action === "remove") {
     const link = await prisma.userCalendarLink.findUnique({ where: { id: input.linkId } });
     if (!link || link.userId !== userId) {
       throw new McpNotFoundError("Calendar link not found");
@@ -57,7 +57,7 @@ export async function runManageCalendarLink(userId: string, input: Input) {
     return { ok: true };
   }
 
-  if (input.intent === "toggle-sub-calendar") {
+  if (input.action === "toggle_sub_calendar") {
     if (!input.calendarId) throw new McpInvalidError("calendarId is required");
     if (input.enabled === undefined) throw new McpInvalidError("enabled is required");
 
@@ -69,5 +69,5 @@ export async function runManageCalendarLink(userId: string, input: Input) {
     return { ok: true };
   }
 
-  throw new McpInvalidError("Unsupported intent");
+  throw new McpInvalidError("Unsupported action");
 }

@@ -1,34 +1,9 @@
-// MCP `get_project_overview` — read-only drill-down on a Project. Returns the
-// project's identity fields, current-term roster, current sprint (the
-// term-anchored week containing today), current epic (if any), and task-status
-// counts. Read access mirrors the project detail page: any authenticated DALI
-// OS member can load it. Requires the `mcp:read` scope.
-
 import { externalImageUrl } from "~/projects/lib/project-cover.server";
 import { prisma } from "~/lib/db.server";
 import { currentTerm } from "~/lib/roles";
 import { fullName } from "~/lib/display";
 import { currentSprintBand } from "~/projects/lib/task-board";
 import { DAY } from "~/projects/lib/timeline-days";
-
-export const GET_PROJECT_OVERVIEW_TOOL = {
-  name: "get_project_overview",
-  description:
-    "Get a Project's overview: status, current-term roster, active sprint, current epic, task counts by status. Read-only.",
-  inputSchema: {
-    type: "object" as const,
-    properties: {
-      projectId: {
-        type: "string",
-        minLength: 1,
-        description: "Project.id, as returned by `list_my_projects`.",
-      },
-    },
-    required: ["projectId"],
-    additionalProperties: false,
-  },
-  requiredScope: "mcp:read" as const,
-};
 
 type Input = { projectId: string };
 

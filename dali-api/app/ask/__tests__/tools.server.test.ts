@@ -5,7 +5,7 @@ vi.mock("~/lib/db.server");
 import { prisma } from "~/lib/db.server";
 import { ASK_SEARCH_CATEGORIES, ASK_TOOLS, ASK_TOOL_NAMES, type AskToolName } from "../tools.server";
 import type { runMcpSearch } from "~/mcp/tools/docs/search";
-import type { runSearchDirectory } from "~/mcp/tools/search-directory";
+import type { runListMembers } from "~/mcp/tools/personal/list-members";
 import type { runGetMemberProfile } from "~/mcp/tools/get-member-profile";
 import type { runReadPage } from "~/mcp/tools/read-page";
 import type { runListProjectPages } from "~/mcp/tools/list-project-pages";
@@ -15,16 +15,16 @@ import type { runSearchCalendar } from "~/mcp/tools/calendar-extra/search-calend
 import type { runListMyUpcomingMeetings } from "~/mcp/tools/list-my-upcoming-meetings";
 import type { runListMyTasks } from "~/mcp/tools/list-my-tasks";
 import type { runGetTask } from "~/mcp/tools/get-task";
-import type { runListMyProjects } from "~/mcp/tools/list-my-projects";
+import type { runListProjects } from "~/mcp/tools/list-projects";
 import type { runReadHelp } from "~/mcp/tools/read-help";
-import type { runGetProjectOverview } from "~/mcp/tools/get-project-overview";
+import type { runGetProject } from "~/mcp/tools/get-project";
 
 type Result<R extends (...a: never[]) => Promise<unknown>> = Awaited<ReturnType<R>>;
 type DeepPartial<T> = T extends (infer U)[] ? DeepPartial<U>[] : T extends object ? { [K in keyof T]?: DeepPartial<T[K]> } : T;
 
 type Payloads = {
   search: Result<typeof runMcpSearch>;
-  search_directory: Result<typeof runSearchDirectory>;
+  list_members: Result<typeof runListMembers>;
   get_member_profile: Result<typeof runGetMemberProfile>;
   read_page: Result<typeof runReadPage>;
   list_project_pages: Result<typeof runListProjectPages>;
@@ -34,9 +34,9 @@ type Payloads = {
   list_my_upcoming_meetings: Result<typeof runListMyUpcomingMeetings>;
   list_my_tasks: Result<typeof runListMyTasks>;
   get_task: Result<typeof runGetTask>;
-  list_my_projects: Result<typeof runListMyProjects>;
+  list_projects: Result<typeof runListProjects>;
   read_help: Result<typeof runReadHelp>;
-  get_project_overview: Result<typeof runGetProjectOverview>;
+  get_project: Result<typeof runGetProject>;
 };
 
 const mockPrisma = prisma as unknown as {
@@ -56,7 +56,7 @@ describe("ASK_TOOLS", () => {
     expect([...ASK_TOOL_NAMES].sort()).toEqual(
       [
         "search",
-        "search_directory",
+        "list_members",
         "read_page",
         "list_project_pages",
         "get_meeting",
@@ -65,8 +65,8 @@ describe("ASK_TOOLS", () => {
         "list_my_upcoming_meetings",
         "list_my_tasks",
         "get_task",
-        "list_my_projects",
-        "get_project_overview",
+        "list_projects",
+        "get_project",
         "get_member_profile",
         "read_help",
       ].sort(),
@@ -151,7 +151,7 @@ describe("help", () => {
 
 describe("people and projects", () => {
   it("cites directory results and profiles as member pages", async () => {
-    expect(await sources("search_directory", { results: [{ id: "u2", firstName: "Grace", lastName: "Hopper" }] })).toEqual([
+    expect(await sources("list_members", { members: [{ id: "u2", firstName: "Grace", lastName: "Hopper" }] })).toEqual([
       { kind: "person", title: "Grace Hopper", url: "/members/u2" },
     ]);
     expect(await sources("get_member_profile", { id: "u3", firstName: "Ada", lastName: undefined })).toEqual([
@@ -160,12 +160,16 @@ describe("people and projects", () => {
   });
 
   it("cites projects", async () => {
-    expect(await sources("list_my_projects", { projects: [{ id: "pr1", name: "Harbor" }] })).toEqual([
+    expect(await sources("list_projects", { projects: [{ id: "pr1", name: "Harbor" }] })).toEqual([
       { kind: "project", title: "Harbor", url: "/projects/pr1" },
     ]);
-    expect(await sources("get_project_overview", { id: "pr2", name: "Lumen" })).toEqual([
+    expect(await sources("get_project", { overview: { id: "pr2", name: "Lumen" } })).toEqual([
       { kind: "project", title: "Lumen", url: "/projects/pr2" },
     ]);
+    expect(await sources("get_project", { showcase: { projectId: "pr3", projectName: "Dune" } })).toEqual([
+      { kind: "project", title: "Dune", url: "/projects/pr3" },
+    ]);
+    expect(await sources("get_project", {})).toEqual([]);
   });
 
   it("cites tasks on their project board", async () => {
@@ -182,7 +186,7 @@ describe("people and projects", () => {
   });
 
   it("skips records without an id", async () => {
-    expect(await sources("list_my_projects", { projects: [{ name: "No id" }] })).toEqual([]);
+    expect(await sources("list_projects", { projects: [{ name: "No id" }] })).toEqual([]);
     expect(await sources("read_page", { title: "No id" })).toEqual([]);
   });
 });
@@ -273,8 +277,8 @@ describe("every Ask tool cites from a realistic payload", () => {
       payload: { results: [{ type: "project", id: "pr1", title: "Harbor", url: "/projects/pr1" }], categoriesWithMore: [] },
       kinds: ["project"],
     },
-    search_directory: {
-      payload: { results: [{ id: "u1", firstName: "Ada", lastName: "Lovelace", tier: "member", domains: [], currentTermRoles: [] }] },
+    list_members: {
+      payload: { members: [{ id: "u1", firstName: "Ada", lastName: "Lovelace", tier: "member", domains: [], currentTermRoles: [] }] },
       kinds: ["person"],
     },
     get_member_profile: { payload: { id: "u1", firstName: "Ada", lastName: "Lovelace" }, kinds: ["person"] },
@@ -298,9 +302,9 @@ describe("every Ask tool cites from a realistic payload", () => {
       kinds: ["task"],
     },
     get_task: { payload: { id: "t1", title: "Ship", dueAt: null, project: { id: "pr1", name: "Harbor" } }, kinds: ["task"] },
-    list_my_projects: { payload: { projects: [{ id: "pr1", name: "Harbor" }] }, kinds: ["project"] },
+    list_projects: { payload: { projects: [{ id: "pr1", name: "Harbor" }] }, kinds: ["project"] },
     read_help: { payload: { slug: "rooms", title: "Rooms", url: "/help/articles/rooms", body: "" }, kinds: ["helpArticle"] },
-    get_project_overview: { payload: { id: "pr1", name: "Harbor" }, kinds: ["project"] },
+    get_project: { payload: { overview: { id: "pr1", name: "Harbor" } }, kinds: ["project"] },
   };
 
   it("covers every tool", () => {

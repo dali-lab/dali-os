@@ -7,8 +7,10 @@ import { runDeleteTask } from "../delete-task";
 import { SET_TASK_CHECKLIST_PROPERTIES, runSetTaskChecklist } from "../set-task-checklist";
 import { LINK_TASK_TO_GITHUB_PROPERTIES, runLinkTaskToGithub } from "../link-task-to-github";
 import { runUnlinkTaskFromGithub } from "../unlink-task-from-github";
+import { runAddTaskComment } from "../add-task-comment";
+import { runManageTaskFiles } from "../projects-extra/manage-task-files";
 
-const ACTIONS = ["create", "update", "set_status", "set_checklist", "delete", "link_github", "unlink_github"] as const;
+const ACTIONS = ["create", "update", "set_status", "set_checklist", "delete", "link_github", "unlink_github", "comment", "link_file", "unlink_file"] as const;
 
 const MANAGE_TASK_DEF = {
   name: "manage_task",
@@ -20,7 +22,10 @@ const MANAGE_TASK_DEF = {
 - \`delete\`: hard-delete a task with its assignees and comments. Requires taskId. Prefer status Cancelled to keep history.
 - \`link_github\`: mirror a task to a new GitHub issue. Requires taskId, repo (one of the project's repoUrls).
 - \`unlink_github\`: stop mirroring; the GitHub issue stays. Requires taskId.
-Everything except set_status and set_checklist needs Core or project-member access.`,
+- \`comment\`: add a comment. Requires taskId, body. Assignees can do this too.
+- \`link_file\`: attach a project file to the task (idempotent). Requires taskId, fileId.
+- \`unlink_file\`: detach the file; the file itself stays. Requires taskId, fileId.
+Everything except set_status, set_checklist and comment needs Core or project-member access.`,
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -33,6 +38,12 @@ Everything except set_status and set_checklist needs Core or project-member acce
       },
       items: { ...SET_TASK_CHECKLIST_PROPERTIES.items, description: "set_checklist: the whole checklist." },
       repo: LINK_TASK_TO_GITHUB_PROPERTIES.repo,
+      body: { type: "string", minLength: 1, maxLength: 10_000, description: "comment: the comment text." },
+      fileId: {
+        type: "string",
+        minLength: 1,
+        description: "link_file, unlink_file: ProjectFile.id. Must belong to the task's project and not be archived.",
+      },
     },
     required: ["action"],
     additionalProperties: false,
@@ -48,6 +59,9 @@ const ACTION_REQUIRED: Record<(typeof ACTIONS)[number], string[]> = {
   delete: ["taskId"],
   link_github: ["taskId", "repo"],
   unlink_github: ["taskId"],
+  comment: ["taskId", "body"],
+  link_file: ["taskId", "fileId"],
+  unlink_file: ["taskId", "fileId"],
 };
 
 function pick(args: Record<string, unknown>, keys: string[]): any {
@@ -76,6 +90,15 @@ async function run(ctx: McpCtx, args: Record<string, unknown>) {
       return runLinkTaskToGithub(id, pick(args, ["taskId", "repo"]));
     case "unlink_github":
       return runUnlinkTaskFromGithub(id, pick(args, ["taskId"]));
+    case "comment":
+      return runAddTaskComment(id, pick(args, ["taskId", "body"]));
+    case "link_file":
+    case "unlink_file":
+      return runManageTaskFiles(id, {
+        action: action === "link_file" ? "link" : "unlink",
+        taskId: args.taskId as string,
+        fileId: args.fileId as string,
+      });
     default:
       throw new McpInvalidError(`Unknown action '${action}'`);
   }

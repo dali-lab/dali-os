@@ -1,4 +1,4 @@
-// MCP `manage_class` — add, update, or delete a Dartmouth class for the
+// MCP `manage_class` — create, update, or delete a Dartmouth class for the
 // authenticated user. Reuses createClass / updateClass / removeClass from
 // ~/lib/member-class.server. Requires `mcp:write` scope (self only).
 
@@ -14,13 +14,13 @@ import { McpInvalidError, McpNotFoundError } from "../../registry";
 export const MANAGE_CLASS_DEF = {
   name: "manage_class",
   description:
-    "Add, update, or delete a Dartmouth class for yourself. Classes appear in the DALI calendar. Use 'add' or 'update' with a periodCode (e.g. '2A') for scheduled classes, or omit it and provide customMeetings for irregular schedules. The destination controls where events live — use 'local' for DALI-only.",
+    "Create, update, or delete a Dartmouth class for yourself. Classes appear in the DALI calendar. Use 'create' or 'update' with a periodCode (e.g. '2A') for scheduled classes, or omit it and provide customMeetings for irregular schedules. The destination controls where events live — use 'local' for DALI-only.",
   inputSchema: {
     type: "object" as const,
     properties: {
-      intent: {
+      action: {
         type: "string",
-        enum: ["add", "update", "delete"],
+        enum: ["create", "update", "delete"],
         description: "Operation to perform.",
       },
       classId: {
@@ -31,13 +31,13 @@ export const MANAGE_CLASS_DEF = {
       termId: {
         type: "string",
         minLength: 1,
-        description: "Term.id for the class — required for 'add' and 'update'.",
+        description: "Term.id for the class — required for 'create' and 'update'.",
       },
       title: {
         type: "string",
         minLength: 1,
         maxLength: 200,
-        description: "Course title — required for 'add' and 'update'.",
+        description: "Course title — required for 'create' and 'update'.",
       },
       location: {
         type: "string",
@@ -48,7 +48,7 @@ export const MANAGE_CLASS_DEF = {
         type: "string",
         maxLength: 10,
         description:
-          "Dartmouth period code (e.g. '2A', '10'). Either periodCode OR customMeetings must be provided for add/update.",
+          "Dartmouth period code (e.g. '2A', '10'). Either periodCode OR customMeetings must be provided for create/update.",
       },
       includeXHour: {
         type: "boolean",
@@ -95,7 +95,7 @@ export const MANAGE_CLASS_DEF = {
         description: "Section identifier, e.g. '01' (optional).",
       },
     },
-    required: ["intent"],
+    required: ["action"],
     additionalProperties: false,
   },
   requiredScope: "mcp:write" as const,
@@ -108,7 +108,7 @@ type CustomMeeting = {
 };
 
 type Input = {
-  intent: "add" | "update" | "delete";
+  action: "create" | "update" | "delete";
   classId?: string;
   termId?: string;
   title?: string;
@@ -125,7 +125,7 @@ type Input = {
 
 export async function runManageClass(userId: string, input: Input) {
   try {
-    if (input.intent === "delete") {
+    if (input.action === "delete") {
       if (!input.classId) throw new McpInvalidError("classId is required for delete");
       await removeClass(userId, input.classId);
       return { ok: true };
@@ -161,7 +161,7 @@ export async function runManageClass(userId: string, input: Input) {
       section: input.section ?? null,
     };
 
-    if (input.intent === "add") {
+    if (input.action === "create") {
       await createClass(classInput);
       return { ok: true };
     } else {

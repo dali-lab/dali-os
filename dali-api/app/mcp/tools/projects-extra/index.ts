@@ -4,7 +4,6 @@
 import type { McpTool } from "../../registry";
 
 import { UPDATE_PROJECT_TOOL, runUpdateProject } from "./update-project";
-import { MANAGE_TASK_FILES_TOOL, runManageTaskFiles } from "./manage-task-files";
 import { SET_FILE_PARTNER_VISIBILITY_TOOL, runSetFilePartnerVisibility } from "./set-file-partner-visibility";
 import { MANAGE_STAFFING_TOOL, runManageStaffing } from "./manage-staffing";
 import { FINALIZE_STAFFING_TOOL, runFinalizeStaffing } from "./finalize-staffing";
@@ -19,7 +18,6 @@ import {
   FINALIZE_PROJECT_FILE_UPLOAD_TOOL,
   runFinalizeProjectFileUpload,
 } from "./project-file-upload";
-import { PROVISION_EPIC_DESCRIPTION_DOC_TOOL, runProvisionEpicDescriptionDoc } from "./provision-epic-description-doc";
 import {
   LIST_PROJECT_CHART_STRINGS_TOOL,
   runListProjectChartStrings,
@@ -41,16 +39,12 @@ export const PROJECTS_EXTRA_TOOLS: McpTool[] = [
     run: (ctx, args) => runUpdateProject(ctx.user.id, args as any),
   },
   {
-    def: MANAGE_TASK_FILES_TOOL,
-    run: (ctx, args) => runManageTaskFiles(ctx.user.id, args as any),
-  },
-  {
     def: SET_FILE_PARTNER_VISIBILITY_TOOL,
     run: (ctx, args) => runSetFilePartnerVisibility(ctx.user.id, args as any),
   },
   {
     def: MANAGE_STAFFING_TOOL,
-    run: (ctx, args) => runManageStaffing(ctx.user.id, args as any),
+    run: (ctx, args) => runManageStaffing(ctx.user.id, args as any, ctx),
   },
   {
     def: FINALIZE_STAFFING_TOOL,
@@ -83,9 +77,5 @@ export const PROJECTS_EXTRA_TOOLS: McpTool[] = [
   {
     def: FINALIZE_PROJECT_FILE_UPLOAD_TOOL,
     run: (ctx, args) => runFinalizeProjectFileUpload(ctx.user.id, args as any),
-  },
-  {
-    def: PROVISION_EPIC_DESCRIPTION_DOC_TOOL,
-    run: (ctx, args) => runProvisionEpicDescriptionDoc(ctx.user.id, args as any),
   },
 ];

@@ -1,13 +1,19 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db.server");
+vi.mock("~/lib/roles", async (orig) => {
+  const real = await orig<typeof import("~/lib/roles")>();
+  return { ...real, currentTerm: vi.fn() };
+});
 
 import { prisma } from "~/lib/db.server";
+import { currentTerm } from "~/lib/roles";
 import { runListProjects, LIST_PROJECTS_TOOL } from "~/mcp/tools/list-projects";
 
 const mockPrisma = prisma as unknown as {
   project: { findMany: ReturnType<typeof vi.fn>; count: ReturnType<typeof vi.fn> };
   projectAssignment: { findMany: ReturnType<typeof vi.fn> };
+  task: { groupBy: ReturnType<typeof vi.fn> };
 };
 
 beforeEach(() => {
@@ -99,5 +105,58 @@ describe("list_projects", () => {
 
   it("rejects a bad cursor", async () => {
     await expect(runListProjects("u1", { cursor: "nope" })).rejects.toThrow(/Invalid cursor/);
+  });
+
+  describe("mine", () => {
+    const WIDE_TERM = {
+      term: {
+        code: "26S",
+        startDate: new Date("2000-01-03T00:00:00Z"),
+        endDate: new Date("2100-01-01T00:00:00Z"),
+        sortKey: 1,
+      },
+    };
+
+    it("returns only the caller's staffed projects with current-term detail, not the directory", async () => {
+      vi.mocked(currentTerm).mockResolvedValue({ id: "t1", code: "26S" } as never);
+      mockPrisma.projectAssignment.findMany.mockResolvedValue([
+        { projectId: "p1", termId: "t1", level: "P3", term: { code: "26S" }, domain: { displayName: "Fullstack Dev" } },
+        { projectId: "p2", termId: "t-old", level: "P2", term: { code: "25F" }, domain: { displayName: "Design" } },
+      ]);
+      mockPrisma.project.findMany.mockResolvedValue([
+        { id: "p1", name: "Alpha", status: "Active", imageUrl: null, projectTerms: [WIDE_TERM] },
+        { id: "p2", name: "Beta", status: "Active", imageUrl: null, projectTerms: [] },
+      ]);
+      mockPrisma.task.groupBy.mockResolvedValue([{ projectId: "p1", _count: { _all: 7 } }]);
+
+      const out = (await runListProjects("u1", { mine: true })) as { projects: Record<string, unknown>[] };
+      expect(out).not.toHaveProperty("page");
+      expect(out.projects).toHaveLength(2);
+      expect(out.projects[0]).toMatchObject({
+        id: "p1",
+        currentTermAssignment: { termCode: "26S", domainName: "Fullstack Dev", level: "P3" },
+        openTaskCount: 7,
+      });
+      expect(out.projects[1]).toMatchObject({ id: "p2", currentTermAssignment: null, activeSprint: null, openTaskCount: 0 });
+      expect(mockPrisma.projectAssignment.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ userId: "u1" }) }),
+      );
+      expect(mockPrisma.project.count).not.toHaveBeenCalled();
+    });
+
+    it("returns an empty list when the caller has no assignments", async () => {
+      vi.mocked(currentTerm).mockResolvedValue({ id: "t1", code: "26S" } as never);
+      mockPrisma.projectAssignment.findMany.mockResolvedValue([]);
+      await expect(runListProjects("u1", { mine: true })).resolves.toEqual({ projects: [] });
+    });
+
+    it("limits to the current term with currentTermOnly", async () => {
+      vi.mocked(currentTerm).mockResolvedValue({ id: "t1", code: "26S" } as never);
+      mockPrisma.projectAssignment.findMany.mockResolvedValue([]);
+      await runListProjects("u1", { mine: true, currentTermOnly: true });
+      expect(mockPrisma.projectAssignment.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ termId: "t1" }) }),
+      );
+    });
   });
 });
