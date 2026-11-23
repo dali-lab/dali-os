@@ -68,7 +68,7 @@ describe("duplicatePage", () => {
       select: { state: true },
     });
     expect(mockPrisma.slideDeck.create).toHaveBeenCalledWith({
-      data: { pageId: NEW_PAGE_ID, storage: "yjs", lastEditedById: "user-1" },
+      data: { pageId: NEW_PAGE_ID, lastEditedById: "user-1" },
     });
     expect(mockPrisma.collabDocument.create).toHaveBeenCalledWith({
       data: { name: `slides:${NEW_PAGE_ID}:deck`, state },

@@ -140,7 +140,7 @@ export async function duplicatePage(
   if (source.kind === "Slides") {
     const state = await prisma.collabDocument.findUnique({ where: { name: slidesRoomName(source.id) }, select: { state: true } });
     if (state) {
-      await prisma.slideDeck.create({ data: { pageId: newPage.id, storage: "yjs", lastEditedById: input.createdById } });
+      await prisma.slideDeck.create({ data: { pageId: newPage.id, lastEditedById: input.createdById } });
       await prisma.collabDocument.create({ data: { name: slidesRoomName(newPage.id), state: state.state } });
     } else {
       await ensureLiveDeck(newPage.id, input.createdById);
