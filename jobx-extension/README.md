@@ -4,9 +4,9 @@ Fills the Dartmouth JobX (`Tsx_StuManageTimesheet.aspx`) timesheet from your
 DALI OS **Timesheet tab** hours (`dali-api/app/calendar/routes/calendar.tsx`) —
 attendance-derived entries from meeting notes plus anything you logged
 manually. You pick one of your paid roles and one of its pay periods, review
-the entries, and the extension fills each day's Start/End/PayCode/Note fields
-and clicks that day's **Save Entry** itself, one day at a time, resuming
-automatically as JobX reloads the page after each save. It never submits the
+the entries, and the extension saves each one into that day's row the way
+JobX's **Save Entry** button would, then reloads the page once at the end. It
+never submits the
 timesheet — nothing reaches payroll until you submit the period in JobX.
 
 ## How it works
@@ -22,9 +22,8 @@ timesheet — nothing reaches payroll until you submit the period in JobX.
   the open JobX page are shown but skipped.
 - Entries JobX already has are skipped and marked *Already in JobX*. A match
   is the same day, start and end time, read from JobX's saved rows
-  (`tr.QuickDisplayRow`); the note doesn't count. The check runs again before
-  each save, so restarting a fill that was stopped partway doesn't save
-  anything twice.
+  (`tr.QuickDisplayRow`); the note doesn't count. Restarting a fill that was
+  stopped partway doesn't save anything twice.
 - The server is always production DALI OS (`https://os.dali.dartmouth.edu`),
   hardcoded in `background.js`. There's no server picker — members shouldn't
   have to think about it. To test against staging or local dev, change `BASE`
@@ -35,9 +34,13 @@ timesheet — nothing reaches payroll until you submit the period in JobX.
   `SameSite=Lax` BetterAuth session cookie (`__Secure-dali.session_token`) — every pull came back 401. The
   worker runs on the extension's origin with `host_permissions` for DALI, so
   the cookie is sent and CORS doesn't apply.
-- JobX's Save is a full-page ASP.NET postback, so the extension persists its
-  remaining plan in `chrome.storage.local` and continues on each page load —
-  hands-off until every entry is saved. **Stop** cancels the rest.
+- JobX's Save is a full-page ASP.NET postback. Rather than click it and wait
+  for a reload per entry, the content script posts the same form itself with
+  `fetch`: the page's form as loaded, that day's fields set, the Save button's
+  name, and the hidden ASP.NET fields (`__VIEWSTATE`, `__EVENTVALIDATION`)
+  from the previous response. Each save is checked by finding the entry in the
+  response's saved rows; if it's missing the fill stops there. The page
+  reloads once when the fill ends. **Stop** ends it after the save in flight.
 
 ## The DALI backend contract
 
