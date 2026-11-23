@@ -38,8 +38,18 @@ type Input = PageArgs & {
   status?: ("Active" | "Paused" | "Archived")[];
 };
 
+export async function runListProjects(callerId: string, input: Input & { mine: true }): ReturnType<typeof listMyProjects>;
+export async function runListProjects(callerId: string, input: Input & { mine?: false }): ReturnType<typeof listAllProjects>;
+export async function runListProjects(
+  callerId: string,
+  input: Input,
+): Promise<Awaited<ReturnType<typeof listMyProjects | typeof listAllProjects>>>;
 export async function runListProjects(callerId: string, input: Input) {
   if (input.mine) return listMyProjects(callerId, { currentTermOnly: input.currentTermOnly });
+  return listAllProjects(callerId, input);
+}
+
+async function listAllProjects(callerId: string, input: Input) {
   const window = offsetWindow(input, PAGE_LIMITS);
   const where = input.status?.length ? { status: { in: input.status } } : undefined;
   const [fetched, total, assignments] = await Promise.all([

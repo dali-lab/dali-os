@@ -2,7 +2,7 @@ import { prisma } from "~/lib/db.server";
 import { canManageStaffing } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
 import type { Level } from "~/generated/prisma/client";
-import type { McpCtx } from "../registry";
+import type { McpCtx } from "../../registry";
 import { LEVELS, runSetDomainEligibility, runSetStaffingAssignment } from "../staffing";
 import { McpForbiddenError, McpNotFoundError, McpInvalidError, requireForAction } from "./errors";
 import { publishCycleChange } from "~/projects/lib/staffing-events.server";

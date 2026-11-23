@@ -93,14 +93,16 @@ const MESSAGES: Record<ProfileField, string> = {
   unique: "A unique constraint was violated",
 };
 
-export async function runUpdateProfile(userId: string, input: Input) {
+type Updated = Awaited<ReturnType<typeof updateProfileFields>>["updated"];
+
+export async function runUpdateProfile(userId: string, input: Input): Promise<{ ok: true; updated: Updated }> {
   const { timezone, hideActivity, ...rest } = input;
   try {
     const fields = { ...rest, ...(timezone !== undefined ? { timeZone: timezone } : {}) };
     const { updated } =
       Object.keys(fields).length > 0 || hideActivity === undefined
         ? await updateProfileFields(userId, fields, { allowNetId: false })
-        : { updated: {} as Awaited<ReturnType<typeof updateProfileFields>>["updated"] };
+        : { updated: {} as Updated };
     if (hideActivity !== undefined) {
       await prisma.user.update({ where: { id: userId }, data: { hideActivity } });
     }
