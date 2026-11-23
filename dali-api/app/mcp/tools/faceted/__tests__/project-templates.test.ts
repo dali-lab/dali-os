@@ -39,7 +39,7 @@ describe("list_project_templates", () => {
 
 describe("manage_project_template", () => {
   it("no longer lists", async () => {
-    const actions = (MANAGE_PROJECT_TEMPLATE_TOOL.def.inputSchema.properties.action as { enum: string[] }).enum;
+    const actions = (MANAGE_PROJECT_TEMPLATE_TOOL.def.inputSchema.properties!.action as { enum: string[] }).enum;
     expect(actions).toEqual(["capture", "instantiate", "delete"]);
     await expect(MANAGE_PROJECT_TEMPLATE_TOOL.run(ctx, { action: "list" })).rejects.toMatchObject({ status: 400 });
   });
