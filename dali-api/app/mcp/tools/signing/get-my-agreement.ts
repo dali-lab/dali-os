@@ -1,25 +1,9 @@
-// MCP tool: get_binding_to_sign — mcp:read (member). Returns the agreement body,
-// field definitions, and resolved variables for one binding the caller is about
-// to sign. Lets a caller inspect what they're signing before calling sign_document.
-// Mirrors the data the sign.$bindingId.tsx loader supplies to the fill surface.
-
 import { prisma } from "~/lib/db.server";
 import { collectSigningFields } from "~/lib/signing-fields";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { getBindingStateForUser, getSignerCohortsForBinding } from "~/signing/lib/state.server";
 import { resolveSigningVariablesForSigner } from "~/signing/lib/variables.server";
 import { AUDIENCE_RESOLVERS } from "~/signing/lib/audiences";
-
-// Inline helper — same logic as looksLikeProseMirrorDoc in components/doc but
-// avoids pulling the React component barrel into this server-only MCP tool.
-function isLegacyBody(value: unknown): boolean {
-  return (
-    !!value &&
-    typeof value === "object" &&
-    "type" in (value as object) &&
-    (value as { type: unknown }).type === "doc"
-  );
-}
 import {
   McpNotFoundError,
   McpForbiddenError,
@@ -27,18 +11,21 @@ import {
   type McpCtx,
 } from "../../registry";
 
-// ─── Tool definition ──────────────────────────────────────────────────────────
-
-export const GET_BINDING_TO_SIGN_TOOL = {
-  name: "get_binding_to_sign",
+export const GET_MY_AGREEMENT_TOOL = {
+  name: "get_my_agreement",
   description:
-    "Return the agreement body, field definitions, and resolved merge variables for a binding the caller must sign — lets a caller inspect the document before calling sign_document. Returns 403 if the caller is not in the audience and has not yet signed; 404 if the binding doesn't exist.",
+    "Read one agreement binding as the caller. view to_sign (default) returns the body, signing fields and merge variables, so you can inspect it before sign_document; it needs the caller to be in the audience or to have signed already. view signed returns the caller's own signed copy: signature id, version, typed name and signing time.",
   inputSchema: {
     type: "object" as const,
     properties: {
       bindingId: {
         type: "string",
-        description: "The binding id returned by list_documents_to_sign.",
+        description: "A binding id from list_my_agreements.",
+      },
+      view: {
+        type: "string",
+        enum: ["to_sign", "signed"],
+        description: "to_sign or signed. Defaults to to_sign.",
       },
     },
     required: ["bindingId"],
@@ -47,9 +34,18 @@ export const GET_BINDING_TO_SIGN_TOOL = {
   requiredScope: "mcp:read" as const,
 };
 
-type Args = { bindingId: string };
+type Args = { bindingId: string; view?: "to_sign" | "signed" };
 
-export async function runGetBindingToSign(ctx: McpCtx, args: Args) {
+function isLegacyBody(value: unknown): boolean {
+  return (
+    !!value &&
+    typeof value === "object" &&
+    "type" in (value as object) &&
+    (value as { type: unknown }).type === "doc"
+  );
+}
+
+async function runToSign(ctx: McpCtx, args: Args) {
   const { bindingId } = args;
   const userId = ctx.user.id;
 
@@ -76,7 +72,6 @@ export async function runGetBindingToSign(ctx: McpCtx, args: Args) {
     getSignerCohortsForBinding(userId, binding.termId),
   ]);
 
-  // Gate: only members in the audience OR who have already signed may inspect.
   const inAudience = AUDIENCE_RESOLVERS[binding.document.audience].includes(cohorts);
   if (state.status !== "signed" && !inAudience) {
     throw new McpForbiddenError("You are not in the audience for this agreement.");
@@ -90,7 +85,6 @@ export async function runGetBindingToSign(ctx: McpCtx, args: Args) {
     termId: binding.termId ?? undefined,
   });
 
-  // Convert legacy ProseMirror body to block JSON on read (never rewritten to DB).
   const body = ensureBlocks(binding.version.body);
   const fields = collectSigningFields(body);
 
@@ -98,19 +92,57 @@ export async function runGetBindingToSign(ctx: McpCtx, args: Args) {
     bindingId,
     documentName: binding.document.name,
     status: state.status,
-    // Block-JSON body with merge-variable placeholders still in place.
     body,
-    // Whether the raw stored body was legacy ProseMirror JSON (pre-migration);
-    // the returned body has always been converted to block JSON.
     bodyWasLegacy: isLegacyBody(binding.version.body),
-    // Merge-variable map so callers can preview what {{term}} etc. will expand to.
     variables,
-    // Signing fields the member must fill before sign_document will accept the call.
     fields,
   };
 }
 
-export const GET_BINDING_TO_SIGN: McpTool = {
-  def: GET_BINDING_TO_SIGN_TOOL,
-  run: (ctx: McpCtx, args) => runGetBindingToSign(ctx, args as Args),
+async function runSigned(ctx: McpCtx, args: Args) {
+  const sig = await prisma.signingSignature.findUnique({
+    where: {
+      bindingId_signerUserId_roleKey: {
+        bindingId: args.bindingId,
+        signerUserId: ctx.user.id,
+        roleKey: "member",
+      },
+    },
+    select: {
+      id: true,
+      signedAt: true,
+      typedName: true,
+      frozenBody: true,
+      bindingId: true,
+      binding: {
+        select: {
+          document: { select: { name: true } },
+          version: { select: { versionNumber: true, body: true } },
+        },
+      },
+    },
+  });
+
+  if (!sig) throw new McpNotFoundError("No signature found for this binding.");
+
+  const archiveBody = sig.frozenBody ?? sig.binding.version.body;
+
+  return {
+    signatureId: sig.id,
+    bindingId: sig.bindingId,
+    documentName: sig.binding.document.name,
+    versionNumber: sig.binding.version.versionNumber,
+    signedAt: sig.signedAt.toISOString(),
+    typedName: sig.typedName,
+    frozenBodyIsLegacy: isLegacyBody(archiveBody),
+  };
+}
+
+export async function runGetMyAgreement(ctx: McpCtx, args: Args) {
+  return args.view === "signed" ? runSigned(ctx, args) : runToSign(ctx, args);
+}
+
+export const GET_MY_AGREEMENT: McpTool = {
+  def: GET_MY_AGREEMENT_TOOL,
+  run: (ctx: McpCtx, args) => runGetMyAgreement(ctx, args as Args),
 };

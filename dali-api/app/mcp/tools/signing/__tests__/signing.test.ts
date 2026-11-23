@@ -145,13 +145,13 @@ import { resolveAdminScope } from "~/signing/lib/scope.server";
 import { notifySignRequest } from "~/signing/lib/notify.server";
 
 import {
-  LIST_DOCUMENTS_TO_SIGN_TOOL,
-  runListDocumentsToSign,
-} from "../list-documents-to-sign";
+  LIST_MY_AGREEMENTS_TOOL,
+  runListMyAgreements,
+} from "../list-my-agreements";
 import {
-  GET_SIGNED_DOCUMENT_TOOL,
-  runGetSignedDocument,
-} from "../get-signed-document";
+  GET_MY_AGREEMENT_TOOL,
+  runGetMyAgreement,
+} from "../get-my-agreement";
 import {
   LIST_AGREEMENT_SIGNATURES_TOOL,
   runListAgreementSignatures,
@@ -209,11 +209,11 @@ beforeEach(() => {
 // ─── Scopes ───────────────────────────────────────────────────────────────────
 
 describe("scopes", () => {
-  it("list_documents_to_sign requires mcp:read", () => {
-    expect(LIST_DOCUMENTS_TO_SIGN_TOOL.requiredScope).toBe("mcp:read");
+  it("list_my_agreements requires mcp:read", () => {
+    expect(LIST_MY_AGREEMENTS_TOOL.requiredScope).toBe("mcp:read");
   });
-  it("get_signed_document requires mcp:read", () => {
-    expect(GET_SIGNED_DOCUMENT_TOOL.requiredScope).toBe("mcp:read");
+  it("get_my_agreement requires mcp:read", () => {
+    expect(GET_MY_AGREEMENT_TOOL.requiredScope).toBe("mcp:read");
   });
   it("list_agreement_signatures requires mcp:admin", () => {
     // Core-only at runtime — the scope tag matches the gate (A9).
@@ -229,7 +229,7 @@ describe("scopes", () => {
 
 // ─── list_documents_to_sign ───────────────────────────────────────────────────
 
-describe("list_documents_to_sign", () => {
+describe("list_my_agreements / to_sign", () => {
   it("returns outstanding bindings for the caller", async () => {
     const outstanding = [
       {
@@ -241,26 +241,26 @@ describe("list_documents_to_sign", () => {
       },
     ];
     vi.mocked(listOutstandingBindings).mockResolvedValue(outstanding);
-    const result = await runListDocumentsToSign(ctx());
+    const result = await runListMyAgreements(ctx(), { status: "to_sign" });
     // MCP excludes mentee countersignatures (can't sign one via MCP yet).
     expect(listOutstandingBindings).toHaveBeenCalledWith("u1", { includeMentee: false });
-    expect(result).toEqual({ documents: outstanding });
+    expect(result).toEqual({ toSign: outstanding });
   });
 
   it("returns empty array when no obligations", async () => {
     vi.mocked(listOutstandingBindings).mockResolvedValue([]);
-    const result = await runListDocumentsToSign(ctx());
-    expect(result.documents).toEqual([]);
+    const result = await runListMyAgreements(ctx(), { status: "to_sign" });
+    expect(result.toSign).toEqual([]);
   });
 });
 
 // ─── get_signed_document ──────────────────────────────────────────────────────
 
-describe("get_signed_document", () => {
+describe("get_my_agreement / signed", () => {
   it("throws not-found when no signature exists", async () => {
     mockPrisma.signingSignature.findUnique.mockResolvedValue(null);
     await expect(
-      runGetSignedDocument(ctx(), { bindingId: "b1" }),
+      runGetMyAgreement(ctx(), { view: "signed", bindingId: "b1" }),
     ).rejects.toMatchObject({ name: "McpNotFoundError" });
   });
 
@@ -277,7 +277,7 @@ describe("get_signed_document", () => {
         version: { versionNumber: 2, body: { type: "doc", content: [] } },
       },
     });
-    const result = await runGetSignedDocument(ctx(), { bindingId: "b1" });
+    const result = await runGetMyAgreement(ctx(), { view: "signed", bindingId: "b1" });
     expect(result.signatureId).toBe("sig1");
     expect(result.documentName).toBe("Member Agreement");
     expect(result.versionNumber).toBe(2);
@@ -300,7 +300,7 @@ describe("get_signed_document", () => {
         version: { versionNumber: 1, body: [{ type: "paragraph" }] },
       },
     });
-    const result = await runGetSignedDocument(ctx(), { bindingId: "b2" });
+    const result = await runGetMyAgreement(ctx(), { view: "signed", bindingId: "b2" });
     expect(result.frozenBodyIsLegacy).toBe(false);
   });
 });

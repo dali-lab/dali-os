@@ -118,6 +118,38 @@ describe("MCP registry invariants", () => {
     expect(findRegistryTool("get_backfill_state")).toBeDefined();
   });
 
+  it("has merged and split the forms, agreements and education tools", () => {
+    const removed = [
+      "get_form_summary",
+      "get_form_tracker",
+      "list_documents_to_sign",
+      "list_my_signed_documents",
+      "get_binding_to_sign",
+      "get_signed_document",
+      "submit_education_application",
+      "withdraw_education_application",
+    ];
+    for (const name of removed) expect(findRegistryTool(name)).toBeUndefined();
+    const added = [
+      "set_form_questions",
+      "remind_form_respondents",
+      "list_my_agreements",
+      "get_my_agreement",
+      "remind_agreement_signers",
+      "manage_my_education_application",
+      "manage_offering_instructors",
+    ];
+    for (const name of added) expect(findRegistryTool(name)).toBeDefined();
+  });
+
+  it("marks the tools that email people open-world and the rest of the split tools not", () => {
+    const open = (name: string) => OPEN_WORLD_TOOLS.has(name);
+    expect(["remind_form_respondents", "remind_agreement_signers", "manage_offering_instructors"].every(open)).toBe(true);
+    expect(["manage_form", "manage_education_offering", "set_form_questions"].some(open)).toBe(false);
+    expect(open("manage_agreement")).toBe(true);
+    expect(TOOL_AUDIENCE.remind_agreement_signers).toBe("core");
+  });
+
   it("names only registered tools in the tool policy", () => {
     const names = new Set(REGISTRY_TOOLS.map((t) => t.def.name));
     const listed = [...Object.keys(TOOL_AUDIENCE), ...ADDITIVE_TOOLS, ...OPEN_WORLD_TOOLS];

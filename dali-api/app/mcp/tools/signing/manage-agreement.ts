@@ -54,13 +54,13 @@ async function uniqueSlug(base: string): Promise<string> {
 export const MANAGE_AGREEMENT_TOOL = {
   name: "manage_agreement",
   description:
-    "Core-only. Create, rename, publish, activate, update, delete_version, archive, or remind on a signing document/agreement. Actions: create · rename · publish · activate · update · delete_version · archive · remind. Putting a version in force (activate) records the pre-signed admin-signature counter-signatures placed in the body. Update edits the config facets (gate scope / audience / cadence). delete_version removes an unpublished/unsigned draft version. archive toggles the archivedAt timestamp on the document. remind nudges outstanding signers for a binding (throttled to once per 24h; pass force:true to override).",
+    "Core-only. Create, rename, publish, activate, update, delete_version, or archive a signing document/agreement. Actions: create · rename · publish · activate · update · delete_version · archive. Putting a version in force (activate) records the pre-signed admin-signature counter-signatures placed in the body. Update edits the config facets (gate scope / audience / cadence). delete_version removes an unpublished/unsigned draft version. archive toggles the archivedAt timestamp on the document. Reminders go through remind_agreement_signers.",
   inputSchema: {
     type: "object" as const,
     properties: {
       action: {
         type: "string",
-        enum: ["create", "rename", "publish", "activate", "update", "delete_version", "archive", "remind"],
+        enum: ["create", "rename", "publish", "activate", "update", "delete_version", "archive"],
       },
       documentId: {
         type: "string",
@@ -95,15 +95,6 @@ export const MANAGE_AGREEMENT_TOOL = {
         enum: ["Once", "PerTerm", "PerCycle"],
         description: "Signing cadence. Set on create (defaults to Once) or update.",
       },
-      bindingId: {
-        type: "string",
-        description: "Required for remind.",
-      },
-      force: {
-        type: "boolean",
-        description:
-          "For remind: bypass the 24-hour throttle and nudge all outstanding signers immediately. Defaults to false.",
-      },
     },
     required: ["action"],
     additionalProperties: false,
@@ -120,8 +111,6 @@ type Args = {
   audience?: string;
   audienceGroupId?: string;
   cadence?: string;
-  bindingId?: string;
-  force?: boolean;
 };
 
 // Group targeting for a create/update: an explicit id pins a fixed group; its
@@ -151,7 +140,6 @@ export async function runManageAgreement(ctx: McpCtx, args: Args) {
     update: ["documentId"],
     delete_version: ["documentId", "versionId"],
     archive: ["documentId"],
-    remind: ["bindingId"],
   });
 
   // ─── create ──────────────────────────────────────────────────────────────
@@ -365,47 +353,6 @@ export async function runManageAgreement(ctx: McpCtx, args: Args) {
       request: ctx.request,
     });
     return { ok: true, archived: !!newArchivedAt };
-  }
-
-  // ─── remind ───────────────────────────────────────────────────────────────
-
-  if (args.action === "remind") {
-    const binding = await prisma.signingBinding.findUnique({
-      where: { id: args.bindingId! },
-      select: {
-        id: true,
-        documentId: true,
-        lastRemindedAt: true,
-        document: { select: { archivedAt: true } },
-      },
-    });
-    if (!binding || binding.document.archivedAt) {
-      throw new McpNotFoundError("Binding not found or its agreement is archived.");
-    }
-    const DAY_MS = 24 * 60 * 60 * 1000;
-    const force = args.force ?? false;
-    if (
-      !force &&
-      binding.lastRemindedAt &&
-      Date.now() - binding.lastRemindedAt.getTime() < DAY_MS
-    ) {
-      throw new McpInvalidError(
-        "Already reminded in the last 24 hours. Pass force:true to override.",
-      );
-    }
-    await notifySignRequest(args.bindingId!, { force: true });
-    await prisma.signingBinding.update({
-      where: { id: args.bindingId! },
-      data: { lastRemindedAt: new Date() },
-    });
-    await logAuditEvent({
-      action: "signing.remind",
-      userId: ctx.user.id,
-      targetId: binding.documentId,
-      metadata: { bindingId: args.bindingId, force },
-      request: ctx.request,
-    });
-    return { ok: true };
   }
 
   // requireForAction handles unknown actions — this is unreachable.

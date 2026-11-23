@@ -1673,40 +1673,30 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
   "requiredScope": "mcp:read"
 }
 {
-  "name": "submit_education_application",
-  "description": "Apply to an education offering (workshop or miniseries). Handles new applications, resubmissions (while Submitted), and re-applies after withdrawal. RSVP offerings auto-decide immediately (Approved under capacity, Waitlisted past it); review-required offerings land as Submitted until an instructor decides.",
+  "name": "manage_my_education_application",
+  "description": "Apply to an education offering as yourself, or withdraw your own application. apply handles new applications, resubmissions while Submitted, and re-applies after withdrawal: RSVP offerings decide at once (Approved under capacity, Waitlisted past it), review offerings stay Submitted until an instructor decides. withdraw works for any open status, frees an Approved seat and promotes the next waitlisted applicant.",
   "inputSchema": {
     "type": "object",
     "properties": {
+      "action": {
+        "type": "string",
+        "enum": [
+          "apply",
+          "withdraw"
+        ]
+      },
       "offeringId": {
         "type": "string",
         "minLength": 1
       },
       "answers": {
         "type": "object",
-        "description": "Form answers keyed by question id. Use get_education_offering to check whether the offering has questions. Pass {} for offerings with no required fields.",
+        "description": "Form answers keyed by question id (apply). Check get_education_offering for questions; pass {} when there are none.",
         "additionalProperties": true
       }
     },
     "required": [
-      "offeringId"
-    ],
-    "additionalProperties": false
-  },
-  "requiredScope": "mcp:write"
-}
-{
-  "name": "withdraw_education_application",
-  "description": "Withdraw your own application from an education offering. Works for any non-closed status (Submitted, Approved, Waitlisted). Frees an Approved seat and auto-promotes the next waitlisted applicant.",
-  "inputSchema": {
-    "type": "object",
-    "properties": {
-      "offeringId": {
-        "type": "string",
-        "minLength": 1
-      }
-    },
-    "required": [
+      "action",
       "offeringId"
     ],
     "additionalProperties": false
@@ -1801,7 +1791,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
 }
 {
   "name": "manage_education_offering",
-  "description": "Create, update, set status, set instructors, duplicate, invite/remove external instructors, or bind feedback forms for an education offering. Actions: create (Core only) · update (instructor/Core) · set_status (instructor/Core) · set_instructors (Core only) · delete (Core, Draft only) · duplicate (Core only) · invite_external_instructor (Core only) · remove_external_instructor (Core only) · set_form_binding (instructor/Core). Decision-email copy is edited with manage_email_template.",
+  "description": "Create, update, publish or archive, duplicate or delete an education offering, or bind its feedback forms. Actions: create (Core only) · update (instructor/Core) · set_status (instructor/Core) · delete (Core, Draft only) · duplicate (Core only) · set_form_binding (instructor/Core). Instructors are managed with manage_offering_instructors; decision-email copy with manage_email_template.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -1811,11 +1801,8 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
           "create",
           "update",
           "set_status",
-          "set_instructors",
           "delete",
           "duplicate",
-          "invite_external_instructor",
-          "remove_external_instructor",
           "set_form_binding"
         ]
       },
@@ -1873,32 +1860,9 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
         ],
         "description": "For set_status."
       },
-      "userIds": {
-        "type": "array",
-        "items": {
-          "type": "string"
-        },
-        "description": "For set_instructors: list of user IDs to assign as instructors."
-      },
       "firstSessionDate": {
         "type": "string",
         "description": "duplicate: ISO datetime of the first session in the new run. All other sessions and registration dates are shifted by the same delta. Omit to copy dates as-is."
-      },
-      "netId": {
-        "type": "string",
-        "description": "invite_external_instructor: Dartmouth NetID of the external instructor."
-      },
-      "firstName": {
-        "type": "string",
-        "description": "invite_external_instructor: first name."
-      },
-      "lastName": {
-        "type": "string",
-        "description": "invite_external_instructor: last name."
-      },
-      "userId": {
-        "type": "string",
-        "description": "remove_external_instructor: user ID of the external instructor to remove."
       },
       "slot": {
         "type": "string",
@@ -1917,15 +1881,65 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
   "requiredScope": "mcp:write"
 }
 {
-  "name": "manage_education_session",
-  "description": "Add, update, delete, bulk-generate, or toggle the self-check-in QR window for sessions on an education offering. Actions: add · update · delete · generate_series · set_check_in_open. generate_series has two modes: weekday mode (weekdays + startDate + startTime [+ endTime] + weeks) fills every matching class day in date order, or interval mode (startDatetime + count [+ intervalDays]). Sessions are always renumbered chronologically. Instructor or Core only.",
+  "name": "manage_offering_instructors",
+  "description": "Core only. Set an education offering's instructors, or invite or remove an external instructor. Actions: set · invite_external · remove_external. Inviting emails the instructor.",
   "inputSchema": {
     "type": "object",
     "properties": {
       "action": {
         "type": "string",
         "enum": [
-          "add",
+          "set",
+          "invite_external",
+          "remove_external"
+        ]
+      },
+      "offeringId": {
+        "type": "string",
+        "description": "The offering ID."
+      },
+      "userIds": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "User IDs to assign as the instructors (set)."
+      },
+      "netId": {
+        "type": "string",
+        "description": "Dartmouth NetID of the external instructor (invite_external)."
+      },
+      "firstName": {
+        "type": "string",
+        "description": "First name (invite_external)."
+      },
+      "lastName": {
+        "type": "string",
+        "description": "Last name (invite_external)."
+      },
+      "userId": {
+        "type": "string",
+        "description": "User ID of the external instructor to remove (remove_external)."
+      }
+    },
+    "required": [
+      "action",
+      "offeringId"
+    ],
+    "additionalProperties": false
+  },
+  "requiredScope": "mcp:write"
+}
+{
+  "name": "manage_education_session",
+  "description": "Create, update, delete or bulk-generate sessions for an education offering, or open and close the self-check-in QR window. Actions: create · update · delete · generate_series · set_check_in_open. generate_series runs in weekday mode or interval mode; sessions are always renumbered chronologically. Instructor or Core only.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": [
+          "create",
           "update",
           "delete",
           "generate_series",
@@ -1942,11 +1956,11 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
       },
       "datetime": {
         "type": "string",
-        "description": "ISO datetime start. Required for add and update."
+        "description": "ISO datetime start. Required for create and update."
       },
       "endsAt": {
         "type": "string",
-        "description": "Optional ISO datetime end (add and update). Must be after datetime."
+        "description": "Optional ISO datetime end (create and update). Must be after datetime."
       },
       "title": {
         "type": "string",
@@ -6865,57 +6879,47 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
   "requiredScope": "mcp:admin"
 }
 {
-  "name": "list_documents_to_sign",
-  "description": "List the lab agreements the caller still needs to sign. Returns outstanding bindings (documentId, documentName, versionId) the caller is in the audience for but hasn't signed yet.",
+  "name": "list_my_agreements",
+  "description": "List the caller's lab agreements. toSign is what they still need to sign (documentId, documentName, versionId; bindingId for get_my_agreement). signed is their archive, newest first (signatureId, bindingId, documentName, context, signedAt); hiring confidentiality is left out.",
   "inputSchema": {
     "type": "object",
-    "properties": {},
+    "properties": {
+      "status": {
+        "type": "string",
+        "enum": [
+          "to_sign",
+          "signed",
+          "all"
+        ],
+        "description": "Which list to return. Defaults to all."
+      }
+    },
     "additionalProperties": false
   },
   "requiredScope": "mcp:read"
 }
 {
-  "name": "get_signed_document",
-  "description": "Retrieve the caller's own signed copy of an agreement binding. Returns the document metadata, version number, typed name, and a flag indicating if the archived body is legacy ProseMirror format.",
+  "name": "get_my_agreement",
+  "description": "Read one agreement binding as the caller. view to_sign (default) returns the body, signing fields and merge variables, so you can inspect it before sign_document; it needs the caller to be in the audience or to have signed already. view signed returns the caller's own signed copy: signature id, version, typed name and signing time.",
   "inputSchema": {
     "type": "object",
     "properties": {
       "bindingId": {
         "type": "string",
-        "description": "The binding ID to look up the caller's signature for."
-      }
-    },
-    "required": [
-      "bindingId"
-    ],
-    "additionalProperties": false
-  },
-  "requiredScope": "mcp:read"
-}
-{
-  "name": "get_binding_to_sign",
-  "description": "Return the agreement body, field definitions, and resolved merge variables for a binding the caller must sign — lets a caller inspect the document before calling sign_document. Returns 403 if the caller is not in the audience and has not yet signed; 404 if the binding doesn't exist.",
-  "inputSchema": {
-    "type": "object",
-    "properties": {
-      "bindingId": {
+        "description": "A binding id from list_my_agreements."
+      },
+      "view": {
         "type": "string",
-        "description": "The binding id returned by list_documents_to_sign."
+        "enum": [
+          "to_sign",
+          "signed"
+        ],
+        "description": "to_sign or signed. Defaults to to_sign."
       }
     },
     "required": [
       "bindingId"
     ],
-    "additionalProperties": false
-  },
-  "requiredScope": "mcp:read"
-}
-{
-  "name": "list_my_signed_documents",
-  "description": "Return the caller's personal archive of signed lab agreements (member role only — not hiring confidentiality), newest first. Each item includes the signatureId (link into get_signed_document), bindingId, documentName, context (term code / cycle name / 'Lab-wide'), and signedAt ISO timestamp.",
-  "inputSchema": {
-    "type": "object",
-    "properties": {},
     "additionalProperties": false
   },
   "requiredScope": "mcp:read"
@@ -6973,7 +6977,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
 }
 {
   "name": "get_signed_document_admin",
-  "description": "Core-only. Read another member's full signed copy of an agreement: frozen archival body (with field values baked in), signing metadata (IP, user agent, typed name, role, version number), and whether the body was pre-migration legacy ProseMirror JSON. The existing get_signed_document only returns the caller's own copy; this tool is for Core reviewers auditing compliance.",
+  "description": "Core-only. Read another member's full signed copy of an agreement: frozen archival body (with field values baked in), signing metadata (IP, user agent, typed name, role, version number), and whether the body was pre-migration legacy ProseMirror JSON. The caller-scoped get_my_agreement only returns the caller's own copy; this tool is for Core reviewers auditing compliance.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -7014,7 +7018,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
 }
 {
   "name": "manage_agreement",
-  "description": "Core-only. Create, rename, publish, activate, update, delete_version, archive, or remind on a signing document/agreement. Actions: create · rename · publish · activate · update · delete_version · archive · remind. Putting a version in force (activate) records the pre-signed admin-signature counter-signatures placed in the body. Update edits the config facets (gate scope / audience / cadence). delete_version removes an unpublished/unsigned draft version. archive toggles the archivedAt timestamp on the document. remind nudges outstanding signers for a binding (throttled to once per 24h; pass force:true to override).",
+  "description": "Core-only. Create, rename, publish, activate, update, delete_version, or archive a signing document/agreement. Actions: create · rename · publish · activate · update · delete_version · archive. Putting a version in force (activate) records the pre-signed admin-signature counter-signatures placed in the body. Update edits the config facets (gate scope / audience / cadence). delete_version removes an unpublished/unsigned draft version. archive toggles the archivedAt timestamp on the document. Reminders go through remind_agreement_signers.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -7027,8 +7031,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
           "activate",
           "update",
           "delete_version",
-          "archive",
-          "remind"
+          "archive"
         ]
       },
       "documentId": {
@@ -7076,18 +7079,32 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
           "PerCycle"
         ],
         "description": "Signing cadence. Set on create (defaults to Once) or update."
-      },
-      "bindingId": {
-        "type": "string",
-        "description": "Required for remind."
-      },
-      "force": {
-        "type": "boolean",
-        "description": "For remind: bypass the 24-hour throttle and nudge all outstanding signers immediately. Defaults to false."
       }
     },
     "required": [
       "action"
+    ],
+    "additionalProperties": false
+  },
+  "requiredScope": "mcp:admin"
+}
+{
+  "name": "remind_agreement_signers",
+  "description": "Core-only. Email the people who still need to sign an agreement binding. Limited to once per 24 hours unless force is true.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "bindingId": {
+        "type": "string",
+        "description": "The binding to remind signers of."
+      },
+      "force": {
+        "type": "boolean",
+        "description": "Skip the 24-hour limit and remind everyone outstanding now. Defaults to false."
+      }
+    },
+    "required": [
+      "bindingId"
     ],
     "additionalProperties": false
   },
@@ -7161,13 +7178,22 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
 }
 {
   "name": "get_form_responses",
-  "description": "Return form submissions, newest first, as a response grid (columns + per-submission answer rows). Needs edit access on the form. Pass page.nextCursor as cursor to read the next page until page.hasMore is false; page.total is the full submission count, or the matching count when q, slot or answers narrow it. q searches name, email and answer text; q and answers need versionNumber.",
+  "description": "Read a form's responses. view rows (default) is the submission grid, newest first; summary is per-question counts and percentages across every response; tracker is who is expected to respond and who hasn't, with dismissed people last (null when nobody is expected). Needs edit access on the form.",
   "inputSchema": {
     "type": "object",
     "properties": {
       "formId": {
         "type": "string",
-        "description": "The form ID to load responses for."
+        "description": "The form ID."
+      },
+      "view": {
+        "type": "string",
+        "enum": [
+          "rows",
+          "summary",
+          "tracker"
+        ],
+        "description": "What to return. Defaults to rows."
       },
       "limit": {
         "type": "integer",
@@ -7181,19 +7207,19 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
       },
       "versionNumber": {
         "type": "number",
-        "description": "If provided, filter to submissions for this version only. Required with q or answers."
+        "description": "Only this version's submissions (rows, summary). Rows default to every version; summary defaults to the latest. Required with q or answers."
       },
       "q": {
         "type": "string",
-        "description": "Only submissions where every word appears in the respondent's name, email or an answer. Needs versionNumber."
+        "description": "Only submissions where every word appears in the respondent's name, email or an answer (rows). Needs versionNumber."
       },
       "slot": {
         "type": "string",
-        "description": "Only submissions filled for this slot."
+        "description": "Only submissions filled for this slot (rows, summary). slotOptions in the summary lists them."
       },
       "answers": {
         "type": "array",
-        "description": "Filter by answers; every filter must match. One per question, using the question's key from get_form. kind is: is (values: option strings, or \\"__other__\\" for an answer outside the options; a checkbox matches when it includes any), contains (text, case-insensitive; text, textarea, email and URL questions), range (min and/or max, inclusive; number or YYYY-MM-DD date questions), answered or blank (any filterable question; blank also covers a question a rule hid). File and skills rating questions can't be filtered.",
+        "description": "Filter by answers (rows, summary); every filter must match. One per question, using the question's key from get_form. kind is: is (values: option strings, or \\"__other__\\" for an answer outside the options; a checkbox matches when it includes any), contains (text, case-insensitive; text, textarea, email and URL questions), range (min and/or max, inclusive; number or YYYY-MM-DD date questions), answered or blank (any filterable question; blank also covers a question a rule hid). File and skills rating questions can't be filtered.",
         "items": {
           "type": "object",
           "properties": {
@@ -7238,98 +7264,6 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
           ],
           "additionalProperties": false
         }
-      }
-    },
-    "required": [
-      "formId"
-    ],
-    "additionalProperties": false
-  },
-  "requiredScope": "mcp:read"
-}
-{
-  "name": "get_form_summary",
-  "description": "Return the results Summary for one form version: the response total and per-question counts and percentages, across every response rather than one page. Pass answers to count only responses with matching answers. Needs edit access on the form.",
-  "inputSchema": {
-    "type": "object",
-    "properties": {
-      "formId": {
-        "type": "string",
-        "description": "The form ID."
-      },
-      "versionNumber": {
-        "type": "number",
-        "description": "The version to summarize. Defaults to the latest."
-      },
-      "slot": {
-        "type": "string",
-        "description": "If provided, count only responses filled for this slot. slotOptions in the result lists them."
-      },
-      "answers": {
-        "type": "array",
-        "description": "Filter by answers; every filter must match. One per question, using the question's key from get_form. kind is: is (values: option strings, or \\"__other__\\" for an answer outside the options; a checkbox matches when it includes any), contains (text, case-insensitive; text, textarea, email and URL questions), range (min and/or max, inclusive; number or YYYY-MM-DD date questions), answered or blank (any filterable question; blank also covers a question a rule hid). File and skills rating questions can't be filtered.",
-        "items": {
-          "type": "object",
-          "properties": {
-            "questionKey": {
-              "type": "string"
-            },
-            "kind": {
-              "type": "string",
-              "enum": [
-                "is",
-                "contains",
-                "range",
-                "answered",
-                "blank"
-              ]
-            },
-            "values": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "text": {
-              "type": "string"
-            },
-            "min": {
-              "type": [
-                "string",
-                "number"
-              ]
-            },
-            "max": {
-              "type": [
-                "string",
-                "number"
-              ]
-            }
-          },
-          "required": [
-            "questionKey",
-            "kind"
-          ],
-          "additionalProperties": false
-        }
-      }
-    },
-    "required": [
-      "formId"
-    ],
-    "additionalProperties": false
-  },
-  "requiredScope": "mcp:read"
-}
-{
-  "name": "get_form_tracker",
-  "description": "Return the response tracker for a form: how many people are expected, how many responded, and who hasn't, with dismissed people last. tracker is null when nobody is expected to respond. Needs edit access on the form.",
-  "inputSchema": {
-    "type": "object",
-    "properties": {
-      "formId": {
-        "type": "string",
-        "description": "The form ID."
       }
     },
     "required": [
@@ -7370,7 +7304,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
 }
 {
   "name": "manage_form",
-  "description": "Create, version, publish, configure, or delete a form, delete a response, or remind people who haven't responded. Actions: create · save_version · save_draft · publish · unpublish · set_window · set_audience · set_settings · rename · move · duplicate · delete · delete_response · send_reminder. Needs edit access on the form (create: on the folder). set_audience sets the form page's general access. set_settings changes only the settings you pass. delete_response is permanent and lets the person fill the form again. send_reminder is limited to one per form every 24 hours.",
+  "description": "Create, publish, configure, move or delete a form, or delete a response. Actions: create · publish · unpublish · set_window · set_audience · set_settings · rename · move · duplicate · delete · delete_response. Needs edit access on the form (create: on the folder). set_audience sets the form page's general access. set_settings changes only the settings you pass. delete_response is permanent and lets the person fill the form again. Questions are written with set_form_questions.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -7378,8 +7312,6 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
         "type": "string",
         "enum": [
           "create",
-          "save_version",
-          "save_draft",
           "publish",
           "unpublish",
           "set_window",
@@ -7389,8 +7321,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
           "move",
           "duplicate",
           "delete",
-          "delete_response",
-          "send_reminder"
+          "delete_response"
         ],
         "description": "The management action to perform."
       },
@@ -7405,14 +7336,6 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
       "folderPageId": {
         "type": "string",
         "description": "Target Drive folder Page ID (create / move) — a Page of kind=Folder. Empty string = top level."
-      },
-      "questions": {
-        "type": "string",
-        "description": "JSON-encoded Question[] (save_version / save_draft). Each question is {key, type, required, data: {label, description?, options?, ...}}. Types: text, textarea, select, radio, checkbox, scale, date, number, email, github_url, figma_url, drive_url, file, skills_rating, reference, info, pageBreak. radio is single choice and needs data.options with at least two entries. radio and checkbox accept data.allowOther: true, which adds an Other write-in (up to 200 characters). scale is a fixed 1 to 5 rating with optional data.scaleLow and data.scaleHigh end labels. number accepts optional numeric data.min and data.max. date answers are YYYY-MM-DD. file accepts optional data.accept (comma-separated types) and data.maxFiles (1 to 10, default 1); data.exactFiles: true makes an answer need exactly maxFiles files instead of up to that many. email answers are stored lowercased. Any question can carry data.showIf: {match: 'all' | 'any', conditions: [{questionKey, op, values}]}, which shows it only when earlier answers match; on a pageBreak it shows or hides that whole page. Each condition's source must come earlier. Ops by source type: select, radio, reference: is, isNot (values: any of the options, or row ids for reference); scale: is, isNot (values '1' to '5'), atLeast, atMost (one value); checkbox: includes, excludes (any of the options); number and date: atLeast, atMost (one number, or one YYYY-MM-DD date); text, textarea, email and link types: contains (one text); every source above plus file: answered, blank (values []). For radio and checkbox with allowOther, '__other__' matches a write-in. skills_rating can't be a source. The older single-condition form {questionKey, op, value} is still read. A question that staffing reads through a column mapping can't be conditional, and neither can the page it sits on. Hidden questions are never required and store no answer."
-      },
-      "description": {
-        "type": "string",
-        "description": "JSON-encoded rich-text description (save_version / save_draft)."
       },
       "opensAt": {
         "type": "string",
@@ -7470,14 +7393,69 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
       "submissionId": {
         "type": "string",
         "description": "The response to delete, an id from get_form_responses (delete_response)."
-      },
-      "message": {
-        "type": "string",
-        "description": "The reminder text (send_reminder)."
       }
     },
     "required": [
       "action"
+    ],
+    "additionalProperties": false
+  },
+  "requiredScope": "mcp:write"
+}
+{
+  "name": "set_form_questions",
+  "description": "Write a form's questions. save_draft stores the working copy without checks. save_version freezes the questions as a new version and publishes the form. Needs edit access on the form.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": [
+          "save_version",
+          "save_draft"
+        ],
+        "description": "save_version or save_draft."
+      },
+      "formId": {
+        "type": "string",
+        "description": "The form ID."
+      },
+      "questions": {
+        "type": "string",
+        "description": "JSON-encoded Question[] (save_version / save_draft). Each question is {key, type, required, data: {label, description?, options?, ...}}. Types: text, textarea, select, radio, checkbox, scale, date, number, email, github_url, figma_url, drive_url, file, skills_rating, reference, info, pageBreak. radio is single choice and needs data.options with at least two entries. radio and checkbox accept data.allowOther: true, which adds an Other write-in (up to 200 characters). scale is a fixed 1 to 5 rating with optional data.scaleLow and data.scaleHigh end labels. number accepts optional numeric data.min and data.max. date answers are YYYY-MM-DD. file accepts optional data.accept (comma-separated types) and data.maxFiles (1 to 10, default 1); data.exactFiles: true makes an answer need exactly maxFiles files instead of up to that many. email answers are stored lowercased. Any question can carry data.showIf: {match: 'all' | 'any', conditions: [{questionKey, op, values}]}, which shows it only when earlier answers match; on a pageBreak it shows or hides that whole page. Each condition's source must come earlier. Ops by source type: select, radio, reference: is, isNot (values: any of the options, or row ids for reference); scale: is, isNot (values '1' to '5'), atLeast, atMost (one value); checkbox: includes, excludes (any of the options); number and date: atLeast, atMost (one number, or one YYYY-MM-DD date); text, textarea, email and link types: contains (one text); every source above plus file: answered, blank (values []). For radio and checkbox with allowOther, '__other__' matches a write-in. skills_rating can't be a source. The older single-condition form {questionKey, op, value} is still read. A question that staffing reads through a column mapping can't be conditional, and neither can the page it sits on. Hidden questions are never required and store no answer."
+      },
+      "description": {
+        "type": "string",
+        "description": "JSON-encoded rich-text description (save_version, save_draft)."
+      }
+    },
+    "required": [
+      "action",
+      "formId",
+      "questions"
+    ],
+    "additionalProperties": false
+  },
+  "requiredScope": "mcp:write"
+}
+{
+  "name": "remind_form_respondents",
+  "description": "Email the people who haven't responded to a form, with your message and a link to it. Limited to one reminder per form every 24 hours. Needs edit access on the form.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "formId": {
+        "type": "string",
+        "description": "The form ID."
+      },
+      "message": {
+        "type": "string",
+        "description": "The reminder text."
+      }
+    },
+    "required": [
+      "formId",
+      "message"
     ],
     "additionalProperties": false
   },
