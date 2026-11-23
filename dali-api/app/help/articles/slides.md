@@ -14,20 +14,18 @@ In [Drive](/drive), open the drive or folder where it should live, click **New**
 
 ## Edit a deck
 
-A deck is a list of slides. Each slide uses one of four layouts, picked with the layout switch above the slide: **Title**, **Text**, **Text + image** or **Image**.
+A deck is a list of slides, shown in the slide list on the side. Each slide has a layout, such as **Title**, **Content**, a layout with an image, or **Blank**. The layout decides which boxes the slide starts with, and you can change it at any time without losing what you wrote.
 
-Open a deck and use the **Mode** switch at the top:
+- **Add a slide**: click **New slide**. It uses the same layout as the slide you are on.
+- **Type in a slide**: click a box on the slide and type. Everyone who has the deck open edits it together, and you see their cursors and changes as they happen.
+- **Speaker notes**: write them in the notes pane under the slide.
+- **Move, duplicate or delete a slide**: drag it in the slide list, or right-click it and choose an action.
 
-- **Edit**: the slide list is on the side, with **Add** to add a slide. Each slide has fields for the title, subtitle, body, image (paste a URL or click **Upload**), alt text and notes, depending on its layout. Move a slide up or down, **Duplicate** it, or **Delete slide**. Every slide except an Image slide needs a title, and Text + image and Image slides need an image. A warning shows when some are missing.
-- **Preview**: see the deck full screen. At the end, **Back to editing** returns you to the editor.
-
-Changes save as you go, and a status next to the switch shows the state. If someone else saved first, you see **Reload**. If saving failed, click **Try again**.
-
-If you only have view access, the deck opens straight into the viewer.
+Changes save as you go, and **Undo** and **Redo** step back through your own changes. If you only have view access, the deck opens read-only and still updates as others edit.
 
 ## Place and arrange items
 
-When the live deck editor is on for you, you can put text, images and shapes anywhere on a slide, not just in the layout's boxes. Choose the **Blank** layout for an empty slide.
+You can put text, images and shapes anywhere on a slide, not just in the layout's boxes. Choose the **Blank** layout for an empty slide.
 
 - **Add an item**: open **Insert** in the toolbar. Choose **Text box** or a shape, then click the slide where it should go. Shapes are rectangles, rounded rectangles, ellipses, lines and arrows. **Image** and everything in the next section is added in the middle of the slide.
 - **Move, resize and rotate**: drag an item to move it, drag a handle to resize it, and drag the dot above it to turn it. Pictures keep their proportions when you drag a corner. Hold **Shift** while resizing to flip that, and while turning to move in 15 degree steps. Guides show when edges and centers line up with other items or the slide margins, and numbers show the space between items. Hold **⌘** to skip snapping. Turn snapping and the grid on or off in the inspector.
@@ -107,7 +105,7 @@ Everything here is a free item. You can move, resize, rotate, group, copy, comme
 
 ## Save and reuse slides
 
-When the live deck editor is on for you, you can keep decks and single slides for the lab to start from.
+You can keep decks and single slides for the lab to start from.
 
 - **Save a whole deck**: open the **⋯** menu and choose **Save as template**. Name it and choose who can use it: the whole lab, or, for a deck in a project, that project. The template keeps the deck's theme and every slide, without speaker notes or comments.
 - **Save slides to the library**: right-click a slide in the list (or several selected slides) and choose **Save slide to library**.
@@ -149,7 +147,7 @@ Open the **⋯** menu and choose **Download PDF** to get every slide as a page, 
 
 ## Comment on a deck
 
-When the live deck editor is on for you, **Comments** in the top bar opens a panel with every comment on the deck, grouped by slide.
+**Comments** in the top bar opens a panel with every comment on the deck, grouped by slide.
 
 - **Comment on a slide**: right-click a slide in the list and choose **Comment on this slide**, or type in the panel.
 - **Comment on a spot or a text box**: right-click the slide where you want it and choose **Comment here**, or select a text box and click the comment button at its corner. A dot with your picture marks the spot.
@@ -159,4 +157,4 @@ Click a comment in the panel to jump to its slide. Replies and @mentions notify 
 
 ## Work on a deck with an AI assistant
 
-A connected AI assistant outside DALI OS, such as Claude Desktop or Claude Code, can build and edit decks you can edit. See [AI assistants](/help/articles/ai-assistants) to connect one. Ask it to draft a deck from an outline, or to add slides from a document, and it makes the slides with their layouts, text, speaker notes and theme. It can add, move, duplicate and delete slides, change a slide's layout or the deck's theme, and write text, including tables and code. It can also place text boxes, pictures, shapes, charts with their data, icons, videos, polls and custom HTML pages, then align, group, layer and set build steps for them the way you can in the editor. An assistant can write a whole slide as custom HTML, using the theme colors and fonts, as described in Custom HTML above. Ask DALI inside DALI OS can read a deck and answer questions about it, but it does not change decks. Its changes show up live for everyone who has the deck open. While it works, it appears in the bar of people viewing the deck, its badge sits on the slide it last changed in the filmstrip, and the items it just changed get an outline in its colour that fades after a few seconds. It can also give you links to download the deck as a PDF or PowerPoint file. If you can only view a deck, the assistant can read it but not change it.
+A connected AI assistant outside DALI OS, such as Claude Desktop or Claude Code, can build and edit decks you can edit. See [AI assistants](/help/articles/ai-assistants) to connect one. Ask it to draft a deck from an outline, or to add slides from a document, and it makes the slides with their layouts, text, speaker notes and theme. It can replace every slide from an outline, add, change, move, duplicate and delete slides (including their speaker notes), change a slide's layout or the deck's theme, and write text, including tables and code. It can also place text boxes, pictures, shapes, charts with their data, icons, videos, polls and custom HTML pages, then align, group, layer and set build steps for them the way you can in the editor. An assistant can write a whole slide as custom HTML, using the theme colors and fonts, as described in Custom HTML above. Ask DALI inside DALI OS can read a deck and answer questions about it, but it does not change decks. Its changes show up live for everyone who has the deck open. While it works, it appears in the bar of people viewing the deck, its badge sits on the slide it last changed in the filmstrip, and the items it just changed get an outline in its colour that fades after a few seconds. It can also give you links to download the deck as a PDF or PowerPoint file. If you can only view a deck, the assistant can read it but not change it.

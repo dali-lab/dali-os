@@ -1,23 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
-import type { Slide } from "~/components/slides/types";
 
 const env = vi.hoisted(() => ({ doc: null as unknown as Y.Doc, pageUpdate: vi.fn() }));
 const decks = vi.hoisted(() => ({
   deckAccess: vi.fn(),
-  loadDeck: vi.fn(),
-  editDeck: vi.fn(),
-  deckStorage: vi.fn(),
-  migrateDeckOnOpen: vi.fn(),
   readDeckModel: vi.fn(),
 }));
 const labDocs = vi.hoisted(() => ({ runCreateLabDocument: vi.fn() }));
-const flags = vi.hoisted(() => ({ isFeatureEnabled: vi.fn() }));
 
 vi.mock("~/lib/slide-decks.server", () => decks);
 vi.mock("~/lib/db.server", () => ({ prisma: { page: { update: env.pageUpdate } } }));
-vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn(async () => ({})) }));
-vi.mock("~/lib/feature-flags.server", () => flags);
 vi.mock("../lab-documents", () => labDocs);
 vi.mock("~/collab/deck-live.server", () => ({
   transactDeck: vi.fn(async (_p: string, _u: string, fn: (d: Y.Doc) => void) => env.doc.transact(() => fn(env.doc))),
@@ -26,11 +18,11 @@ vi.mock("~/collab/blocknote-server", async (importOriginal) => importOriginal())
 
 import { MANAGE_SLIDE_DECK_TOOL_DEF, runManageSlideDeck } from "../manage-slide-deck";
 import type { OutlineSlide } from "../slide-outline";
-import { seedDeckDoc } from "~/collab/deck-write.server";
-import { projectLegacySlides, readDeck } from "~/collab/read-deck.server";
+import { seedDeck, type SeedSlide } from "~/collab/__tests__/seed-deck";
+import { readDeck } from "~/collab/read-deck.server";
 import { richDocToMarkdown } from "~/components/slides/slide-markdown.server";
 
-const LEGACY: Slide[] = [
+const LEGACY: SeedSlide[] = [
   { id: "a", layout: "title", title: "Alpha" },
   { id: "b", layout: "content", title: "Beta" },
 ];
@@ -43,13 +35,9 @@ const YT = "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
 beforeEach(() => {
   vi.clearAllMocks();
   env.doc = new Y.Doc();
-  seedDeckDoc(env.doc, LEGACY);
-  decks.deckStorage.mockResolvedValue("yjs");
-  decks.migrateDeckOnOpen.mockResolvedValue("yjs");
+  seedDeck(env.doc, LEGACY);
   decks.deckAccess.mockResolvedValue({ ok: true, page: PAGE, canEdit: true });
-  decks.loadDeck.mockImplementation(async () => ({ slides: projectLegacySlides(read()), version: "v1", storage: "yjs" }));
   decks.readDeckModel.mockImplementation(async () => read());
-  flags.isFeatureEnabled.mockResolvedValue(true);
 });
 
 describe("add_element with every kind", () => {
@@ -178,12 +166,9 @@ describe("add_slides", () => {
     expect(read().slides.map((s) => s.id)).toEqual(["a", "b"]);
   });
 
-  it("is refused for a viewer and for a deck on the older editor", async () => {
+  it("is refused for a viewer", async () => {
     decks.deckAccess.mockResolvedValue({ ok: true, page: PAGE, canEdit: false });
     await expect(run({ action: "add_slides", outline })).rejects.toMatchObject({ status: 403 });
-    decks.deckAccess.mockResolvedValue({ ok: true, page: PAGE, canEdit: true });
-    decks.migrateDeckOnOpen.mockResolvedValue("json");
-    await expect(run({ action: "add_slides", outline })).rejects.toMatchObject({ status: 400 });
     expect(read().slides).toHaveLength(2);
   });
 
@@ -191,9 +176,10 @@ describe("add_slides", () => {
     await expect(run({ action: "add_slides" })).rejects.toBeTruthy();
   });
 
-  it("leaves the existing slide actions alone", async () => {
-    const out = await run({ action: "add_slide", slide: { title: "Old way", layout: "content" } });
-    expect(out.slides).toHaveLength(3);
+  it("is the only way to add slides: add_slide is gone", async () => {
+    expect(MANAGE_SLIDE_DECK_TOOL_DEF.inputSchema.properties.action.enum).not.toContain("add_slide");
+    await expect(run({ action: "add_slide", slide: { layoutId: "content" } })).rejects.toMatchObject({ status: 400 });
+    expect(read().slides).toHaveLength(2);
   });
 });
 
@@ -202,7 +188,7 @@ const create = (args: Record<string, unknown>) => runManageSlideDeck("u1", { act
 describe("manage_slide_deck create", () => {
   beforeEach(() => {
     env.doc = new Y.Doc();
-    seedDeckDoc(env.doc, [{ id: "starter", layout: "content", title: "" }]);
+    seedDeck(env.doc, [{ id: "starter", layout: "content", title: "" }]);
     labDocs.runCreateLabDocument.mockResolvedValue({ id: "p1" });
   });
 
@@ -227,10 +213,9 @@ describe("manage_slide_deck create", () => {
     expect(labDocs.runCreateLabDocument).not.toHaveBeenCalled();
   });
 
-  it("does not create a page when the live deck editor is off for the caller", async () => {
-    flags.isFeatureEnabled.mockResolvedValue(false);
-    await expect(create({ title: "x", outline: slides })).rejects.toMatchObject({ status: 400 });
-    expect(labDocs.runCreateLabDocument).not.toHaveBeenCalled();
+  it("creates the page as a Slides page for everyone, with no flag check", async () => {
+    await create({ title: "x", outline: slides });
+    expect(labDocs.runCreateLabDocument).toHaveBeenCalledWith("u1", expect.objectContaining({ kind: "Slides" }));
   });
 
   it("passes on the lab document tool's refusal for a non-member", async () => {

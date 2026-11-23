@@ -18,7 +18,7 @@ vi.mock("../agent-presence.server", () => ({
 import { addSlide, slideFragment } from "~/components/slides/deck/deck-ops";
 import { addShape } from "~/components/slides/deck/freeform-ops";
 import { initDeck } from "~/components/slides/deck/model";
-import { transactDeck } from "../deck-live.server";
+import { readLiveDeck, transactDeck } from "../deck-live.server";
 
 function storedDeck() {
   const doc = new Y.Doc();
@@ -73,5 +73,22 @@ describe("transactDeck", () => {
     h.findUnique.mockResolvedValue({ state: storedDeck().state });
     await transactDeck("p1", "u1", (doc) => doc.getMap("deck").set("themeId", "dali-light"));
     expect(h.announce).toHaveBeenCalledWith({ action: "editing", presenceRoom: "presence:doc:p1", deckRoom: "slides:p1:deck", touched: [] });
+  });
+});
+
+describe("readLiveDeck", () => {
+  it("reads a deck with no stored room as an empty deck with no slides", async () => {
+    h.findUnique.mockResolvedValue(null);
+    const { read, updatedAt } = await readLiveDeck("p1");
+    expect(read.slides).toEqual([]);
+    expect(updatedAt).toBeNull();
+  });
+
+  it("reads the stored slides of a deck with a room", async () => {
+    const { state, slideId } = storedDeck();
+    h.findUnique.mockResolvedValue({ state, updatedAt: new Date("2026-11-23T12:00:00Z") });
+    const { read, updatedAt } = await readLiveDeck("p1");
+    expect(read.slides.map((s) => s.id)).toEqual([slideId]);
+    expect(updatedAt).toEqual(new Date("2026-11-23T12:00:00Z"));
   });
 });

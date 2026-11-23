@@ -12,8 +12,9 @@
 //
 // What is NOT copied: DocComment rows (Notion behaviour — copies start clean).
 
-import { prisma, Prisma } from "~/lib/db.server";
+import { prisma } from "~/lib/db.server";
 import { PAGE_ACCESS_SELECT, getPageAccess } from "~/lib/pageAccess.server";
+import { ensureLiveDeck } from "~/lib/live-deck.server";
 import { pageDocName, slidesRoomName } from "~/collab/roomName";
 import type { WorkspaceType, PageKind } from "~/generated/prisma/client";
 
@@ -137,17 +138,12 @@ export async function duplicatePage(
   });
 
   if (source.kind === "Slides") {
-    const deck = await prisma.slideDeck.findUnique({ where: { pageId: source.id }, select: { slides: true, storage: true } });
-    if (deck?.storage === "yjs") {
-      const state = await prisma.collabDocument.findUnique({ where: { name: slidesRoomName(source.id) }, select: { state: true } });
-      await prisma.slideDeck.create({
-        data: { pageId: newPage.id, slides: [], storage: state ? "yjs" : "json", lastEditedById: input.createdById },
-      });
-      if (state) await prisma.collabDocument.create({ data: { name: slidesRoomName(newPage.id), state: state.state } });
-    } else if (deck) {
-      await prisma.slideDeck.create({
-        data: { pageId: newPage.id, slides: deck.slides as Prisma.InputJsonValue, lastEditedById: input.createdById },
-      });
+    const state = await prisma.collabDocument.findUnique({ where: { name: slidesRoomName(source.id) }, select: { state: true } });
+    if (state) {
+      await prisma.slideDeck.create({ data: { pageId: newPage.id, storage: "yjs", lastEditedById: input.createdById } });
+      await prisma.collabDocument.create({ data: { name: slidesRoomName(newPage.id), state: state.state } });
+    } else {
+      await ensureLiveDeck(newPage.id, input.createdById);
     }
   } else {
     await copyPageBody(source.id, newPage.id);

@@ -10,9 +10,7 @@ const m = vi.hoisted(() => ({
   pageFind: vi.fn(),
   pageFindOrThrow: vi.fn(),
   deckAccess: vi.fn(),
-  loadDeck: vi.fn(),
-  migrate: vi.fn(),
-  readLiveDeck: vi.fn(),
+  readDeckModel: vi.fn(),
   token: vi.fn(),
   canManage: vi.fn(),
   transact: vi.fn(),
@@ -24,15 +22,10 @@ vi.mock("~/lib/auth", () => ({ requireAuth: m.requireAuth, isNonMember: m.isNonM
 vi.mock("~/lib/login-next", () => ({ redirectToLogin: vi.fn() }));
 vi.mock("~/lib/db.server", () => ({ prisma: { page: { findUnique: m.pageFind, findUniqueOrThrow: m.pageFindOrThrow } } }));
 vi.mock("~/lib/user-pages.server", () => ({ recordPageVisit: vi.fn() }));
-vi.mock("~/lib/slide-decks.server", () => ({
-  deckAccess: m.deckAccess,
-  loadDeck: m.loadDeck,
-  saveDeck: vi.fn(),
-  migrateDeckOnOpen: m.migrate,
-}));
+vi.mock("~/lib/slide-decks.server", () => ({ deckAccess: m.deckAccess, readDeckModel: m.readDeckModel }));
 vi.mock("~/drive/lib/drive-page-trail.server", () => ({ loadDrivePageAncestry: vi.fn(async () => ({ title: "Deck", iconEmoji: null, workspaceType: "Lab" })) }));
 vi.mock("~/lib/slide-live.server", () => ({ slidesLiveEnabled: m.slidesLive }));
-vi.mock("~/collab/deck-live.server", () => ({ readLiveDeck: m.readLiveDeck, transactDeck: m.transact }));
+vi.mock("~/collab/deck-live.server", () => ({ transactDeck: m.transact }));
 vi.mock("~/lib/roles", () => ({ isCore: m.isCore, getUserRoles: vi.fn(async () => ({})) }));
 vi.mock("~/lib/collab-token.server", () => ({ getCollabToken: m.token }));
 vi.mock("~/lib/presence-user.server", () => ({ getPresenceUser: vi.fn(async () => ({ name: "Ada Lovelace", photoUrl: null })) }));
@@ -54,13 +47,6 @@ vi.mock("~/components/shell/page-bar-slot", () => ({ PageBarTitle: () => null })
 vi.mock("~/components/slides/pptx/DeckDownloadItems", () => ({
   DeckDownloadItems: (p: { pageId: string }) => createElement("a", { "data-testid": "download-pptx", href: `/slides/${p.pageId}/export.pptx` }),
 }));
-vi.mock("~/components/slides/SlideViewer", () => ({ SlideViewer: () => createElement("div", { "data-testid": "legacy-viewer" }) }));
-vi.mock("~/components/slides/editor/SlideEditorWorkspace", () => ({ SlideEditorWorkspace: () => createElement("div", { "data-testid": "legacy-editor" }) }));
-vi.mock("~/components/slides/useDeckAutosave", () => ({
-  useDeckAutosave: (slides: unknown[]) => ({ slides, edit: vi.fn(), state: "saved", error: null, retry: vi.fn() }),
-}));
-vi.mock("react-router", async (orig) => ({ ...(await orig<typeof import("react-router")>()), useRevalidator: () => ({ revalidate: vi.fn() }) }));
-
 import SlideDeckPage, { loader } from "../slides.$pageId";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -94,9 +80,7 @@ beforeEach(() => {
   m.pageFindOrThrow.mockResolvedValue({ title: "Deck", iconEmoji: null, workspaceType: "Lab", workspaceId: null, parentPageId: null, createdById: "u1" });
   m.deckAccess.mockResolvedValue({ ok: true, canEdit: true, canComment: true, page: {} });
   m.isCore.mockResolvedValue(false);
-  m.loadDeck.mockResolvedValue({ slides: [{ id: "s", layout: "title", title: "T" }], version: "v1", storage: "json" });
-  m.migrate.mockResolvedValue("yjs");
-  m.readLiveDeck.mockResolvedValue(live());
+  m.readDeckModel.mockResolvedValue(live().read);
   m.token.mockResolvedValue("tok");
   m.canManage.mockResolvedValue(true);
   m.slidesLive.mockResolvedValue(false);
@@ -105,9 +89,8 @@ beforeEach(() => {
 describe("loader", () => {
   it("a live deck opens the collaborative editor for someone who can edit", async () => {
     const out = await run();
-    expect(out).toMatchObject({ mode: "live", canEdit: true, canManageAccess: true, unknownVersion: false, deck: null });
+    expect(out).toMatchObject({ canEdit: true, canManageAccess: true, unknownVersion: false, deck: null });
     expect(out.collab).toEqual({ token: "tok", userId: "u1", userName: "Ada Lovelace", photoUrl: null });
-    expect(m.loadDeck).not.toHaveBeenCalled();
   });
 
   it("tells the editor whether the viewer can comment and moderate comments", async () => {
@@ -123,23 +106,18 @@ describe("loader", () => {
     expect((await run()).link).toEqual({ slideId: null, threadId: null });
   });
 
-  it("a JSON deck is moved to live storage on open, then opens the same way", async () => {
-    await run();
-    expect(m.migrate).toHaveBeenCalledWith("u1", "p1", request);
-  });
-
-  it("a JSON deck with the flag off stays on the legacy editor", async () => {
-    m.migrate.mockResolvedValue("json");
+  it("reads the deck through the live model, so a deck with no room opens empty and editable", async () => {
+    m.readDeckModel.mockResolvedValue({ v: 1, themeId: "dali-dark", plainText: "", slides: [] });
     const out = await run();
-    expect(out).toMatchObject({ mode: "legacy", canEdit: true, version: "v1" });
-    expect(out.slides).toHaveLength(1);
-    expect(m.readLiveDeck).not.toHaveBeenCalled();
+    expect(m.readDeckModel).toHaveBeenCalledWith("p1");
+    expect(out).toMatchObject({ unknownVersion: false, canEdit: true });
+    expect(out.collab).toMatchObject({ token: "tok" });
   });
 
   it("someone who can only view gets the live read-only connection", async () => {
     m.deckAccess.mockResolvedValue({ ok: true, canEdit: false, page: {} });
     const out = await run();
-    expect(out).toMatchObject({ mode: "live", canEdit: false, deck: null });
+    expect(out).toMatchObject({ canEdit: false, deck: null });
     expect(out.collab).toMatchObject({ token: "tok", userId: "u1" });
   });
 
@@ -166,15 +144,15 @@ describe("loader", () => {
     const d = live();
     d.read.slides[0].layoutId = "content";
     d.read.slides[0].elements = ["title", "body"].map((slot) => ({ id: slot, kind: "text", slot, z: 1, src: null, alt: null, textStyle: null, blocks: [], text: "" })) as never;
-    m.readLiveDeck.mockResolvedValue(d);
+    m.readDeckModel.mockResolvedValue(d.read);
     await run();
     expect(m.transact).not.toHaveBeenCalled();
   });
 
   it("a deck version this build does not know is read-only even for an editor", async () => {
-    m.readLiveDeck.mockResolvedValue(live(2));
+    m.readDeckModel.mockResolvedValue(live(2).read);
     const out = await run();
-    expect(out).toMatchObject({ mode: "live", unknownVersion: true, collab: null });
+    expect(out).toMatchObject({ unknownVersion: true, collab: null });
     expect(out.deck.slides).toHaveLength(1);
   });
 
@@ -216,24 +194,24 @@ describe("page", () => {
   const base = { pageId: "p1", title: "Deck", iconEmoji: null, canEdit: true };
 
   it("mounts the collaborative editor for a live deck with credentials", () => {
-    const el = render({ ...base, mode: "live", canManageAccess: true, workspaceType: "Lab", unknownVersion: false, deck: null, collab: { token: "t", userId: "u", userName: "A", photoUrl: null } });
+    const el = render({ ...base, canManageAccess: true, workspaceType: "Lab", unknownVersion: false, deck: null, collab: { token: "t", userId: "u", userName: "A", photoUrl: null } });
     expect(el.querySelector("[data-testid=live-editor]")).not.toBeNull();
   });
 
   it("mounts the live editor for a viewer too, told they can't edit", () => {
-    const el = render({ ...base, canEdit: false, mode: "live", canManageAccess: false, workspaceType: "Lab", unknownVersion: false, deck: null, collab: { token: "t", userId: "u", userName: "A", photoUrl: null } });
+    const el = render({ ...base, canEdit: false, canManageAccess: false, workspaceType: "Lab", unknownVersion: false, deck: null, collab: { token: "t", userId: "u", userName: "A", photoUrl: null } });
     expect(el.querySelector("[data-testid=live-editor]")!.getAttribute("data-can-edit")).toBe("false");
   });
 
   it("draws a viewer's deck read-only without the editor", () => {
-    const el = render({ ...base, canEdit: false, mode: "live", canManageAccess: false, workspaceType: "Lab", unknownVersion: false, collab: null, deck: { themeId: "dali-dark", slides: [{}, {}] } });
+    const el = render({ ...base, canEdit: false, canManageAccess: false, workspaceType: "Lab", unknownVersion: false, collab: null, deck: { themeId: "dali-dark", slides: [{}, {}] } });
     expect(el.querySelector("[data-testid=live-editor]")).toBeNull();
     expect(el.querySelector("[data-testid=read-only]")!.textContent).toBe("2 slides");
     expect(el.querySelector("[data-testid=download-pptx]")!.getAttribute("href")).toBe("/slides/p1/export.pptx");
   });
 
   it("adds the Present button and the follow layer only when slides-live is on", () => {
-    const editor = { ...base, mode: "live", canManageAccess: true, workspaceType: "Lab", unknownVersion: false, viewerId: "u", deck: { themeId: "dali-dark", slides: [] }, collab: { token: "t", userId: "u", userName: "A", photoUrl: null } };
+    const editor = { ...base, canManageAccess: true, workspaceType: "Lab", unknownVersion: false, viewerId: "u", deck: { themeId: "dali-dark", slides: [] }, collab: { token: "t", userId: "u", userName: "A", photoUrl: null } };
     const off = render({ ...editor, slidesLive: false });
     expect(off.querySelector("[data-testid=follow-layer]")).toBeNull();
     expect(off.querySelector("[data-testid=live-editor]")!.getAttribute("data-actions")).toBe("no");
@@ -245,27 +223,20 @@ describe("page", () => {
   });
 
   it("gives a viewer the follow layer but no Present button", () => {
-    const el = render({ ...base, canEdit: false, mode: "live", canManageAccess: false, workspaceType: "Lab", unknownVersion: false, slidesLive: true, viewerId: "v", deck: { themeId: "dali-dark", slides: [] }, collab: { token: "t", userId: "v", userName: "V", photoUrl: null } });
+    const el = render({ ...base, canEdit: false, canManageAccess: false, workspaceType: "Lab", unknownVersion: false, slidesLive: true, viewerId: "v", deck: { themeId: "dali-dark", slides: [] }, collab: { token: "t", userId: "v", userName: "V", photoUrl: null } });
     expect(el.querySelector("[data-testid=follow-layer]")!.getAttribute("data-can-edit")).toBe("false");
     expect(el.querySelector("[data-testid=live-editor]")!.getAttribute("data-actions")).toBe("no");
   });
 
   it("wraps a read-only deck without a token in the follow layer", () => {
-    const el = render({ ...base, canEdit: false, mode: "live", canManageAccess: false, workspaceType: "Lab", unknownVersion: false, slidesLive: true, viewerId: "v", collab: null, deck: { themeId: "dali-dark", slides: [] } });
+    const el = render({ ...base, canEdit: false, canManageAccess: false, workspaceType: "Lab", unknownVersion: false, slidesLive: true, viewerId: "v", collab: null, deck: { themeId: "dali-dark", slides: [] } });
     const layer = el.querySelector("[data-testid=follow-layer]")!;
     expect(layer.getAttribute("data-token")).toBe("");
     expect(layer.querySelector("[data-testid=read-only]")).not.toBeNull();
   });
 
   it("says why an unknown version is read-only", () => {
-    const el = render({ ...base, mode: "live", canManageAccess: false, workspaceType: "Lab", unknownVersion: true, collab: null, deck: { themeId: "dali-dark", slides: [] } });
+    const el = render({ ...base, canManageAccess: false, workspaceType: "Lab", unknownVersion: true, collab: null, deck: { themeId: "dali-dark", slides: [] } });
     expect(el.querySelector("[data-testid=read-only]")!.textContent).toContain("newer version of Slides");
-  });
-
-  it("keeps the legacy editor for a JSON deck, and the legacy viewer for a viewer", () => {
-    const legacy = { ...base, mode: "legacy", slides: [{ id: "s", layout: "title", title: "T" }], version: "v1", storage: "json" };
-    expect(render(legacy).querySelector("[data-testid=legacy-editor]")).not.toBeNull();
-    expect(render({ ...legacy, canEdit: false }).querySelector("[data-testid=legacy-viewer]")).not.toBeNull();
-    expect(container.querySelector("[data-testid=live-editor]")).toBeNull();
   });
 });

@@ -1,7 +1,6 @@
 ---
 title: PowerPoint and slide decks
 summary: Download a deck as a PowerPoint file, add slides from a PowerPoint file, or start a new deck from one.
-flag: slides-collab
 paths: [/slides/:pageId]
 keywords: [slides, deck, powerpoint, pptx, import, export, download, google slides]
 ---

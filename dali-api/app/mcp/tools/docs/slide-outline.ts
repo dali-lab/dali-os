@@ -2,7 +2,7 @@ import type * as Y from "yjs";
 import { McpError } from "../../errors";
 import { blocksToFragment, plainTextToBlocks, type DocBlock } from "~/collab/blocknote-server";
 import { markdownToRichDoc } from "~/components/slides/slide-markdown.server";
-import { addSlide, moveSlide, notesFragment, setSlotImage, slideFragment, visibleSlideIds } from "~/components/slides/deck/deck-ops";
+import { addSlide, ensureLayoutSlots, moveSlide, notesFragment, setLayout, setSlotImage, slideFragment, visibleSlideIds } from "~/components/slides/deck/deck-ops";
 import { LAYOUTS, layoutById } from "~/components/slides/deck/layouts";
 import { slidesMap } from "~/components/slides/deck/model";
 import { MAX_HTML_CHARS } from "~/components/slides/deck/content";
@@ -14,7 +14,7 @@ export const MAX_OUTLINE_ELEMENTS = 30;
 export const OUTLINE_SLIDE_SCHEMA = {
   type: "object" as const,
   properties: {
-    layoutId: { type: "string", enum: LAYOUT_IDS, description: "Defaults to 'content'." },
+    layoutId: { type: "string", enum: LAYOUT_IDS, description: "Defaults to 'content'. update_slide keeps the slide's layout when this is left out." },
     slots: {
       type: "object",
       description: "Text for the layout's boxes, by slot name (title, subtitle, body and so on). Text is Markdown. An image box takes an object { src, alt } instead of text.",
@@ -37,15 +37,51 @@ export interface OutlineSlide {
   elements?: ElementInput[];
 }
 
-interface PreparedSlide {
-  layoutId: string;
+interface PreparedFields {
   text: Array<{ slot: string; blocks: DocBlock[] }>;
   images: Array<{ src: string; alt: string }>;
-  notes: DocBlock[] | null;
   elements: Array<{ input: ElementInput; blocks: DocBlock[] | null }>;
 }
 
+interface PreparedSlide extends PreparedFields {
+  layoutId: string;
+  notes: DocBlock[] | null;
+}
+
+export interface PreparedUpdate extends PreparedFields {
+  layoutId: string;
+  notes: DocBlock[] | undefined;
+}
+
 const invalid = (message: string) => new McpError(message, 400);
+
+async function prepareFields(slide: OutlineSlide, layoutId: string, where: string, extraInputs: ElementInput[] = []): Promise<PreparedFields> {
+  const layout = layoutById(layoutId);
+  const text: PreparedFields["text"] = [];
+  const images: PreparedFields["images"] = [];
+  for (const [slot, value] of Object.entries(slide.slots ?? {})) {
+    const def = layout.slots.find((s) => s.slot === slot);
+    if (!def) throw invalid(`${where}: the ${layoutId} layout has no '${slot}' box. It has: ${layout.slots.map((s) => s.slot).join(", ")}.`);
+    if (def.kind === "text") {
+      if (typeof value !== "string") throw invalid(`${where}: '${slot}' takes text.`);
+      text.push({ slot, blocks: (await markdownToRichDoc(value)) as unknown as DocBlock[] });
+    } else {
+      if (typeof value === "string" || !value?.src) throw invalid(`${where}: '${slot}' takes { src, alt }.`);
+      if (!/^https?:\/\//i.test(value.src) && !/^\/(?!\/)/.test(value.src)) throw invalid(`${where}: image src must be an http(s) URL or a path on this site.`);
+      images.push({ src: value.src, alt: value.alt ?? "" });
+    }
+  }
+  const elements: PreparedFields["elements"] = [];
+  for (const input of [...extraInputs, ...(slide.elements ?? [])]) {
+    try {
+      checkNewElement(input);
+    } catch (err) {
+      throw err instanceof McpError ? invalid(`${where}: ${err.message}`) : err;
+    }
+    elements.push({ input, blocks: input.markdown === undefined ? null : ((await markdownToRichDoc(input.markdown)) as unknown as DocBlock[]) });
+  }
+  return { text, images, elements };
+}
 
 /** Checks every slide and converts its Markdown, so nothing is written unless the whole outline is valid. */
 export async function prepareOutline(outline: OutlineSlide[]): Promise<PreparedSlide[]> {
@@ -58,34 +94,40 @@ export async function prepareOutline(outline: OutlineSlide[]): Promise<PreparedS
     if (slide.html !== undefined && Object.keys(slide.slots ?? {}).length > 0) throw invalid(`${where}: a slide with html has no boxes for slots.`);
     const layoutId = slide.html !== undefined ? "blank" : (slide.layoutId ?? "content");
     if (!LAYOUTS.some((l) => l.id === layoutId)) throw invalid(`${where}: layoutId must be one of: ${LAYOUT_IDS.join(", ")}.`);
-    const layout = layoutById(layoutId);
-    const text: PreparedSlide["text"] = [];
-    const images: PreparedSlide["images"] = [];
-    for (const [slot, value] of Object.entries(slide.slots ?? {})) {
-      const def = layout.slots.find((s) => s.slot === slot);
-      if (!def) throw invalid(`${where}: the ${layoutId} layout has no '${slot}' box. It has: ${layout.slots.map((s) => s.slot).join(", ")}.`);
-      if (def.kind === "text") {
-        if (typeof value !== "string") throw invalid(`${where}: '${slot}' takes text.`);
-        text.push({ slot, blocks: (await markdownToRichDoc(value)) as unknown as DocBlock[] });
-      } else {
-        if (typeof value === "string" || !value?.src) throw invalid(`${where}: '${slot}' takes { src, alt }.`);
-        if (!/^https?:\/\//i.test(value.src) && !/^\/(?!\/)/.test(value.src)) throw invalid(`${where}: image src must be an http(s) URL or a path on this site.`);
-        images.push({ src: value.src, alt: value.alt ?? "" });
-      }
-    }
-    const elements: PreparedSlide["elements"] = [];
-    const inputs: ElementInput[] = [...(slide.html !== undefined ? [{ kind: "html" as const, html: slide.html, htmlFill: true }] : []), ...(slide.elements ?? [])];
-    for (const input of inputs) {
-      try {
-        checkNewElement(input);
-      } catch (err) {
-        throw err instanceof McpError ? invalid(`${where}: ${err.message}`) : err;
-      }
-      elements.push({ input, blocks: input.markdown === undefined ? null : ((await markdownToRichDoc(input.markdown)) as unknown as DocBlock[]) });
-    }
-    prepared.push({ layoutId, text, images, notes: slide.notes ? plainTextToBlocks(slide.notes) : null, elements });
+    const htmlInput: ElementInput[] = slide.html !== undefined ? [{ kind: "html", html: slide.html, htmlFill: true }] : [];
+    const fields = await prepareFields(slide, layoutId, where, htmlInput);
+    prepared.push({ layoutId, ...fields, notes: slide.notes ? plainTextToBlocks(slide.notes) : null });
   }
   return prepared;
+}
+
+/** Checks one slide's changes against the slide it applies to. Fields left out are kept. */
+export async function prepareSlideUpdate(slide: OutlineSlide, currentLayoutId: string): Promise<PreparedUpdate> {
+  if (slide.html !== undefined) throw invalid("update_slide doesn't take html. Add or edit a custom HTML element with manage_slide_elements.");
+  const layoutId = slide.layoutId ?? currentLayoutId;
+  if (!LAYOUTS.some((l) => l.id === layoutId)) throw invalid(`layoutId must be one of: ${LAYOUT_IDS.join(", ")}.`);
+  const fields = await prepareFields(slide, layoutId, "The slide");
+  return { layoutId, ...fields, notes: slide.notes === undefined ? undefined : slide.notes ? plainTextToBlocks(slide.notes) : [] };
+}
+
+function replaceFragment(fragment: Y.XmlFragment, blocks: DocBlock[]): void {
+  if (blocks.length > 0) blocksToFragment(blocks, fragment);
+  else if (fragment.length > 0) fragment.delete(0, fragment.length);
+}
+
+/** Applies prepared changes to an existing slide: layout, the boxes and notes that were given, and any new free elements. */
+export function writeSlideUpdate(doc: Y.Doc, slideId: string, prepared: PreparedUpdate): void {
+  const live = slidesMap(doc).get(slideId)!;
+  if (prepared.layoutId !== String(live.get("layoutId"))) setLayout(doc, slideId, prepared.layoutId);
+  if (prepared.text.length > 0 || prepared.images.length > 0) ensureLayoutSlots(live, prepared.layoutId, true);
+  for (const { slot, blocks } of prepared.text) {
+    const fragment = slideFragment(doc, slideId, slot);
+    if (fragment) replaceFragment(fragment, blocks);
+  }
+  for (const image of prepared.images) setSlotImage(doc, slideId, image.src, image.alt);
+  const notes = notesFragment(doc, slideId);
+  if (notes && prepared.notes !== undefined) replaceFragment(notes, prepared.notes);
+  for (const { input, blocks } of prepared.elements) placeNewElement(doc, slideId, live, input, blocks);
 }
 
 /** Adds the prepared slides after the slide at `index - 1` (the end when `index` is left out). Returns the new slide ids in order. */

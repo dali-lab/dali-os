@@ -3,7 +3,7 @@ import * as Y from "yjs";
 import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { canListWorkspace } from "~/drive/lib/page-templates.server";
-import { deckAccess, deckStorage, migrateDeckOnOpen, readDeckModel } from "~/lib/slide-decks.server";
+import { deckAccess, readDeckModel } from "~/lib/slide-decks.server";
 import { transactDeck } from "~/collab/deck-live.server";
 import type { DeckRead } from "~/collab/read-deck.server";
 import { sanitizeClips, pasteSlides, type SlideClip } from "~/components/slides/deck/slide-clipboard";
@@ -179,9 +179,6 @@ export async function applyDeckTemplate(userId: string, pageId: string, template
   if (!access.canEdit) return fail(403, "You can view this deck but not edit it.");
   const found = await getSlideTemplate(userId, templateId);
   if (!found.ok) return found;
-  if ((await deckStorage(pageId)) !== "yjs" && (await migrateDeckOnOpen(userId, pageId, request)) !== "yjs") {
-    return fail(400, "Turn on the live deck editor to start from a template.");
-  }
   const blank = isBlankDeck(await readDeckModel(pageId));
   let slideIds: string[] = [];
   await transactDeck(pageId, userId, (doc: Y.Doc) => {

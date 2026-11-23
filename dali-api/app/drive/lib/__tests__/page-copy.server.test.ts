@@ -20,6 +20,7 @@ vi.mock("~/lib/db.server", () => ({
   Prisma: {},
 }));
 
+vi.mock("~/lib/live-deck.server", () => ({ ensureLiveDeck: vi.fn() }));
 vi.mock("~/lib/pageAccess.server", () => ({
   PAGE_ACCESS_SELECT: {},
   getPageAccess: vi.fn(),
@@ -27,6 +28,7 @@ vi.mock("~/lib/pageAccess.server", () => ({
 
 import { prisma } from "~/lib/db.server";
 import { getPageAccess } from "~/lib/pageAccess.server";
+import { ensureLiveDeck } from "~/lib/live-deck.server";
 import { duplicatePage } from "../page-copy.server";
 
 const mockPrisma = prisma as any;
@@ -56,19 +58,8 @@ beforeEach(() => {
 });
 
 describe("duplicatePage", () => {
-  it("copies a slide deck's slides instead of a collab body", async () => {
+  it("byte-copies a deck's room state under the new page and marks the copy live", async () => {
     mockPrisma.page.findUnique.mockResolvedValue({ ...SOURCE_PAGE, kind: "Slides" });
-    mockPrisma.slideDeck.findUnique.mockResolvedValue({ slides: [{ id: "s1", layout: "title", title: "Hi" }] });
-    await duplicatePage({ sourcePageId: SOURCE_PAGE.id, createdById: "user-1" });
-    expect(mockPrisma.slideDeck.create).toHaveBeenCalledWith({
-      data: { pageId: NEW_PAGE_ID, slides: [{ id: "s1", layout: "title", title: "Hi" }], lastEditedById: "user-1" },
-    });
-    expect(mockPrisma.collabDocument.findUnique).not.toHaveBeenCalled();
-  });
-
-  it("byte-copies a live deck's room state under the new page and marks the copy live", async () => {
-    mockPrisma.page.findUnique.mockResolvedValue({ ...SOURCE_PAGE, kind: "Slides" });
-    mockPrisma.slideDeck.findUnique.mockResolvedValue({ slides: [], storage: "yjs" });
     const state = Buffer.from([1, 2, 3]);
     mockPrisma.collabDocument.findUnique.mockResolvedValue({ state });
     await duplicatePage({ sourcePageId: SOURCE_PAGE.id, createdById: "user-1" });
@@ -77,18 +68,25 @@ describe("duplicatePage", () => {
       select: { state: true },
     });
     expect(mockPrisma.slideDeck.create).toHaveBeenCalledWith({
-      data: { pageId: NEW_PAGE_ID, slides: [], storage: "yjs", lastEditedById: "user-1" },
+      data: { pageId: NEW_PAGE_ID, storage: "yjs", lastEditedById: "user-1" },
     });
     expect(mockPrisma.collabDocument.create).toHaveBeenCalledWith({
       data: { name: `slides:${NEW_PAGE_ID}:deck`, state },
     });
+    expect(ensureLiveDeck).not.toHaveBeenCalled();
   });
 
-  it("leaves a never-opened deck's copy to start empty", async () => {
+  it("makes the copy of a deck with no room an empty live deck instead of leaving it without one", async () => {
     mockPrisma.page.findUnique.mockResolvedValue({ ...SOURCE_PAGE, kind: "Slides" });
-    mockPrisma.slideDeck.findUnique.mockResolvedValue(null);
     await duplicatePage({ sourcePageId: SOURCE_PAGE.id, createdById: "user-1" });
+    expect(ensureLiveDeck).toHaveBeenCalledWith(NEW_PAGE_ID, "user-1");
     expect(mockPrisma.slideDeck.create).not.toHaveBeenCalled();
+    expect(mockPrisma.collabDocument.create).not.toHaveBeenCalled();
+  });
+
+  it("does not make a copied document a deck", async () => {
+    await duplicatePage({ sourcePageId: SOURCE_PAGE.id, createdById: "user-1" });
+    expect(ensureLiveDeck).not.toHaveBeenCalled();
   });
 
   it("creates a new page with '(copy)' suffix", async () => {

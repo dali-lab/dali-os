@@ -12,7 +12,7 @@ const MAX_MARKDOWN_LENGTH = 300_000;
 export const CREATE_PAGE_TOOL = {
   name: "create_page",
   description:
-    "Create a page: a FreeForm document (optionally with Markdown content), a Folder, or in the lab a slide deck. With projectId the page goes in that project's workspace (needs Core or being staffed on the project); without it the page goes in the lab (any lab member at the top level, edit access to the folder inside one). Documents and folders nest inside any folder, up to 6 levels deep, as in the Drive. Fill a new slide deck with manage_slide_deck.",
+    "Create a page: a FreeForm document (optionally with Markdown content) or a Folder. With projectId the page goes in that project's workspace (needs Core or being staffed on the project); without it the page goes in the lab (any lab member at the top level, edit access to the folder inside one). Documents and folders nest inside any folder, up to 6 levels deep, as in the Drive.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -20,8 +20,8 @@ export const CREATE_PAGE_TOOL = {
       title: { type: "string", minLength: 1, maxLength: 200 },
       kind: {
         type: "string",
-        enum: ["FreeForm", "Folder", "Slides"],
-        description: "Default 'FreeForm' (a document). 'Folder' creates a container page. 'Slides' creates an empty slide deck (lab only).",
+        enum: ["FreeForm", "Folder"],
+        description: "Default 'FreeForm' (a document). 'Folder' creates a container page.",
       },
       parentPageId: {
         type: "string",
@@ -49,7 +49,7 @@ export const CREATE_PAGE_TOOL = {
 type Input = {
   projectId?: string;
   title: string;
-  kind?: "FreeForm" | "Folder" | "Slides";
+  kind?: "FreeForm" | "Folder";
   parentPageId?: string;
   content?: string;
   fromTemplatePageId?: string;
@@ -74,7 +74,6 @@ export async function runCreatePage(callerId: string, input: Input) {
   if (!(await canEditProject(callerId, projectId))) {
     throw new CreatePageError("Forbidden", 403);
   }
-  if (input.kind === "Slides") throw new CreatePageError("Slide decks can only be created in the lab", 400);
 
   const title = input.title.trim();
   if (!title) throw new CreatePageError("Title is required", 400);

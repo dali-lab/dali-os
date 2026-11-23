@@ -17,7 +17,6 @@ import {
 import { cleanBuildFields, type BuildEffect } from "~/components/slides/deck/builds";
 import { slideMetaFields } from "~/components/slides/deck/slide-meta";
 import { contentFields, type ChartSpec, type PollSpec } from "~/components/slides/deck/content";
-import type { Slide, SlideLayout } from "~/components/slides/types";
 import { layoutById } from "~/components/slides/deck/layouts";
 import { extraFields, geometryFields, linkGroups, shapeFields, withFill, type RenderSlide } from "~/components/slides/deck/snapshot";
 import type { FillId, ShapeKind } from "~/components/slides/deck/model";
@@ -135,34 +134,6 @@ export function readDeck(live: Y.Doc): DeckRead {
   } finally {
     clone.destroy();
   }
-}
-
-const LEGACY_LAYOUTS: readonly SlideLayout[] = ["title", "content", "split", "image"];
-const LEGACY_FOR_NEW_LAYOUT: Record<string, SlideLayout> = { section: "title", bignumber: "title" };
-
-export function legacyLayout(layoutId: string): SlideLayout {
-  if ((LEGACY_LAYOUTS as readonly string[]).includes(layoutId)) return layoutId as SlideLayout;
-  return LEGACY_FOR_NEW_LAYOUT[layoutId] ?? "content";
-}
-
-/** The legacy Slide[] shape of a deck, for readers that predate the Yjs model. Freeform (slotless) elements are dropped. */
-export function projectLegacySlides(read: DeckRead): Slide[] {
-  return read.slides.map((s) => {
-    const slot = (name: string) => s.elements.find((e) => e.slot === name);
-    const image = slot("image");
-    const body = slot("body");
-    const subtitle = slot("subtitle");
-    const slide: Slide = {
-      id: s.id,
-      layout: legacyLayout(s.layoutId),
-      title: slot("title")?.text ?? "",
-    };
-    if (subtitle?.text) slide.subtitle = subtitle.text;
-    if (body && body.blocks.length > 0) slide.body = body.blocks as never;
-    if (image?.src) slide.image = { src: image.src, alt: image.alt ?? "" };
-    if (s.notes.text) slide.notes = s.notes.text;
-    return slide;
-  });
 }
 
 function withParents(elements: RenderSlide["elements"]): RenderSlide["elements"] {

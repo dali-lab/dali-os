@@ -1,5 +1,5 @@
 // Slides as MCP tools see them: bodies in Markdown instead of BlockNote JSON.
-// Shared by the journey tools and the Drive slide deck tool.
+// Used by the journey tools.
 
 import { blocksToMarkdown, markdownToBlocks, type DocBlock } from "~/collab/blocknote-server";
 import { createId } from "~/lib/short-id";

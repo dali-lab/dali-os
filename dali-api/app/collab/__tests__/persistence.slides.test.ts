@@ -14,21 +14,19 @@ vi.mock("~/collab/server", () => ({ getCollabServer: vi.fn() }));
 import { prisma } from "~/lib/db.server";
 import { indexPageBody } from "~/lib/doc-search.server";
 import { forceSnapshot, loadDocument, restoreVersion, storeDocument } from "../persistence";
-import { seedDeckDoc } from "../deck-write.server";
-import { projectLegacySlides, readDeck } from "../read-deck.server";
+import { deckTitles, seedDeck, type SeedSlide } from "./seed-deck";
 import { isDeleted, restoreEpochOf, slidesMap, tombstoneSlide } from "~/components/slides/deck/model";
-import type { Slide } from "~/components/slides/types";
 
 const mockPrisma = prisma as any;
 const NAME = "slides:p1:deck";
-const SLIDES: Slide[] = [
+const SLIDES: SeedSlide[] = [
   { id: "a", layout: "title", title: "Quarterly review", notes: "speaker words" },
   { id: "b", layout: "content", title: "Roadmap" },
 ];
 
 const deck = () => {
   const doc = new Y.Doc();
-  seedDeckDoc(doc, SLIDES);
+  seedDeck(doc, SLIDES);
   return doc;
 };
 
@@ -86,7 +84,7 @@ describe("loadDocument for a slides room", () => {
     mockPrisma.collabDocument.findUnique.mockResolvedValue({ state: Buffer.from(state) });
     const doc = new Y.Doc();
     await loadDocument(NAME, doc);
-    expect(projectLegacySlides(readDeck(doc)).map((s) => s.title)).toEqual(["Quarterly review", "Roadmap"]);
+    expect(deckTitles(doc)).toEqual(["Quarterly review", "Roadmap"]);
     expect(doc.share.has("blocknote")).toBe(false);
   });
 
@@ -113,7 +111,6 @@ describe("restoreVersion for a slides room", () => {
     const snapshot = deck();
     tombstoneSlide(slidesMap(snapshot).get("b")!);
     const live = deck();
-    seedDeckDoc(new Y.Doc(), []);
     mockPrisma.collabDocumentVersion.findUnique.mockResolvedValue({
       id: "v1",
       name: NAME,
@@ -124,7 +121,7 @@ describe("restoreVersion for a slides room", () => {
 
     expect(live.share.has("blocknote")).toBe(false);
     expect(isDeleted(slidesMap(live).get("b")!)).toBe(true);
-    expect(projectLegacySlides(readDeck(live)).map((s) => s.title)).toEqual(["Quarterly review"]);
+    expect(deckTitles(live)).toEqual(["Quarterly review"]);
     expect(restoreEpochOf(live)).toBe(1);
   });
 

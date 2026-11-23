@@ -89,7 +89,6 @@ export function NewMenu({
   const folderBlock = isEducation ? educationCreateBlock(scope.items, currentFolderId, "Folder") : null;
   const notebook = notebookPlacement(scope, currentFolderId);
   const slidesEnabled = useFeatureFlag("drive-slides");
-  const slidesCollabEnabled = useFeatureFlag("slides-collab");
   const pptxInput = useRef<HTMLInputElement>(null);
   const [deckTemplatesOpen, setDeckTemplatesOpen] = useState(false);
   const templateProjectId = notebook.kind === "ready" && notebook.workspaceType === "Project" ? notebook.workspaceId : null;
@@ -288,7 +287,7 @@ export function NewMenu({
           </CreateLabel>
         </Menu.Item>
       )}
-      {slidesEnabled && slidesCollabEnabled && (
+      {slidesEnabled && (
         <Menu.Item
           icon={<Presentation className="w-3.5 h-3.5" />}
           disabled={docBlock !== null}
@@ -299,7 +298,7 @@ export function NewMenu({
           </CreateLabel>
         </Menu.Item>
       )}
-      {slidesEnabled && slidesCollabEnabled && (
+      {slidesEnabled && (
         <Menu.Item
           icon={<Presentation className="w-3.5 h-3.5" />}
           disabled={docBlock !== null}

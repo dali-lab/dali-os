@@ -1,23 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
-import type { Slide } from "~/components/slides/types";
 
 const env = vi.hoisted(() => ({ doc: null as unknown as Y.Doc, pageUpdate: vi.fn() }));
 const decks = vi.hoisted(() => ({
   deckAccess: vi.fn(),
-  loadDeck: vi.fn(),
-  editDeck: vi.fn(),
-  deckStorage: vi.fn(),
-  migrateDeckOnOpen: vi.fn(),
   readDeckModel: vi.fn(),
 }));
 const labDocs = vi.hoisted(() => ({ runCreateLabDocument: vi.fn() }));
-const flags = vi.hoisted(() => ({ isFeatureEnabled: vi.fn() }));
 
 vi.mock("~/lib/slide-decks.server", () => decks);
 vi.mock("~/lib/db.server", () => ({ prisma: { page: { update: env.pageUpdate } } }));
-vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn(async () => ({})) }));
-vi.mock("~/lib/feature-flags.server", () => flags);
 vi.mock("../lab-documents", () => labDocs);
 vi.mock("~/collab/deck-live.server", () => ({
   transactDeck: vi.fn(async (_p: string, _u: string, fn: (d: Y.Doc) => void) => env.doc.transact(() => fn(env.doc))),
@@ -25,11 +17,11 @@ vi.mock("~/collab/deck-live.server", () => ({
 vi.mock("~/collab/blocknote-server", async (importOriginal) => importOriginal());
 
 import { runManageSlideDeck, GET_SLIDE_DECK_TOOL_DEF, MANAGE_SLIDE_DECK_TOOL_DEF, MANAGE_SLIDE_ELEMENTS_TOOL_DEF } from "../manage-slide-deck";
-import { seedDeckDoc } from "~/collab/deck-write.server";
-import { projectLegacySlides, readDeck } from "~/collab/read-deck.server";
+import { seedDeck, type SeedSlide } from "~/collab/__tests__/seed-deck";
+import { readDeck } from "~/collab/read-deck.server";
 import { elementsOf, slidesMap } from "~/components/slides/deck/model";
 
-const LEGACY: Slide[] = [
+const LEGACY: SeedSlide[] = [
   { id: "a", layout: "title", title: "Alpha" },
   { id: "b", layout: "content", title: "Beta" },
 ];
@@ -42,13 +34,9 @@ const BIG = "x".repeat(200_001);
 beforeEach(() => {
   vi.clearAllMocks();
   env.doc = new Y.Doc();
-  seedDeckDoc(env.doc, LEGACY);
-  decks.deckStorage.mockResolvedValue("yjs");
-  decks.migrateDeckOnOpen.mockResolvedValue("yjs");
+  seedDeck(env.doc, LEGACY);
   decks.deckAccess.mockResolvedValue({ ok: true, page: PAGE, canEdit: true });
-  decks.loadDeck.mockImplementation(async () => ({ slides: projectLegacySlides(read()), version: "v1", storage: "yjs" }));
   decks.readDeckModel.mockImplementation(async () => read());
-  flags.isFeatureEnabled.mockResolvedValue(true);
 });
 
 describe("custom HTML through manage_slide_deck", () => {
@@ -183,7 +171,7 @@ describe("custom HTML in outlines", () => {
 describe("custom HTML in manage_slide_deck create", () => {
   beforeEach(() => {
     env.doc = new Y.Doc();
-    seedDeckDoc(env.doc, [{ id: "starter", layout: "content", title: "" }]);
+    seedDeck(env.doc, [{ id: "starter", layout: "content", title: "" }]);
     labDocs.runCreateLabDocument.mockResolvedValue({ id: "p1" });
   });
 

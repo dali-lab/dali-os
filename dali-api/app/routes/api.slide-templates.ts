@@ -2,8 +2,6 @@ import type { Route } from "./+types/api.slide-templates";
 import { requireAuth } from "~/lib/auth";
 import { parseJson } from "~/lib/validate";
 import { createSlideTemplate, createTemplateSchema, listForScopes, listSlideTemplates, type TemplateResult } from "~/lib/slide-templates.server";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
-import { getUserRoles } from "~/lib/roles";
 
 function respond(result: TemplateResult<object>) {
   if (result.ok) {
@@ -13,14 +11,9 @@ function respond(result: TemplateResult<object>) {
   return Response.json({ error: result.error }, { status: result.status });
 }
 
-async function collabEnabled(userId: string, request: Request) {
-  return isFeatureEnabled("slides-collab", userId, await getUserRoles(userId, request), request);
-}
-
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
-  if (!(await collabEnabled(auth.user.sub, request))) return new Response("Not found", { status: 404 });
   const url = new URL(request.url);
   const pageId = url.searchParams.get("pageId");
   if (pageId) return respond(await listSlideTemplates(auth.user.sub, pageId, request));
@@ -30,7 +23,6 @@ export async function loader({ request }: Route.LoaderArgs) {
 export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
-  if (!(await collabEnabled(auth.user.sub, request))) return new Response("Not found", { status: 404 });
   if (request.method !== "POST") return new Response("Method not allowed", { status: 405 });
   const body = await parseJson(request, createTemplateSchema);
   if (body instanceof Response) return body;

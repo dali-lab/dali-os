@@ -1,5 +1,4 @@
 import { z } from "zod";
-import type { Slide } from "./types";
 
 const shortText = z.string().max(300);
 const longText = z.string().max(20_000);
@@ -16,14 +15,3 @@ export const slideSchema = z.object({
   image: z.object({ src: z.string().max(2_000), alt: shortText }).optional(),
   notes: longText.optional(),
 });
-
-export const slidesSchema = z
-  .array(slideSchema)
-  .max(300)
-  .refine((slides) => new Set(slides.map((s) => s.id)).size === slides.length, "Slide ids must be unique.");
-
-/** The slides in `value`, or null when it isn't a valid deck. */
-export function parseSlides(value: unknown): Slide[] | null {
-  const result = slidesSchema.safeParse(value);
-  return result.success ? (result.data as unknown as Slide[]) : null;
-}

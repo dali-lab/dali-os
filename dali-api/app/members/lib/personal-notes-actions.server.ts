@@ -6,6 +6,7 @@
 
 import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
+import { ensureLiveDeck } from "~/lib/live-deck.server";
 import { pageDocName } from "~/collab/roomName";
 import {
   addPageShare,
@@ -69,7 +70,7 @@ export async function createNote(
     select: { position: true },
   });
 
-  return prisma.page.create({
+  const page = await prisma.page.create({
     data: {
       workspaceType: "Member",
       workspaceId: ownerId,
@@ -81,6 +82,8 @@ export async function createNote(
     },
     select: { id: true },
   });
+  if (kind === "Slides") await ensureLiveDeck(page.id, ownerId);
+  return page;
 }
 
 export async function updateNote(

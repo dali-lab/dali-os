@@ -22,7 +22,7 @@ vi.mock("~/lib/audit", () => ({ logAuditEvent: mocks.logAuditEvent }));
 
 import JSZip from "jszip";
 import { readDeck } from "~/collab/read-deck.server";
-import { seedDeckDoc } from "~/collab/deck-write.server";
+import { seedDeck } from "~/collab/__tests__/seed-deck";
 import { addSlide, deleteSlide } from "~/components/slides/deck/deck-ops";
 import { initDeck } from "~/components/slides/deck/model";
 import { buildDeckPptx } from "../export.server";
@@ -121,11 +121,11 @@ describe("export route", () => {
 
   it("exports the deck as the live model reads it", async () => {
     const doc = new Y.Doc();
-    seedDeckDoc(doc, [{ id: "s1", layout: "title", title: "Legacy title" }]);
+    seedDeck(doc, [{ id: "s1", layout: "title", title: "Live title" }]);
     mocks.readDeckModel.mockResolvedValueOnce(readDeck(doc));
     const res = await loader(request());
     const zip = await JSZip.loadAsync(await res.arrayBuffer());
-    expect(await zip.file("ppt/slides/slide1.xml")!.async("string")).toContain("Legacy title");
+    expect(await zip.file("ppt/slides/slide1.xml")!.async("string")).toContain("Live title");
     expect(mocks.readDeckModel).toHaveBeenCalledWith("p1");
   });
 });

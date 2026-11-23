@@ -2,7 +2,6 @@ import { expect, setFeatureFlag, test } from './lib/demo';
 
 test('Place and arrange items anywhere on a slide', async ({ page, stage, loginAs }) => {
   await setFeatureFlag('drive-slides', true);
-  await setFeatureFlag('slides-collab', true);
   await loginAs({ daliEmail: 'admin@dali.dartmouth.edu' });
 
   const created = await page.request.post('/api/lab-documents', { data: { title: 'Freeform deck', kind: 'Slides' } });

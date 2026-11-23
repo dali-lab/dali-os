@@ -9,14 +9,14 @@ const env = vi.hoisted(() => ({ doc: null as unknown as Y.Doc }));
 vi.mock("~/lib/db.server", () => ({ prisma: db }));
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn() }));
 vi.mock("~/drive/lib/page-templates.server", () => ({ canListWorkspace: vi.fn() }));
-vi.mock("~/lib/slide-decks.server", () => ({ deckAccess: vi.fn(), deckStorage: vi.fn(), migrateDeckOnOpen: vi.fn(), readDeckModel: vi.fn() }));
+vi.mock("~/lib/slide-decks.server", () => ({ deckAccess: vi.fn(), readDeckModel: vi.fn() }));
 vi.mock("~/collab/deck-live.server", () => ({
   transactDeck: vi.fn(async (_p: string, _u: string, fn: (d: Y.Doc) => void) => env.doc.transact(() => fn(env.doc))),
 }));
 
 import { isCore } from "~/lib/roles";
 import { canListWorkspace } from "~/drive/lib/page-templates.server";
-import { deckAccess, deckStorage, migrateDeckOnOpen, readDeckModel } from "~/lib/slide-decks.server";
+import { deckAccess, readDeckModel } from "~/lib/slide-decks.server";
 import { readDeck } from "~/collab/read-deck.server";
 import { addSlide } from "~/components/slides/deck/deck-ops";
 import { addPoll } from "~/components/slides/deck/freeform-ops";
@@ -228,7 +228,6 @@ describe("deleteSlideTemplate", () => {
 describe("applyDeckTemplate", () => {
   beforeEach(() => {
     db.slideTemplate.findUnique.mockResolvedValue(row({ themeId: "dali-light" }));
-    vi.mocked(deckStorage).mockResolvedValue("yjs");
     vi.mocked(readDeckModel).mockImplementation(async () => readDeck(env.doc));
   });
 
@@ -266,16 +265,10 @@ describe("applyDeckTemplate", () => {
     expect(await applyDeckTemplate("u1", "p1", "t1")).toMatchObject({ ok: false, status: 404 });
   });
 
-  it("refuses a deck that cannot move to the live editor", async () => {
-    vi.mocked(deckStorage).mockResolvedValue("json");
-    vi.mocked(migrateDeckOnOpen).mockResolvedValue("json");
-    expect(await applyDeckTemplate("u1", "p1", "t1")).toMatchObject({ ok: false, status: 400 });
-  });
-
-  it("moves a JSON deck to the live editor first when it can", async () => {
-    vi.mocked(deckStorage).mockResolvedValue("json");
-    vi.mocked(migrateDeckOnOpen).mockResolvedValue("yjs");
+  it("treats a deck with no slides as blank and sets the template's theme", async () => {
+    expect(readDeck(env.doc).slides).toHaveLength(0);
     expect(await applyDeckTemplate("u1", "p1", "t1")).toMatchObject({ ok: true });
+    expect(readDeck(env.doc).themeId).toBe("dali-light");
   });
 });
 

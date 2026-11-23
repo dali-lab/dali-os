@@ -108,12 +108,6 @@ export const FEATURE_FLAGS = [
       "Ask a question in plain language and get a short answer that cites the docs, meetings and tasks it came from, drawn only from what the member can already open. Read-only. Ships off.",
   },
   {
-    key: "slides-collab",
-    label: "Slides: live editing",
-    description:
-      "Slide decks open as live shared documents. Turning this on moves a deck to live editing the first time someone opens it, and new decks start live. A deck that has moved stays live if this is turned off. Ships off.",
-  },
-  {
     key: "slides-live",
     label: "Slides: live presenting",
     description:
