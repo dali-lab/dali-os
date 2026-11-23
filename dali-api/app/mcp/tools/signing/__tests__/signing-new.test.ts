@@ -964,7 +964,7 @@ describe("agreement tool consolidation", () => {
   it("manage_agreement no longer takes remind or its properties", async () => {
     vi.mocked(isCore).mockResolvedValue(true);
     await expect(
-      runManageAgreement(ctx(), { action: "remind", bindingId: "b1" }),
+      runManageAgreement(ctx(), { action: "remind", bindingId: "b1" } as never),
     ).rejects.toMatchObject({ name: "McpInvalidError" });
     expect(MANAGE_AGREEMENT_TOOL.inputSchema.properties).not.toHaveProperty("bindingId");
     expect(MANAGE_AGREEMENT_TOOL.inputSchema.properties).not.toHaveProperty("force");

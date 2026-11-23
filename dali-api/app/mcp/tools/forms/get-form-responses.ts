@@ -218,6 +218,13 @@ async function runTracker(args: Args) {
   };
 }
 
+export async function runGetFormResponses(ctx: McpCtx, args: Args & { view: "summary" }): ReturnType<typeof runSummary>;
+export async function runGetFormResponses(ctx: McpCtx, args: Args & { view: "tracker" }): ReturnType<typeof runTracker>;
+export async function runGetFormResponses(ctx: McpCtx, args: Args & { view?: "rows" }): ReturnType<typeof runRows>;
+export async function runGetFormResponses(
+  ctx: McpCtx,
+  args: Args,
+): Promise<Awaited<ReturnType<typeof runRows | typeof runSummary | typeof runTracker>>>;
 export async function runGetFormResponses(ctx: McpCtx, args: Args) {
   if (!(await canBuildForm(ctx.user.id, args.formId))) {
     throw new McpForbiddenError("You do not have edit access to this form");

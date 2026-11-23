@@ -138,6 +138,12 @@ async function runSigned(ctx: McpCtx, args: Args) {
   };
 }
 
+export async function runGetMyAgreement(ctx: McpCtx, args: Args & { view: "signed" }): ReturnType<typeof runSigned>;
+export async function runGetMyAgreement(ctx: McpCtx, args: Args & { view?: "to_sign" }): ReturnType<typeof runToSign>;
+export async function runGetMyAgreement(
+  ctx: McpCtx,
+  args: Args,
+): Promise<Awaited<ReturnType<typeof runSigned | typeof runToSign>>>;
 export async function runGetMyAgreement(ctx: McpCtx, args: Args) {
   return args.view === "signed" ? runSigned(ctx, args) : runToSign(ctx, args);
 }
