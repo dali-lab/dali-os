@@ -130,7 +130,7 @@ describe("manage_journey", () => {
 
 describe("manage_journey_module", () => {
   it("adds a module after another and returns its id", async () => {
-    const out = (await call("manage_journey_module", { action: "add", journeyId: "j", afterModuleId: "b", title: "C" })) as { moduleId: string };
+    const out = (await call("manage_journey_module", { action: "create", journeyId: "j", afterModuleId: "b", title: "C" })) as { moduleId: string };
     const added = state.draft.modules.find((m) => m.id === out.moduleId)!;
     expect(added).toMatchObject({ title: "C", dependsOn: ["b"] });
   });
@@ -159,7 +159,7 @@ describe("manage_journey_module", () => {
 
 describe("manage_journey_page", () => {
   it("adds, rewrites and moves pages with Markdown bodies", async () => {
-    const out = (await call("manage_journey_page", { action: "add", journeyId: "j", moduleId: "a", title: "Intro", markdown: "Hello", index: 0 })) as { pageId: string };
+    const out = (await call("manage_journey_page", { action: "create", journeyId: "j", moduleId: "a", title: "Intro", markdown: "Hello", index: 0 })) as { pageId: string };
     const pages = () => state.draft.modules[0].pages;
     expect(pages()[0]).toMatchObject({ id: out.pageId, title: "Intro" });
     expect(JSON.stringify(pages()[0].content)).toContain("Hello");
@@ -249,6 +249,25 @@ describe("set_journey_activity", () => {
     expect(props.activity.enum).toEqual(["code_lab", "studio_lab", "quiz"]);
     for (const field of ["codeLab", "studioLab", "quiz"]) expect(props[field]).toBeDefined();
     expect(tool("set_journey_activity").def.inputSchema.required).toEqual(["activity", "journeyId", "moduleId"]);
+  });
+});
+
+describe("journey create action", () => {
+  it("uses create, not add, for modules, pages and slides", () => {
+    for (const name of ["manage_journey_module", "manage_journey_page", "manage_journey_slides"]) {
+      const actions = (tool(name).def.inputSchema.properties as Record<string, { enum?: string[] }>).action.enum;
+      expect(actions).toContain("create");
+      expect(actions).not.toContain("add");
+    }
+  });
+
+  it("keeps the activity rules in the field descriptions, not the tool description", () => {
+    const def = tool("set_journey_activity").def;
+    const props = def.inputSchema.properties as Record<string, { description?: string }>;
+    expect(def.description.length).toBeLessThan(500);
+    expect(props.codeLab.description).toContain("index.html");
+    expect(props.studioLab.description).toContain("item-count");
+    expect(props.quiz.description).toContain("passingScore");
   });
 });
 

@@ -42,10 +42,12 @@ import {
   GET_GALLERY_POST_DEF,
   LIST_GALLERY_POSTS_DEF,
   MANAGE_GALLERY_POST_DEF,
+  MODERATE_GALLERY_POST_DEF,
   runCreateGalleryUpload,
   runGetGalleryPost,
   runListGalleryPosts,
   runManageGalleryPost,
+  runModerateGalleryPost,
 } from "../gallery";
 import { COMMUNITY_TOOLS } from "..";
 import type { McpCtx } from "~/mcp/registry";
@@ -95,17 +97,19 @@ beforeEach(() => {
 });
 
 describe("registration", () => {
-  it("lists all four tools with read for reads and write for writes", () => {
+  it("lists all five tools with read for reads and write for writes", () => {
     expect(COMMUNITY_TOOLS.map((t) => t.def.name)).toEqual([
       "list_gallery_posts",
       "get_gallery_post",
       "create_gallery_upload",
       "manage_gallery_post",
+      "moderate_gallery_post",
     ]);
     expect(LIST_GALLERY_POSTS_DEF.requiredScope).toBe("mcp:read");
     expect(GET_GALLERY_POST_DEF.requiredScope).toBe("mcp:read");
     expect(CREATE_GALLERY_UPLOAD_DEF.requiredScope).toBe("mcp:write");
     expect(MANAGE_GALLERY_POST_DEF.requiredScope).toBe("mcp:write");
+    expect(MODERATE_GALLERY_POST_DEF.requiredScope).toBe("mcp:write");
   });
 });
 
@@ -118,7 +122,7 @@ describe("access", () => {
 
   it("acts as Core for Core members", async () => {
     roles.getUserRoles.mockResolvedValue({ isCore: true });
-    await runManageGalleryPost(ctx, { action: "hide", postId: "p1" });
+    await runModerateGalleryPost(ctx, { action: "hide", postId: "p1" });
     expect(gallery.applyGalleryIntent.mock.calls[0][1]).toEqual({ ...viewer, core: true });
   });
 });
@@ -341,11 +345,32 @@ describe("manage_gallery_post", () => {
     });
   });
 
-  it("reports the web's Core-only refusal for hide", async () => {
-    gallery.applyGalleryIntent.mockResolvedValue({ ok: false, status: 403 });
-    await expect(runManageGalleryPost(ctx, { action: "hide", postId: "p1" })).rejects.toMatchObject({
-      status: 403,
-      message: "Forbidden",
-    });
+  it("no longer routes hide or restore", () => {
+    expect(MANAGE_GALLERY_POST_DEF.inputSchema.properties.action.enum).not.toContain("hide");
+    expect(MANAGE_GALLERY_POST_DEF.inputSchema.properties.action.enum).not.toContain("restore");
+  });
+});
+
+describe("moderate_gallery_post", () => {
+  it("refuses non-Core callers before touching anything", async () => {
+    await expect(runModerateGalleryPost(ctx, { action: "hide", postId: "p1" })).rejects.toMatchObject({ status: 403 });
+    expect(gallery.applyGalleryIntent).not.toHaveBeenCalled();
+  });
+
+  it.each(["hide", "restore"] as const)("%ss a post for Core", async (action) => {
+    roles.getUserRoles.mockResolvedValue({ isCore: true });
+    await expect(runModerateGalleryPost(ctx, { action, postId: "p1" })).resolves.toEqual({ ok: true });
+    expect(gallery.applyGalleryIntent.mock.calls[0][2]).toEqual({ intent: action, postId: "p1" });
+  });
+
+  it("is not found for a post the caller cannot see", async () => {
+    roles.getUserRoles.mockResolvedValue({ isCore: true });
+    db.galleryPost.findFirst.mockResolvedValue(null);
+    await expect(runModerateGalleryPost(ctx, { action: "hide", postId: "p1" })).rejects.toMatchObject({ status: 404 });
+  });
+
+  it("requires a postId", async () => {
+    roles.getUserRoles.mockResolvedValue({ isCore: true });
+    await expect(runModerateGalleryPost(ctx, { action: "hide" } as never)).rejects.toMatchObject({ status: 400 });
   });
 });

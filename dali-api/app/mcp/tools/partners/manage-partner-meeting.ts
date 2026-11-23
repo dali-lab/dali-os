@@ -40,10 +40,8 @@ export const MANAGE_PARTNER_MEETING_TOOL = {
   name: "manage_partner_meeting",
   description:
     "Log and debrief discovery/partner meetings (Core only). " +
-    "create (applicationId required) takes exactly one of: scheduledMeetingId (link an existing ScheduledMeeting), " +
-    "startTime+participantUserIds (create a real ScheduledMeeting via the calendar and link it; optional durationMinutes default 30, title default 'DALI x <contact>', guestEmails default the applicant's email), " +
-    "or scheduledAt (legacy log-only row, no ScheduledMeeting; attendeeUserIds/notes optional) — none of these email the partner directly. " +
-    "debrief (meetingId+applicationId required; debrief text and/or outcome: Advance|Hold|Reject|MoreInfoNeeded).",
+    "create takes exactly one of scheduledMeetingId (link an existing meeting), startTime+participantUserIds (create a real meeting via the calendar and link it), or scheduledAt (log-only row). The partner is not emailed directly. " +
+    "debrief takes meetingId and a debrief and/or an outcome (Advance, Hold, Reject, MoreInfoNeeded).",
   inputSchema: {
     type: "object" as const,
     properties: {

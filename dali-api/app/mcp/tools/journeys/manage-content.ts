@@ -27,7 +27,7 @@ function indexOf<T extends { id: string }>(list: T[], id: string, what: string):
 // ─── Pages ───────────────────────────────────────────────────────────────────
 
 type PageArgs = {
-  action: "add" | "update" | "delete" | "move";
+  action: "create" | "update" | "delete" | "move";
   journeyId: string;
   moduleId: string;
   pageId?: string;
@@ -41,17 +41,17 @@ export const MANAGE_JOURNEY_PAGE: McpTool = {
   def: {
     name: "manage_journey_page",
     description:
-      "Edit a journey module's lesson pages, which learners read in order. Bodies are Markdown (headings, lists, code blocks, quotes, tables, images, links). Actions: add (title, markdown, optional index), update (pageId + title and/or markdown; markdown replaces the whole body), delete, move (pageId + toIndex). Saved to the draft.",
+      "Edit a journey module's lesson pages, which learners read in order. Bodies are Markdown (headings, lists, code blocks, quotes, tables, images, links). Actions: create (title, markdown, optional index), update (pageId + title and/or markdown; markdown replaces the whole body), delete, move (pageId + toIndex). Saved to the draft.",
     inputSchema: inputSchema({
       type: "object" as const,
       properties: {
-        action: { type: "string", enum: ["add", "update", "delete", "move"] },
+        action: { type: "string", enum: ["create", "update", "delete", "move"] },
         journeyId: { type: "string", minLength: 1 },
         moduleId: { type: "string", minLength: 1 },
-        pageId: { type: "string", description: "Required except for add." },
+        pageId: { type: "string", description: "Required except for create." },
         title: { type: "string", maxLength: 300 },
         markdown: { type: "string", maxLength: 300_000 },
-        index: { type: "number", minimum: 0, description: "add: position, default last." },
+        index: { type: "number", minimum: 0, description: "create: position, default last." },
         toIndex: { type: "number", minimum: 0 },
       },
       required: ["action", "journeyId", "moduleId"],
@@ -61,7 +61,7 @@ export const MANAGE_JOURNEY_PAGE: McpTool = {
   },
   run: async (ctx: McpCtx, raw) => {
     const args = raw as PageArgs;
-    requireForAction(args.action, args, { add: ["title"], update: ["pageId"], delete: ["pageId"], move: ["pageId", "toIndex"] });
+    requireForAction(args.action, args, { create: ["title"], update: ["pageId"], delete: ["pageId"], move: ["pageId", "toIndex"] });
     const viewer = await journeyViewer(ctx);
     const body = args.markdown !== undefined ? await markdownToRichDoc(args.markdown) : undefined;
     let pageId = args.pageId;
@@ -70,7 +70,7 @@ export const MANAGE_JOURNEY_PAGE: McpTool = {
       args.journeyId,
       editModule(args.moduleId, (m) => {
         switch (args.action) {
-          case "add": {
+          case "create": {
             const page = { ...createPage(), title: args.title!, content: body ?? [] };
             pageId = page.id;
             return { ...m, pages: insertAt(m.pages, page, args.index) };
@@ -96,7 +96,7 @@ export const MANAGE_JOURNEY_PAGE: McpTool = {
 // ─── Slides ──────────────────────────────────────────────────────────────────
 
 type SlidesArgs = {
-  action: "add" | "update" | "delete" | "move" | "set";
+  action: "create" | "update" | "delete" | "move" | "set";
   journeyId: string;
   moduleId: string;
   slideId?: string;
@@ -110,11 +110,11 @@ export const MANAGE_JOURNEY_SLIDES: McpTool = {
   def: {
     name: "manage_journey_slides",
     description:
-      "Edit a journey module's slide deck, a short click-through shown beside the lesson. Actions: set (replace the whole deck with `slides`; an empty list removes it), add (`slide`, optional index), update (slideId + `slide` fields to change), delete, move (slideId + toIndex). Saved to the draft.",
+      "Edit a journey module's slide deck, a short click-through shown beside the lesson. Actions: set (replace the whole deck with `slides`; an empty list removes it), create (`slide`, optional index), update (slideId + `slide` fields to change), delete, move (slideId + toIndex). Saved to the draft.",
     inputSchema: inputSchema({
       type: "object" as const,
       properties: {
-        action: { type: "string", enum: ["add", "update", "delete", "move", "set"] },
+        action: { type: "string", enum: ["create", "update", "delete", "move", "set"] },
         journeyId: { type: "string", minLength: 1 },
         moduleId: { type: "string", minLength: 1 },
         slideId: { type: "string" },
@@ -132,7 +132,7 @@ export const MANAGE_JOURNEY_SLIDES: McpTool = {
     const args = raw as SlidesArgs;
     requireForAction(args.action, args, {
       set: ["slides"],
-      add: ["slide"],
+      create: ["slide"],
       update: ["slideId", "slide"],
       delete: ["slideId"],
       move: ["slideId", "toIndex"],
@@ -151,7 +151,7 @@ export const MANAGE_JOURNEY_SLIDES: McpTool = {
             for (const input of args.slides!) next.push(await applySlideInput(input));
             return withSlides(next);
           }
-          case "add": {
+          case "create": {
             const slide = await applySlideInput(args.slide!);
             slideId = slide.id;
             return withSlides(insertAt(slides, slide, args.index));

@@ -58,15 +58,13 @@ describe("manage_feature_flag", () => {
   it("throws McpForbiddenError when caller is not isCore", async () => {
     vi.mocked(isCore).mockResolvedValue(false);
     await expect(
-      runManageFeatureFlag(makeCtx("u-nobody"), { action: "list" }),
+      runManageFeatureFlag(makeCtx("u-nobody"), { action: "set_config", key: "infra-dashboard", enabled: true }),
     ).rejects.toMatchObject({ name: "McpForbiddenError", status: 403 });
   });
 
-  describe("action: list", () => {
-    it("returns all flags", async () => {
-      const out = await runManageFeatureFlag(makeCtx(), { action: "list" });
-      expect(out).toEqual({ flags: [{ ...CURRENT }] });
-    });
+  it("no longer lists", async () => {
+    expect((MANAGE_FEATURE_FLAG_TOOL.inputSchema.properties.action as { enum: string[] }).enum).toEqual(["set_config"]);
+    await expect(runManageFeatureFlag(makeCtx(), { action: "list" })).rejects.toMatchObject({ name: "McpInvalidError" });
   });
 
   describe("action: set_config", () => {

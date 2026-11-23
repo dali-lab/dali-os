@@ -29,7 +29,6 @@ import {
   runListExpenses,
   runManageExpense,
 } from "./expenses";
-import { EXPORT_EXPENSES_DEF, runExportExpenses } from "./export";
 import { EXPENSES_FLAG } from "./shared";
 
 export const EXPENSES_TOOLS: McpTool[] = [
@@ -45,5 +44,4 @@ export const EXPENSES_TOOLS: McpTool[] = [
   { def: CREATE_CARD_STATEMENT_UPLOAD_DEF, run: runCreateCardStatementUpload },
   { def: IMPORT_CARD_STATEMENT_DEF, run: runImportCardStatement },
   { def: LIST_CARD_CHARGES_DEF, run: runListCardCharges },
-  { def: EXPORT_EXPENSES_DEF, run: runExportExpenses },
 ].map((t) => ({ ...t, featureFlag: EXPENSES_FLAG }));
