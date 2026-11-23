@@ -5,7 +5,7 @@
 //               ProjectFile + first-ProjectFileVersion shape as
 //               api.projects.$id.files.ts.
 //   "pageImage" uploads without a Files entry, for embedding in page bodies:
-//               pass the returned `src` to set_page_content as ![alt](src).
+//               pass the returned `src` to edit_content as ![alt](src).
 // Both return `src`, a stable session-authed URL (/api/upload/raw) that
 // redirects to a fresh presigned S3 GET — a bare presigned URL would expire
 // inside long-lived page content. Gate mirrors the app's file routes: Core,
@@ -24,7 +24,7 @@ const MAX_BASE64_LENGTH = 12_000_000;
 export const UPLOAD_PROJECT_FILE_TOOL = {
   name: "upload_project_file",
   description:
-    'Upload a file to a project from base64 content (max ~9 MB decoded). purpose "file" (default) adds it to the project\'s Files list; "pageImage" uploads an image for embedding in page bodies via set_page_content — use the returned src in ![alt](src). For a larger file, or one on disk you can reach with a shell, use create_project_file_upload instead (up to 100 MB, no base64). Requires Core or being staffed on the project.',
+    'Upload a file to a project from base64 content (max ~9 MB decoded). purpose "file" (default) adds it to the project\'s Files list; "pageImage" uploads an image for embedding in page bodies via edit_content — use the returned src in ![alt](src). For a larger file, or one on disk you can reach with a shell, use create_project_file_upload instead (up to 100 MB, no base64). Requires Core or being staffed on the project.',
   inputSchema: {
     type: "object" as const,
     properties: {

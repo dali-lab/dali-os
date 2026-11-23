@@ -49,33 +49,6 @@ vi.mock("../../time-entries", () => ({
   runDeleteTimeEntry: vi.fn(),
 }));
 
-vi.mock("../../file-sharing", () => ({
-  FILE_SHARING_PROPERTIES: {},
-  FILE_SHARING_REQUIRED: {},
-  runFileSharingAction: vi.fn(),
-}));
-
-vi.mock("../../page-sharing", () => ({
-  PAGE_SHARING_PROPERTIES: {},
-  PAGE_SHARING_REQUIRED: {},
-  runPageSharingAction: vi.fn(),
-}));
-
-vi.mock("../../document-curation", () => ({
-  SET_DOCUMENT_SHARING_PROPERTIES: {},
-  SET_DOCUMENT_SHARING_REQUIRED: ["pageId"],
-  DELETE_PROJECT_DOCUMENT_PROPERTIES: {},
-  DELETE_PROJECT_DOCUMENT_REQUIRED: ["pageId"],
-  SET_FILE_SHARING_PROPERTIES: {},
-  SET_FILE_SHARING_REQUIRED: ["fileId", "partnerVisible"],
-  DELETE_PROJECT_FILE_PROPERTIES: {},
-  DELETE_PROJECT_FILE_REQUIRED: ["fileId"],
-  runSetDocumentSharing: vi.fn(),
-  runDeleteProjectDocument: vi.fn(),
-  runSetFileSharing: vi.fn(),
-  runDeleteProjectFile: vi.fn(),
-}));
-
 vi.mock("../../projects-extra/provision-epic-description-doc", () => ({
   runProvisionEpicDescriptionDoc: vi.fn(),
 }));
@@ -85,7 +58,6 @@ vi.mock("../../projects-extra/provision-epic-description-doc", () => ({
 import { MANAGE_EPIC_TOOL } from "../manage-epic";
 import { MANAGE_STORY_TOOL } from "../manage-story";
 import { MANAGE_TIME_ENTRY_TOOL } from "../manage-time-entry";
-import { MANAGE_DOCUMENT_SHARING_TOOL } from "../manage-document-sharing";
 
 import { runCreateEpic } from "../../create-epic";
 import { runUpdateEpic } from "../../update-epic";
@@ -97,13 +69,6 @@ import { runUpdateStory } from "../../update-story";
 import { runDeleteStory } from "../../delete-story";
 
 import { runAddTimeEntry, runUpdateTimeEntry, runDeleteTimeEntry } from "../../time-entries";
-import {
-  runSetDocumentSharing,
-  runDeleteProjectDocument,
-  runSetFileSharing,
-  runDeleteProjectFile,
-} from "../../document-curation";
-
 import { McpInvalidError } from "../../../errors";
 
 // ─── Shared test ctx ─────────────────────────────────────────────────────────
@@ -275,82 +240,6 @@ describe("manage_time_entry", () => {
   it("delete missing id throws McpInvalidError", async () => {
     await expect(
       MANAGE_TIME_ENTRY_TOOL.run(ctx, { action: "delete" }),
-    ).rejects.toBeInstanceOf(McpInvalidError);
-  });
-});
-
-// ─── manage_document_sharing ──────────────────────────────────────────────────
-
-describe("manage_document_sharing", () => {
-  it("advertises mcp:write scope", () => {
-    expect(MANAGE_DOCUMENT_SHARING_TOOL.def.requiredScope).toBe("mcp:write");
-  });
-
-  it("unknown action throws McpInvalidError", async () => {
-    await expect(
-      MANAGE_DOCUMENT_SHARING_TOOL.run(ctx, { action: "explode" }),
-    ).rejects.toBeInstanceOf(McpInvalidError);
-  });
-
-  it("set_document_sharing routes to runSetDocumentSharing with userId and stripped args", async () => {
-    vi.mocked(runSetDocumentSharing).mockResolvedValue({
-      ok: true,
-      partnerVisible: true,
-      publicVisible: false,
-      pinned: false,
-    } as any);
-    await MANAGE_DOCUMENT_SHARING_TOOL.run(ctx, {
-      action: "set_document_sharing",
-      pageId: "pg1",
-      partnerVisible: true,
-    });
-    expect(runSetDocumentSharing).toHaveBeenCalledWith("user-1", {
-      pageId: "pg1",
-      partnerVisible: true,
-    });
-  });
-
-  it("delete_document routes to runDeleteProjectDocument", async () => {
-    vi.mocked(runDeleteProjectDocument).mockResolvedValue({
-      ok: true,
-      archived: true,
-      deleted: false,
-    } as any);
-    await MANAGE_DOCUMENT_SHARING_TOOL.run(ctx, {
-      action: "delete_document",
-      pageId: "pg1",
-    });
-    expect(runDeleteProjectDocument).toHaveBeenCalledWith("user-1", { pageId: "pg1" });
-  });
-
-  it("set_file_sharing routes to runSetFileSharing", async () => {
-    vi.mocked(runSetFileSharing).mockResolvedValue({ ok: true, partnerVisible: false } as any);
-    await MANAGE_DOCUMENT_SHARING_TOOL.run(ctx, {
-      action: "set_file_sharing",
-      fileId: "f1",
-      partnerVisible: false,
-    });
-    expect(runSetFileSharing).toHaveBeenCalledWith("user-1", { fileId: "f1", partnerVisible: false });
-  });
-
-  it("delete_file routes to runDeleteProjectFile", async () => {
-    vi.mocked(runDeleteProjectFile).mockResolvedValue({
-      ok: true,
-      alreadyArchived: false,
-    } as any);
-    await MANAGE_DOCUMENT_SHARING_TOOL.run(ctx, { action: "delete_file", fileId: "f1" });
-    expect(runDeleteProjectFile).toHaveBeenCalledWith("user-1", { fileId: "f1" });
-  });
-
-  it("set_document_sharing missing pageId throws McpInvalidError", async () => {
-    await expect(
-      MANAGE_DOCUMENT_SHARING_TOOL.run(ctx, { action: "set_document_sharing" }),
-    ).rejects.toBeInstanceOf(McpInvalidError);
-  });
-
-  it("set_file_sharing missing partnerVisible throws McpInvalidError", async () => {
-    await expect(
-      MANAGE_DOCUMENT_SHARING_TOOL.run(ctx, { action: "set_file_sharing", fileId: "f1" }),
     ).rejects.toBeInstanceOf(McpInvalidError);
   });
 });

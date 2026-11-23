@@ -1,25 +1,12 @@
-// MCP personal-note tools.
-//   list_personal_notes   — mcp:read   (own + shared)
-//   get_personal_note     — mcp:read   (single note with body access check)
-//   manage_personal_note  — mcp:write  (faceted: create/update/delete/set_visibility/share_add/share_remove)
-
 import { prisma } from "~/lib/db.server";
 import { isLabMemberOrAlum } from "~/lib/roles";
 import { requireForAction } from "~/mcp/registry";
 import {
-  noteAccess,
   groupIdsForUser,
   NoteForbiddenError,
   NoteNotFoundError,
 } from "~/members/lib/personal-notes.server";
-import {
-  createNote,
-  updateNote,
-  setNoteVisibility,
-  addNoteShare,
-  removeNoteShare,
-  deleteNote,
-} from "~/members/lib/personal-notes-actions.server";
+import { createNote, updateNote } from "~/members/lib/personal-notes-actions.server";
 import { offsetPage, offsetWindow, pageProps, type PageArgs } from "../../pagination";
 
 const PAGE_LIMITS = { defaultLimit: 50, maxLimit: 200 };
@@ -29,7 +16,7 @@ const PAGE_LIMITS = { defaultLimit: 50, maxLimit: 200 };
 export const LIST_PERSONAL_NOTES_TOOL = {
   name: "list_personal_notes",
   description:
-    "List personal notes visible to the caller: own notes plus notes shared with them (by direct share or group). Returns note metadata without body content: use get_personal_note to read body. Pass page.nextCursor as cursor to read the next page until page.hasMore is false.",
+    "List personal notes visible to the caller: own notes plus notes shared with them (by direct share or group). Returns note metadata without body content: use read_page to read a note. Pass page.nextCursor as cursor to read the next page until page.hasMore is false.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -172,108 +159,31 @@ export async function runListPersonalNotes(callerId: string, input: ListInput) {
   };
 }
 
-// ─── get_personal_note ────────────────────────────────────────────────────────
-
-export const GET_PERSONAL_NOTE_TOOL = {
-  name: "get_personal_note",
-  description:
-    "Get a single personal note's metadata. Must have view access (own, shared, public, or lab-listed). To read the body content use read_page after verifying access.",
-  inputSchema: {
-    type: "object" as const,
-    properties: {
-      pageId: { type: "string", minLength: 1 },
-    },
-    required: ["pageId"],
-    additionalProperties: false,
-  },
-  requiredScope: "mcp:read" as const,
-};
-
-type GetInput = { pageId: string };
-
-export async function runGetPersonalNote(callerId: string, input: GetInput) {
-  let access;
-  try {
-    access = await noteAccess(input.pageId, callerId);
-  } catch (err) {
-    if (err instanceof NoteNotFoundError) throw new PersonalNoteError("Note not found", 404);
-    throw err;
-  }
-  if (!access.canView) throw new PersonalNoteError("Forbidden", 403);
-
-  const page = await prisma.page.findUnique({
-    where: { id: input.pageId },
-    select: {
-      id: true,
-      title: true,
-      iconEmoji: true,
-      kind: true,
-      parentPageId: true,
-      workspaceId: true,
-      profileVisible: true,
-      labListing: true,
-      updatedAt: true,
-      createdAt: true,
-      tags: { select: { tag: { select: { id: true, label: true, color: true } } } },
-      _count: { select: { shares: true } },
-    },
-  });
-  if (!page) throw new PersonalNoteError("Note not found", 404);
-
-  return {
-    id: page.id,
-    title: page.title,
-    iconEmoji: page.iconEmoji,
-    kind: page.kind,
-    parentPageId: page.parentPageId,
-    visibility: page.profileVisible ? "public" : "private",
-    labListing: page.labListing,
-    updatedAt: page.updatedAt.toISOString(),
-    createdAt: page.createdAt.toISOString(),
-    tags: page.tags.map((t) => t.tag),
-    shareCount: page._count.shares,
-    ownerId: page.workspaceId,
-    canEdit: access.canEdit,
-    isOwner: access.isOwner,
-  };
-}
-
 // ─── manage_personal_note ─────────────────────────────────────────────────────
 
 export const MANAGE_PERSONAL_NOTE_TOOL = {
   name: "manage_personal_note",
   description:
-    "Manage a personal note. Owner-gated for all actions. Actions: create (own space), update (title/icon/parent), delete, set_visibility (public/private), share_add (share with user/group), share_remove (revoke a share).",
+    "Create or rename your own personal notes and folders. Actions: create (in your own space), update (title, icon or parent folder). Only the owner can change a note. Trash a note with manage_drive_trash; share it or make it public with share_page; read it with read_page.",
   inputSchema: {
     type: "object" as const,
     properties: {
-      action: {
-        type: "string",
-        enum: ["create", "update", "delete", "set_visibility", "share_add", "share_remove"],
-      },
-      pageId: { type: "string", description: "Required for all actions except 'create'." },
-      title: { type: "string", maxLength: 300, description: "For create/update." },
+      action: { type: "string", enum: ["create", "update"] },
+      pageId: { type: "string", description: "update: the note." },
+      title: { type: "string", maxLength: 300, description: "create, update." },
       iconEmoji: {
         type: "string",
         maxLength: 10,
-        description: "For update. Empty string clears it.",
+        description: "update: empty string clears it.",
       },
       parentPageId: {
         type: "string",
-        description: "For create/update. Empty string clears parent.",
+        description: "create, update: the parent folder. Empty string clears the parent.",
       },
       isFolder: {
         type: "boolean",
-        description: "For create only. Creates a folder instead of a note.",
+        description: "create: creates a folder instead of a note.",
       },
-      isPublic: { type: "boolean", description: "For set_visibility." },
-      principalType: {
-        type: "string",
-        enum: ["User", "Group"],
-        description: "For share_add.",
-      },
-      principalId: { type: "string", description: "User or Group id for share_add." },
-      shareId: { type: "string", description: "PageShare id for share_remove." },
     },
     required: ["action"],
     additionalProperties: false,
@@ -282,25 +192,17 @@ export const MANAGE_PERSONAL_NOTE_TOOL = {
 };
 
 type ManageInput = {
-  action: "create" | "update" | "delete" | "set_visibility" | "share_add" | "share_remove";
+  action: "create" | "update";
   pageId?: string;
   title?: string;
   iconEmoji?: string;
   parentPageId?: string;
   isFolder?: boolean;
-  isPublic?: boolean;
-  principalType?: "User" | "Group";
-  principalId?: string;
-  shareId?: string;
 };
 
 const ACTION_REQUIRED: Record<string, string[]> = {
   create: [],
   update: ["pageId"],
-  delete: ["pageId"],
-  set_visibility: ["pageId", "isPublic"],
-  share_add: ["pageId", "principalType", "principalId"],
-  share_remove: ["pageId", "shareId"],
 };
 
 export async function runManagePersonalNote(callerId: string, input: ManageInput) {
@@ -326,27 +228,6 @@ export async function runManagePersonalNote(callerId: string, input: ManageInput
               ? (input.parentPageId || null)
               : undefined,
         });
-        return { ok: true };
-      }
-      case "delete": {
-        await deleteNote(input.pageId!, callerId);
-        return { ok: true };
-      }
-      case "set_visibility": {
-        await setNoteVisibility(input.pageId!, callerId, input.isPublic!);
-        return { ok: true };
-      }
-      case "share_add": {
-        const res = await addNoteShare(
-          input.pageId!,
-          callerId,
-          input.principalType!,
-          input.principalId!,
-        );
-        return res;
-      }
-      case "share_remove": {
-        await removeNoteShare(input.pageId!, callerId, input.shareId!);
         return { ok: true };
       }
     }

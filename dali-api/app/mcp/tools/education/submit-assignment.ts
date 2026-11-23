@@ -7,7 +7,7 @@
 //   - Complete: no artifact — just records completion
 //   - Doc: collab-body mode — the body lives in the collab room; submitting sets
 //         submittedAt. The caller must have already written content to the room
-//         via the collab pipeline (set_page_content / Hocuspocus). We can't do
+//         via the collab pipeline (edit_content / Hocuspocus). We can't do
 //         that server-side here without the collab-write step, so this tool
 //         records the submission timestamp; the content is already in the room.
 // Gate: student self (caller must be an Approved enrollee).

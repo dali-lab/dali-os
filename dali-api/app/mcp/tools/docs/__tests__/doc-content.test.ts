@@ -11,7 +11,7 @@ vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn() }));
 vi.mock("~/lib/collabAuth.server", () => ({ authorizeCollabDoc: vi.fn() }));
 vi.mock("~/blog/lib/blog-post.server", () => ({ findBlogPost: vi.fn() }));
 vi.mock("../blog-posts", () => ({ requireViewer: vi.fn() }));
-vi.mock("../../set-page-content", () => ({ loadEditablePage: vi.fn() }));
+vi.mock("../../editable-page", () => ({ loadEditablePage: vi.fn() }));
 vi.mock("~/collab/edit.server", () => {
   class DocEditError extends Error {
     readonly opIndex: number | null;
@@ -58,7 +58,7 @@ import { prisma } from "~/lib/db.server";
 import { authorizeCollabDoc } from "~/lib/collabAuth.server";
 import { findBlogPost } from "~/blog/lib/blog-post.server";
 import { requireViewer } from "../blog-posts";
-import { loadEditablePage } from "../../set-page-content";
+import { loadEditablePage } from "../../editable-page";
 import { DocEditError, applyDocOps, getDocBlocks, outlineDoc } from "~/collab/edit.server";
 import {
   AgentBlockNotFoundError,
@@ -80,7 +80,7 @@ const ctx = { user: { id: "me" }, scopes: ["mcp:write"], request: new Request("h
 const PAGE = { type: "page" as const, id: "pg1" };
 const POST = { type: "blogPost" as const, id: "bp1" };
 const announce = vi.fn();
-const EDITED = { touched: ["b1"], hashes: { b1: "h2" }, treeHashes: {}, range: { start: 1, end: 2 }, results: [{ op: "update", blockIds: ["b1"] }] };
+const EDITED = { touched: ["b1"], hashes: { b1: "h2" }, treeHashes: {}, range: { start: 1, end: 2 }, results: [{ action: "update", blockIds: ["b1"] }] };
 const OUTLINE_ROW = { type: "paragraph", depth: 0, parentId: null, preview: "", childCount: 0, hash: "h" };
 
 beforeEach(() => {
@@ -130,13 +130,13 @@ describe("access", () => {
 
   it("checks page edit rights through loadEditablePage for writes", async () => {
     vi.mocked(loadEditablePage).mockRejectedValue(Object.assign(new Error("Forbidden"), { status: 403 }));
-    await expect(runEditContent(ctx, { target: PAGE, ops: [{ op: "delete", blockId: "b1", expectedHash: "h" }] })).rejects.toMatchObject({ status: 403 });
+    await expect(runEditContent(ctx, { target: PAGE, edits: [{ action: "delete", blockId: "b1", expectedHash: "h" }] })).rejects.toMatchObject({ status: 403 });
     expect(applyDocOps).not.toHaveBeenCalled();
   });
 
   it("uses a page's custom doc name when it has one", async () => {
     vi.mocked(loadEditablePage).mockResolvedValue({ id: "pg1", contentDocId: "seed:doc" } as any);
-    await runEditContent(ctx, { target: PAGE, ops: [{ op: "delete", blockId: "b1", expectedHash: "h" }] });
+    await runEditContent(ctx, { target: PAGE, edits: [{ action: "delete", blockId: "b1", expectedHash: "h" }] });
     expect(vi.mocked(applyDocOps).mock.calls[0]![0]).toBe("seed:doc");
   });
 
@@ -146,7 +146,7 @@ describe("access", () => {
     expect(outlineDoc).toHaveBeenCalledWith("blogPost:bp1:body");
 
     vi.mocked(findBlogPost).mockResolvedValue({ post: { id: "bp1" }, canEdit: false, canApprove: false } as any);
-    await expect(runEditContent(ctx, { target: POST, ops: [{ op: "delete", blockId: "b1", expectedHash: "h" }] })).rejects.toMatchObject({ status: 403 });
+    await expect(runEditContent(ctx, { target: POST, edits: [{ action: "delete", blockId: "b1", expectedHash: "h" }] })).rejects.toMatchObject({ status: 403 });
 
     vi.mocked(findBlogPost).mockResolvedValue(null);
     await expect(runOutlineContent(ctx, { target: POST })).rejects.toMatchObject({ status: 404 });
@@ -202,25 +202,25 @@ describe("get_content_blocks", () => {
 
 describe("edit_content", () => {
   it("passes replace_text straight through", async () => {
-    await runEditContent(ctx, { target: PAGE, ops: [{ op: "replace_text", blockId: "b1", expectedHash: "h", find: "Nov 12", replace: "Nov 14" }] });
-    expect(engineOps()).toEqual([{ op: "replace_text", blockId: "b1", expectedHash: "h", find: "Nov 12", replace: "Nov 14" }]);
+    await runEditContent(ctx, { target: PAGE, edits: [{ action: "replace_text", blockId: "b1", expectedHash: "h", find: "Nov 12", replace: "Nov 14" }] });
+    expect(engineOps()).toEqual([{ action: "replace_text", blockId: "b1", expectedHash: "h", find: "Nov 12", replace: "Nov 14" }]);
   });
 
   it("parses insert Markdown into blocks", async () => {
-    await runEditContent(ctx, { target: PAGE, ops: [{ op: "insert", position: { after: "b1" }, markdown: "# Title\n\nBody" }] });
+    await runEditContent(ctx, { target: PAGE, edits: [{ action: "insert", position: { after: "b1" }, markdown: "# Title\n\nBody" }] });
     const [op] = engineOps();
     expect(op.position).toEqual({ after: "b1" });
     expect(op.blocks.map((b: any) => b.type)).toEqual(["heading", "paragraph"]);
   });
 
   it("requires exactly one position", async () => {
-    await expect(runEditContent(ctx, { target: PAGE, ops: [{ op: "insert", position: { after: "a", before: "b" }, markdown: "x" }] })).rejects.toThrow(/exactly one of/);
-    await expect(runEditContent(ctx, { target: PAGE, ops: [{ op: "move", blockId: "b1", expectedHash: "h", position: {} }] })).rejects.toThrow(/exactly one of/);
-    await expect(runEditContent(ctx, { target: PAGE, ops: [{ op: "insert", markdown: "x" }] })).rejects.toThrow(/needs position/);
+    await expect(runEditContent(ctx, { target: PAGE, edits: [{ action: "insert", position: { after: "a", before: "b" }, markdown: "x" }] })).rejects.toThrow(/exactly one of/);
+    await expect(runEditContent(ctx, { target: PAGE, edits: [{ action: "move", blockId: "b1", expectedHash: "h", position: {} }] })).rejects.toThrow(/exactly one of/);
+    await expect(runEditContent(ctx, { target: PAGE, edits: [{ action: "insert", markdown: "x" }] })).rejects.toThrow(/needs position/);
   });
 
   it("turns update Markdown into one block's content", async () => {
-    await runEditContent(ctx, { target: PAGE, ops: [{ op: "update", blockId: "b1", expectedHash: "h", markdown: "## New heading" }] });
+    await runEditContent(ctx, { target: PAGE, edits: [{ action: "update", blockId: "b1", expectedHash: "h", markdown: "## New heading" }] });
     const [op] = engineOps();
     expect(op.block.type).toBe("heading");
     expect(op.block.content[0].text).toBe("New heading");
@@ -228,22 +228,22 @@ describe("edit_content", () => {
   });
 
   it("leaves out props Markdown can't express, so colour and alignment stay", async () => {
-    await runEditContent(ctx, { target: PAGE, ops: [{ op: "update", blockId: "b1", expectedHash: "h", markdown: "Plain words" }] });
+    await runEditContent(ctx, { target: PAGE, edits: [{ action: "update", blockId: "b1", expectedHash: "h", markdown: "Plain words" }] });
     expect(engineOps()[0].block).toEqual({ type: "paragraph", content: [{ type: "text", text: "Plain words", styles: {} }] });
     vi.mocked(applyDocOps).mockClear();
-    await runEditContent(ctx, { target: PAGE, ops: [{ op: "update", blockId: "b1", expectedHash: "h", markdown: "### Smaller" }] });
+    await runEditContent(ctx, { target: PAGE, edits: [{ action: "update", blockId: "b1", expectedHash: "h", markdown: "### Smaller" }] });
     expect(engineOps()[0].block.props).toEqual({ level: 3 });
   });
 
   it("passes expectedTreeHash to delete, move and update only", async () => {
     await runEditContent(ctx, {
       target: PAGE,
-      ops: [
-        { op: "delete", blockId: "a", expectedHash: "h", expectedTreeHash: "t" },
-        { op: "move", blockId: "b", expectedHash: "h", expectedTreeHash: "t", position: { end: true } },
-        { op: "update", blockId: "c", expectedHash: "h", expectedTreeHash: "t", markdown: "x" },
-        { op: "replace_text", blockId: "d", expectedHash: "h", expectedTreeHash: "t", find: "a", replace: "b" },
-        { op: "delete", blockId: "e", expectedHash: "h" },
+      edits: [
+        { action: "delete", blockId: "a", expectedHash: "h", expectedTreeHash: "t" },
+        { action: "move", blockId: "b", expectedHash: "h", expectedTreeHash: "t", position: { end: true } },
+        { action: "update", blockId: "c", expectedHash: "h", expectedTreeHash: "t", markdown: "x" },
+        { action: "replace_text", blockId: "d", expectedHash: "h", expectedTreeHash: "t", find: "a", replace: "b" },
+        { action: "delete", blockId: "e", expectedHash: "h" },
       ],
     });
     const ops = engineOps();
@@ -252,22 +252,22 @@ describe("edit_content", () => {
   });
 
   it("refuses update Markdown that makes several blocks", async () => {
-    await expect(runEditContent(ctx, { target: PAGE, ops: [{ op: "update", blockId: "b1", expectedHash: "h", markdown: "one\n\ntwo" }] })).rejects.toThrow(/exactly one block/);
+    await expect(runEditContent(ctx, { target: PAGE, edits: [{ action: "update", blockId: "b1", expectedHash: "h", markdown: "one\n\ntwo" }] })).rejects.toThrow(/exactly one block/);
     expect(applyDocOps).not.toHaveBeenCalled();
   });
 
   it("refuses markdown and blocks together", async () => {
-    await expect(runEditContent(ctx, { target: PAGE, ops: [{ op: "insert", position: { end: true }, markdown: "x", blocks: [] }] })).rejects.toThrow(/not both/);
+    await expect(runEditContent(ctx, { target: PAGE, edits: [{ action: "insert", position: { end: true }, markdown: "x", blocks: [] }] })).rejects.toThrow(/not both/);
   });
 
   it("builds table row and cell content from Markdown", async () => {
     db.user.findMany.mockResolvedValue([{ id: "u1" }]);
     await runEditContent(ctx, {
       target: PAGE,
-      ops: [
-        { op: "insert_row", blockId: "t1", expectedHash: "h", cells: ["Demo", "[@Ana](/members/u1)", ""] },
-        { op: "set_cell", blockId: "t1", row: 0, col: 1, markdown: "one<br>two" },
-        { op: "delete_row", blockId: "t1", index: 2 },
+      edits: [
+        { action: "insert_row", blockId: "t1", expectedHash: "h", cells: ["Demo", "[@Ana](/members/u1)", ""] },
+        { action: "set_cell", blockId: "t1", row: 0, col: 1, markdown: "one<br>two" },
+        { action: "delete_row", blockId: "t1", index: 2 },
       ],
     });
     const [insertRow, setCell, deleteRow] = engineOps();
@@ -275,25 +275,25 @@ describe("edit_content", () => {
     expect(insertRow.cells[1][0]).toMatchObject({ type: "mention", props: { id: "u1", label: "Ana" } });
     expect(insertRow.cells[2]).toEqual([]);
     expect(setCell.content[0].text).toBe("one\ntwo");
-    expect(deleteRow).toMatchObject({ op: "delete_row", index: 2 });
+    expect(deleteRow).toMatchObject({ action: "delete_row", index: 2 });
   });
 
   it("checks mentions in JSON blocks and reports unknown ones", async () => {
     const result = await runEditContent(ctx, {
       target: PAGE,
-      ops: [{ op: "insert", position: { end: true }, blocks: [{ type: "paragraph", content: [{ type: "mention", props: { id: "ghost", label: "Ghost" } }] } as any] }],
+      edits: [{ action: "insert", position: { end: true }, blocks: [{ type: "paragraph", content: [{ type: "mention", props: { id: "ghost", label: "Ghost" } }] } as any] }],
     });
     expect(engineOps()[0].blocks[0].content).toEqual([{ type: "text", text: "@Ghost", styles: {} }]);
     expect(result.warnings).toEqual(['No member with id ghost: "Ghost" was written as plain text']);
   });
 
   it("names the op that's missing a field", async () => {
-    await expect(runEditContent(ctx, { target: PAGE, ops: [{ op: "delete", expectedHash: "h" }] })).rejects.toThrow("ops[0] (delete) needs blockId");
-    await expect(runEditContent(ctx, { target: PAGE, ops: [{ op: "set_cell", blockId: "t", row: 0, col: 0 }] })).rejects.toThrow("ops[0] (set_cell) needs markdown");
+    await expect(runEditContent(ctx, { target: PAGE, edits: [{ action: "delete", expectedHash: "h" }] })).rejects.toThrow("edits[0] (delete) needs blockId");
+    await expect(runEditContent(ctx, { target: PAGE, edits: [{ action: "set_cell", blockId: "t", row: 0, col: 0 }] })).rejects.toThrow("edits[0] (set_cell) needs markdown");
   });
 
   it("announces the touched blocks and caret once applied", async () => {
-    await runEditContent(ctx, { target: PAGE, ops: [{ op: "delete", blockId: "b9", expectedHash: "h" }] });
+    await runEditContent(ctx, { target: PAGE, edits: [{ action: "delete", blockId: "b9", expectedHash: "h" }] });
     expect(announce).toHaveBeenCalledWith({
       action: "editing",
       docRoom: "doc:pg1:body",
@@ -304,7 +304,7 @@ describe("edit_content", () => {
   });
 
   it("returns new hashes and who saw it, and marks the page edited", async () => {
-    const result = await runEditContent(ctx, { target: PAGE, ops: [{ op: "delete", blockId: "b9", expectedHash: "h" }] });
+    const result = await runEditContent(ctx, { target: PAGE, edits: [{ action: "delete", blockId: "b9", expectedHash: "h" }] });
     expect(result).toMatchObject({ hashes: { b1: "h2" }, seenBy: 2, results: EDITED.results });
     expect(result).not.toHaveProperty("warnings");
     expect(result).not.toHaveProperty("treeHashes");
@@ -318,28 +318,28 @@ describe("edit_content", () => {
       vi.mocked(docViewerCount).mockReturnValue(0);
       return EDITED;
     });
-    expect((await runEditContent(ctx, { target: PAGE, ops: [{ op: "delete", blockId: "b9", expectedHash: "h" }] })).seenBy).toBe(4);
+    expect((await runEditContent(ctx, { target: PAGE, edits: [{ action: "delete", blockId: "b9", expectedHash: "h" }] })).seenBy).toBe(4);
 
     vi.mocked(applyDocOps).mockResolvedValue(EDITED);
-    expect((await runEditContent(ctx, { target: PAGE, ops: [{ op: "delete", blockId: "b9", expectedHash: "h" }] })).seenBy).toBeNull();
+    expect((await runEditContent(ctx, { target: PAGE, edits: [{ action: "delete", blockId: "b9", expectedHash: "h" }] })).seenBy).toBeNull();
   });
 
   it("returns tree hashes when touched blocks have children", async () => {
     vi.mocked(applyDocOps).mockResolvedValue({ ...EDITED, treeHashes: { b1: "t2" } });
-    const result = await runEditContent(ctx, { target: PAGE, ops: [{ op: "delete", blockId: "b9", expectedHash: "h" }] });
+    const result = await runEditContent(ctx, { target: PAGE, edits: [{ action: "delete", blockId: "b9", expectedHash: "h" }] });
     expect(result.treeHashes).toEqual({ b1: "t2" });
   });
 
   it("still reports success when marking the page edited fails", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     db.page.update.mockRejectedValueOnce(new Error("db blip"));
-    const result = await runEditContent(ctx, { target: PAGE, ops: [{ op: "delete", blockId: "b9", expectedHash: "h" }] });
+    const result = await runEditContent(ctx, { target: PAGE, edits: [{ action: "delete", blockId: "b9", expectedHash: "h" }] });
     expect(result.hashes).toEqual({ b1: "h2" });
     expect(console.error).toHaveBeenCalledWith(expect.stringContaining("lastEditedById"), expect.any(Error));
   });
 
   it("doesn't touch the page table for blog posts", async () => {
-    await runEditContent(ctx, { target: POST, ops: [{ op: "delete", blockId: "b9", expectedHash: "h" }] });
+    await runEditContent(ctx, { target: POST, edits: [{ action: "delete", blockId: "b9", expectedHash: "h" }] });
     expect(vi.mocked(applyDocOps).mock.calls[0]![0]).toBe("blogPost:bp1:body");
     expect(db.page.update).not.toHaveBeenCalled();
     expect(announce.mock.calls[0]![0].presenceRoom).toBeUndefined();
@@ -352,9 +352,9 @@ describe("edit_content", () => {
         current: { block: { id: "b1", type: "paragraph" }, hash: "fresh", treeHash: "fresh-tree" },
       }),
     );
-    const err = await runEditContent(ctx, { target: PAGE, ops: [{ op: "delete", blockId: "b1", expectedHash: "old" }] }).catch((e) => e);
+    const err = await runEditContent(ctx, { target: PAGE, edits: [{ action: "delete", blockId: "b1", expectedHash: "old" }] }).catch((e) => e);
     expect(err.status).toBe(409);
-    expect(err.message).toMatch(/^BLOCK_CHANGED \(ops\[1\]\)/);
+    expect(err.message).toMatch(/^BLOCK_CHANGED \(edits\[1\]\)/);
     expect(err.message).toContain("Current hash: fresh");
     expect(err.message).toContain("Current treeHash: fresh-tree");
     expect(err.message).toContain('"id":"b1"');
@@ -363,7 +363,7 @@ describe("edit_content", () => {
 
   it("maps a missing block to not found", async () => {
     vi.mocked(applyDocOps).mockRejectedValue(new (DocEditError as any)("BLOCK_NOT_FOUND", "Block 'zz' is not in the document", { opIndex: 0 }));
-    await expect(runEditContent(ctx, { target: PAGE, ops: [{ op: "delete", blockId: "zz", expectedHash: "h" }] })).rejects.toMatchObject({ status: 404 });
+    await expect(runEditContent(ctx, { target: PAGE, edits: [{ action: "delete", blockId: "zz", expectedHash: "h" }] })).rejects.toMatchObject({ status: 404 });
   });
 });
 

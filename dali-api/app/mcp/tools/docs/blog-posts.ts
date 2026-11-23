@@ -30,7 +30,7 @@ import {
   McpNotFoundError,
   requireForAction,
 } from "~/mcp/errors";
-import { MAX_MARKDOWN_LENGTH } from "../set-page-content";
+import { MAX_MARKDOWN_LENGTH } from "../editable-page";
 import { offsetPage, offsetWindow, pageProps, type PageArgs } from "../../pagination";
 
 const PAGE_LIMITS = { defaultLimit: 50, maxLimit: 200 };
@@ -168,7 +168,7 @@ export async function runReadBlogPost(callerId: string, input: ReadInput) {
 export const MANAGE_BLOG_POST_TOOL = {
   name: "manage_blog_post",
   description:
-    "Write a story (blog post). Actions: create (a new draft by the caller), update (title/summary/audience/body), publish, unpublish. Only the author and Core can change a post. publish by an Admin publishes it (and approves a post in review); by anyone else it submits the draft to the Admins for review. unpublish returns a published post to a draft, or withdraws one from review. markdown OVERWRITES the whole body (same Markdown as set_page_content: mention a member as [@handle](/members/<userId>), not @Name, a page as [Title](/documents/<pageId>), a task as [Title](/projects/<projectId>?tab=progress&task=<taskId>); unknown ids are written as plain text and come back in warnings); to change part of an existing post, use edit_content with target { type: 'blogPost', id } (when available), otherwise read_blog_post first to preserve content. isPublic also lists the post on the DALI website once published, and only an Admin can change it after a post leaves draft.",
+    "Write a story (blog post). Actions: create (a new draft by the caller), update (title/summary/audience/body), publish, unpublish. Only the author and Core can change a post. publish by an Admin publishes it (and approves a post in review); by anyone else it submits the draft to the Admins for review. unpublish returns a published post to a draft, or withdraws one from review. markdown OVERWRITES the whole body (same Markdown as edit_content: mention a member as [@handle](/members/<userId>), not @Name, a page as [Title](/documents/<pageId>), a task as [Title](/projects/<projectId>?tab=progress&task=<taskId>); unknown ids are written as plain text and come back in warnings); to change part of an existing post, use edit_content with target { type: 'blogPost', id } (when available), otherwise read_blog_post first to preserve content. isPublic also lists the post on the DALI website once published, and only an Admin can change it after a post leaves draft.",
   inputSchema: {
     type: "object" as const,
     properties: {

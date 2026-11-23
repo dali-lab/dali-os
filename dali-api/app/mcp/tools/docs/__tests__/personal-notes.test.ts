@@ -20,7 +20,6 @@ vi.mock("~/lib/roles", async (orig) => {
   return { ...real, isLabMemberOrAlum: vi.fn() };
 });
 vi.mock("~/members/lib/personal-notes.server", () => ({
-  noteAccess: vi.fn(),
   groupIdsForUser: vi.fn().mockResolvedValue([]),
   NoteNotFoundError: class NoteNotFoundError extends Error {
     constructor() { super("Note not found"); this.name = "NoteNotFoundError"; }
@@ -32,22 +31,15 @@ vi.mock("~/members/lib/personal-notes.server", () => ({
 vi.mock("~/members/lib/personal-notes-actions.server", () => ({
   createNote: vi.fn(),
   updateNote: vi.fn(),
-  setNoteVisibility: vi.fn(),
-  addNoteShare: vi.fn(),
-  removeNoteShare: vi.fn(),
-  deleteNote: vi.fn(),
 }));
 
 import { prisma } from "~/lib/db.server";
 import { isLabMemberOrAlum } from "~/lib/roles";
-import { noteAccess, NoteNotFoundError } from "~/members/lib/personal-notes.server";
-import { createNote, deleteNote } from "~/members/lib/personal-notes-actions.server";
+import { createNote, updateNote } from "~/members/lib/personal-notes-actions.server";
 import {
   LIST_PERSONAL_NOTES_TOOL,
-  GET_PERSONAL_NOTE_TOOL,
   MANAGE_PERSONAL_NOTE_TOOL,
   runListPersonalNotes,
-  runGetPersonalNote,
   runManagePersonalNote,
   PersonalNoteError,
 } from "~/mcp/tools/docs/personal-notes";
@@ -137,40 +129,6 @@ describe("list_personal_notes", () => {
   });
 });
 
-describe("get_personal_note", () => {
-  it("requires the mcp:read scope", () => {
-    expect(GET_PERSONAL_NOTE_TOOL.requiredScope).toBe("mcp:read");
-  });
-
-  it("returns 404 when note is not found", async () => {
-    vi.mocked(noteAccess).mockRejectedValue(new NoteNotFoundError());
-    await expect(runGetPersonalNote("u1", { pageId: "missing" })).rejects.toMatchObject({
-      name: "PersonalNoteError",
-      status: 404,
-    });
-  });
-
-  it("returns 403 when caller cannot view the note", async () => {
-    vi.mocked(noteAccess).mockResolvedValue({ canView: false, canEdit: false, isOwner: false });
-    await expect(runGetPersonalNote("u1", { pageId: "n1" })).rejects.toMatchObject({
-      name: "PersonalNoteError",
-      status: 403,
-    });
-  });
-
-  it("returns note metadata for an authorized viewer", async () => {
-    vi.mocked(noteAccess).mockResolvedValue({ canView: true, canEdit: false, isOwner: false });
-    mockPrisma.page.findUnique.mockResolvedValue({
-      id: "n1", title: "Note", iconEmoji: null, kind: "FreeForm", parentPageId: null, workspaceId: "u2",
-      profileVisible: true, labListing: "None", updatedAt: new Date("2026-01-01"), createdAt: new Date("2026-01-01"),
-      tags: [], _count: { shares: 1 },
-    });
-
-    const out = await runGetPersonalNote("u1", { pageId: "n1" });
-    expect(out).toMatchObject({ id: "n1", visibility: "public", isOwner: false, canEdit: false });
-  });
-});
-
 describe("manage_personal_note", () => {
   it("requires the mcp:write scope", () => {
     expect(MANAGE_PERSONAL_NOTE_TOOL.requiredScope).toBe("mcp:write");
@@ -183,16 +141,23 @@ describe("manage_personal_note", () => {
     expect(createNote).toHaveBeenCalledWith("u1", expect.objectContaining({ title: "New note" }));
   });
 
-  it("requires pageId for delete", async () => {
-    await expect(
-      runManagePersonalNote("u1", { action: "delete" }),
-    ).rejects.toMatchObject({ status: 400 });
+  it("requires pageId for update", async () => {
+    await expect(runManagePersonalNote("u1", { action: "update" })).rejects.toMatchObject({ status: 400 });
   });
 
-  it("deletes a note when the caller owns it", async () => {
-    vi.mocked(deleteNote).mockResolvedValue(undefined);
-    const out = await runManagePersonalNote("u1", { action: "delete", pageId: "n1" });
+  it("renames a note as the caller", async () => {
+    const out = await runManagePersonalNote("u1", { action: "update", pageId: "n1", title: "Renamed" });
     expect(out).toEqual({ ok: true });
-    expect(deleteNote).toHaveBeenCalledWith("n1", "u1");
+    expect(updateNote).toHaveBeenCalledWith("n1", "u1", { title: "Renamed", iconEmoji: undefined, parentPageId: undefined });
+  });
+
+  it("has no delete, visibility or share actions: trashing and sharing live on manage_drive_trash and share_page", async () => {
+    const schema = MANAGE_PERSONAL_NOTE_TOOL.inputSchema as { properties: Record<string, { enum?: string[] }> };
+    expect(schema.properties.action.enum).toEqual(["create", "update"]);
+    for (const field of ["isPublic", "principalType", "principalId", "shareId"]) expect(schema.properties).not.toHaveProperty(field);
+    for (const action of ["delete", "set_visibility", "share_add", "share_remove"]) {
+      await expect(runManagePersonalNote("u1", { action, pageId: "n1" } as never)).rejects.toMatchObject({ status: 400 });
+    }
+    expect(updateNote).not.toHaveBeenCalled();
   });
 });

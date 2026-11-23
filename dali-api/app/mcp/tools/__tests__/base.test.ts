@@ -78,10 +78,6 @@ vi.mock("../list-project-pages", () => ({
 }));
 vi.mock("../read-page", () => ({ READ_PAGE_TOOL: h.def("read_page"), runReadPage: h.run("runReadPage") }));
 vi.mock("../create-page", () => ({ CREATE_PAGE_TOOL: h.def("create_page"), runCreatePage: h.run("runCreatePage") }));
-vi.mock("../set-page-content", () => ({
-  SET_PAGE_CONTENT_TOOL: h.def("set_page_content"),
-  runSetPageContent: h.run("runSetPageContent"),
-}));
 vi.mock("../list-project-files", () => ({
   LIST_PROJECT_FILES_TOOL: h.def("list_project_files"),
   runListProjectFiles: h.run("runListProjectFiles"),
@@ -106,13 +102,9 @@ vi.mock("../document-curation", () => ({
   LIST_DOCUMENT_SHARING_TOOL: h.def("list_document_sharing"),
   runListDocumentSharing: h.run("runListDocumentSharing"),
 }));
-vi.mock("../file-sharing", () => ({
-  LIST_FILE_SHARES_TOOL: h.def("list_file_shares"),
-  runListFileShares: h.run("runListFileShares"),
-}));
-vi.mock("../page-sharing", () => ({
-  LIST_PAGE_SHARES_TOOL: h.def("list_page_shares"),
-  runListPageShares: h.run("runListPageShares"),
+vi.mock("../get-sharing", () => ({
+  GET_SHARING_TOOL: h.def("get_sharing"),
+  runGetSharing: h.run("runGetSharing"),
 }));
 
 import { BASE_TOOLS } from "../base";
@@ -158,15 +150,13 @@ const EXPECTED: [string, string, Shape][] = [
   ["list_project_pages", "runListProjectPages", "caller"],
   ["read_page", "runReadPage", "caller"],
   ["create_page", "runCreatePage", "caller"],
-  ["set_page_content", "runSetPageContent", "caller"],
   ["list_project_files", "runListProjectFiles", "caller"],
   ["upload_project_file", "runUploadProjectFile", "caller"],
   ["list_my_time_entries", "runListMyTimeEntries", "caller"],
   ["update_project_showcase", "runUpdateProjectShowcase", "caller"],
   ["get_staffing_board", "runGetStaffingBoard", "caller"],
   ["list_document_sharing", "runListDocumentSharing", "caller"],
-  ["list_file_shares", "runListFileShares", "caller"],
-  ["list_page_shares", "runListPageShares", "caller"],
+  ["get_sharing", "runGetSharing", "caller"],
 ];
 
 const EXPECTED_CALL: Record<Shape, unknown[]> = {

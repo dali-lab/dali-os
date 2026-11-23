@@ -10,16 +10,10 @@ import { LIST_COMMENTS_TOOL, runListComments } from "./comments";
 import {
   LIST_LAB_DOCUMENTS_TOOL,
   runListLabDocuments,
-  CREATE_LAB_DOCUMENT_TOOL,
-  runCreateLabDocument,
-  DELETE_LAB_DOCUMENT_TOOL,
-  runDeleteLabDocument,
 } from "./lab-documents";
 import {
   LIST_PERSONAL_NOTES_TOOL,
   runListPersonalNotes,
-  GET_PERSONAL_NOTE_TOOL,
-  runGetPersonalNote,
   MANAGE_PERSONAL_NOTE_TOOL,
   runManagePersonalNote,
 } from "./personal-notes";
@@ -45,10 +39,10 @@ import { MANAGE_COMMENT_TOOL_DEF, runManageComment } from "./manage-comment";
 import { MANAGE_NOTEBOOK_TOOL_DEF, runManageNotebook } from "./manage-notebook";
 import { MANAGE_PAGE_TOOL_DEF, runManagePage } from "./manage-page";
 import { GET_SLIDE_DECK_TOOL_DEF, MANAGE_SLIDE_DECK_TOOL_DEF, MANAGE_SLIDE_ELEMENTS_TOOL_DEF, runGetSlideDeck, runManageSlideDeck } from "./manage-slide-deck";
-import { CREATE_SLIDE_DECK_TOOL_DEF, runCreateSlideDeck } from "./create-slide-deck";
 import { LIST_PAGE_TEMPLATES_TOOL, runListPageTemplates } from "./list-page-templates";
 import { LIST_DRIVE_TRASH_TOOL, runListDriveTrash } from "./list-drive-trash";
 import { MANAGE_DRIVE_TRASH_TOOL_DEF, runManageDriveTrash } from "./manage-drive-trash";
+import { PURGE_DRIVE_ITEM_TOOL_DEF, runPurgeDriveItem } from "./purge-drive-item";
 import { MOVE_DRIVE_ITEM_TOOL, runMoveDriveItem } from "./move-drive-item";
 import { UPLOAD_DRIVE_FILE_TOOL, runUploadDriveFile } from "./upload-drive-file";
 import {
@@ -77,24 +71,9 @@ export const DOCS_TOOLS: McpTool[] = [
       runListLabDocuments(ctx.user.id, args as Parameters<typeof runListLabDocuments>[1]),
   },
   {
-    def: CREATE_LAB_DOCUMENT_TOOL,
-    run: (ctx: McpCtx, args) =>
-      runCreateLabDocument(ctx.user.id, args as Parameters<typeof runCreateLabDocument>[1]),
-  },
-  {
-    def: DELETE_LAB_DOCUMENT_TOOL,
-    run: (ctx: McpCtx, args) =>
-      runDeleteLabDocument(ctx.user.id, args as Parameters<typeof runDeleteLabDocument>[1]),
-  },
-  {
     def: LIST_PERSONAL_NOTES_TOOL,
     run: (ctx: McpCtx, args) =>
       runListPersonalNotes(ctx.user.id, args as Parameters<typeof runListPersonalNotes>[1]),
-  },
-  {
-    def: GET_PERSONAL_NOTE_TOOL,
-    run: (ctx: McpCtx, args) =>
-      runGetPersonalNote(ctx.user.id, args as Parameters<typeof runGetPersonalNote>[1]),
   },
   {
     def: MANAGE_PERSONAL_NOTE_TOOL,
@@ -147,11 +126,6 @@ export const DOCS_TOOLS: McpTool[] = [
       runManagePage(ctx.user.id, args as Parameters<typeof runManagePage>[1]),
   },
   {
-    def: CREATE_SLIDE_DECK_TOOL_DEF,
-    run: (ctx: McpCtx, args) =>
-      runCreateSlideDeck(ctx.user.id, args as Parameters<typeof runCreateSlideDeck>[1]),
-  },
-  {
     def: GET_SLIDE_DECK_TOOL_DEF,
     run: (ctx: McpCtx, args) => runGetSlideDeck(ctx.user.id, args as Parameters<typeof runGetSlideDeck>[1]),
   },
@@ -183,6 +157,11 @@ export const DOCS_TOOLS: McpTool[] = [
     def: MANAGE_DRIVE_TRASH_TOOL_DEF,
     run: (ctx: McpCtx, args) =>
       runManageDriveTrash(ctx.user.id, args as Parameters<typeof runManageDriveTrash>[1]),
+  },
+  {
+    def: PURGE_DRIVE_ITEM_TOOL_DEF,
+    run: (ctx: McpCtx, args) =>
+      runPurgeDriveItem(ctx.user.id, args as Parameters<typeof runPurgeDriveItem>[1]),
   },
   {
     def: MOVE_DRIVE_ITEM_TOOL,

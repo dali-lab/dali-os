@@ -3,10 +3,12 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn(), isProjectMember: vi.fn() }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
+vi.mock("~/lib/pages.server", () => ({ collectSubtree: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
+import { collectSubtree } from "~/lib/pages.server";
 import {
   runListDocumentSharing,
   type DocumentSharingOut,
@@ -189,18 +191,9 @@ describe("set_document_sharing", () => {
     expect(actions).toEqual(["page.partner-visibility", "page.public-visibility"]);
   });
 
-  it("maps pinned to a timestamp", async () => {
-    await runSetDocumentSharing(ME, { pageId: "pg-1", pinned: true });
-    expect(mockPrisma.page.update.mock.calls[0][0].data.pinnedAt).toBeInstanceOf(Date);
-    vi.clearAllMocks();
-    mockPrisma.page.findUnique.mockResolvedValue(PAGE);
-    mockPrisma.page.update.mockResolvedValue({
-      partnerVisible: false,
-      publicVisible: false,
-      pinnedAt: null,
-    });
-    await runSetDocumentSharing(ME, { pageId: "pg-1", pinned: false });
-    expect(mockPrisma.page.update.mock.calls[0][0].data.pinnedAt).toBeNull();
+  it("leaves pinning to manage_page: no pinned input, no pinnedAt write", async () => {
+    await runSetDocumentSharing(ME, { pageId: "pg-1", partnerVisible: false, pinned: true } as never);
+    expect(mockPrisma.page.update.mock.calls[0][0].data).toEqual({ partnerVisible: false });
   });
 
   it("refuses sharing an archived document", async () => {
@@ -224,11 +217,16 @@ describe("set_document_sharing", () => {
   });
 });
 
-describe("delete_project_document", () => {
-  it("archives by default and stops sharing at the same time", async () => {
+describe("trashing a project document", () => {
+  beforeEach(() => {
+    vi.mocked(collectSubtree).mockResolvedValue({ ids: [], height: 0 });
+  });
+
+  it("archives and stops sharing at the same time", async () => {
     const res = await runDeleteProjectDocument(ME, { pageId: "pg-1" });
-    expect(res).toEqual({ ok: true, archived: true, deleted: false });
+    expect(res).toEqual({ ok: true, archivedDescendants: 0 });
     expect(mockPrisma.page.update.mock.calls[0][0].data).toMatchObject({
+      archivedAt: expect.any(Date),
       partnerVisible: false,
       publicVisible: false,
       folderType: null,
@@ -238,20 +236,42 @@ describe("delete_project_document", () => {
     expect(mockPrisma.page.delete).not.toHaveBeenCalled();
   });
 
-  it("permanently deletes the page and its body when asked", async () => {
-    const res = await runDeleteProjectDocument(ME, { pageId: "pg-1", permanent: true });
-    expect(res).toEqual({ ok: true, archived: false, deleted: true });
-    expect(mockPrisma.collabDocument.deleteMany).toHaveBeenCalledWith({
-      where: { name: "doc:pg-1:body" },
-    });
-    expect(mockPrisma.page.delete).toHaveBeenCalled();
+  it("never deletes: there is no permanent flag", async () => {
+    await runDeleteProjectDocument(ME, { pageId: "pg-1", permanent: true } as never);
+    expect(mockPrisma.page.delete).not.toHaveBeenCalled();
+    expect(mockPrisma.collabDocument.deleteMany).not.toHaveBeenCalled();
   });
 
-  it("refuses a folder that still holds documents", async () => {
-    mockPrisma.page.count.mockResolvedValue(3);
-    await expect(runDeleteProjectDocument(ME, { pageId: "pg-1" })).rejects.toThrow(
-      /still holds 3 document/,
-    );
+  it("trashes a folder's whole subtree and unshares it instead of refusing", async () => {
+    vi.mocked(collectSubtree).mockResolvedValue({ ids: ["a", "b", "c"], height: 2 });
+    mockPrisma.page.updateMany.mockResolvedValue({ count: 3 });
+    const res = await runDeleteProjectDocument(ME, { pageId: "pg-1" });
+    expect(res).toEqual({ ok: true, archivedDescendants: 3 });
+    expect(mockPrisma.page.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ["a", "b", "c"] }, archivedAt: null },
+      data: {
+        partnerVisible: false,
+        publicVisible: false,
+        folderType: null,
+        processType: null,
+        processId: null,
+        archivedAt: expect.any(Date),
+      },
+    });
+  });
+
+  it("trashes nothing for someone who isn't staffed on the project", async () => {
+    vi.mocked(isCore).mockResolvedValue(false);
+    vi.mocked(isProjectMember).mockResolvedValue(false);
+    vi.mocked(collectSubtree).mockResolvedValue({ ids: ["a"], height: 1 });
+    await expect(runDeleteProjectDocument(ME, { pageId: "pg-1" })).rejects.toThrow(CurationForbiddenError);
+    expect(mockPrisma.page.updateMany).not.toHaveBeenCalled();
+    expect(mockPrisma.page.update).not.toHaveBeenCalled();
+  });
+
+  it("refuses a document that is already in the trash", async () => {
+    mockPrisma.page.findUnique.mockResolvedValue({ ...PAGE, archivedAt: new Date() });
+    await expect(runDeleteProjectDocument(ME, { pageId: "pg-1" })).rejects.toThrow(CurationInvalidError);
   });
 });
 

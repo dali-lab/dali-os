@@ -8,20 +8,19 @@ vi.mock("~/lib/roles", async (orig) => {
 vi.mock("~/lib/pages.server", () => ({
   createLabPage: vi.fn(),
   pageDepth: vi.fn(),
+  collectSubtree: vi.fn(),
   MAX_PAGE_DEPTH: 6,
 }));
 vi.mock("~/lib/pageAccess.server", () => ({ getPageAccess: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
 import { isCore, isLabMemberOrAlum } from "~/lib/roles";
-import { createLabPage, pageDepth } from "~/lib/pages.server";
+import { createLabPage, pageDepth, collectSubtree } from "~/lib/pages.server";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import {
   LIST_LAB_DOCUMENTS_TOOL,
   runListLabDocuments,
-  CREATE_LAB_DOCUMENT_TOOL,
   runCreateLabDocument,
-  DELETE_LAB_DOCUMENT_TOOL,
   runDeleteLabDocument,
   LabDocumentError,
 } from "~/mcp/tools/docs/lab-documents";
@@ -32,11 +31,13 @@ const mockPrisma = prisma as unknown as {
     count: ReturnType<typeof vi.fn>;
     findUnique: ReturnType<typeof vi.fn>;
     update: ReturnType<typeof vi.fn>;
+    updateMany: ReturnType<typeof vi.fn>;
   };
 };
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(collectSubtree).mockResolvedValue({ ids: [], height: 0 });
 });
 
 describe("list_lab_documents", () => {
@@ -86,11 +87,7 @@ describe("list_lab_documents", () => {
   });
 });
 
-describe("create_lab_document", () => {
-  it("requires the mcp:write scope", () => {
-    expect(CREATE_LAB_DOCUMENT_TOOL.requiredScope).toBe("mcp:write");
-  });
-
+describe("creating a lab page", () => {
   it("rejects non-lab-members", async () => {
     vi.mocked(isLabMemberOrAlum).mockResolvedValue(false);
     await expect(
@@ -168,11 +165,7 @@ describe("create_lab_document", () => {
   });
 });
 
-describe("delete_lab_document", () => {
-  it("requires the mcp:write scope", () => {
-    expect(DELETE_LAB_DOCUMENT_TOOL.requiredScope).toBe("mcp:write");
-  });
-
+describe("trashing a lab page", () => {
   it("returns 404 for a non-Lab page", async () => {
     mockPrisma.page.findUnique.mockResolvedValue({ id: "p1", workspaceType: "Project", workspaceId: "proj1", archivedAt: null, createdById: "u1" });
     vi.mocked(isCore).mockResolvedValue(false);
@@ -224,9 +217,38 @@ describe("delete_lab_document", () => {
     mockPrisma.page.update.mockResolvedValue({ id: "p1" });
 
     const out = await runDeleteLabDocument("u1", { pageId: "p1" });
-    expect(out).toEqual({ ok: true });
+    expect(out).toEqual({ ok: true, archivedDescendants: 0 });
     expect(mockPrisma.page.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ archivedAt: expect.any(Date) }) }),
     );
+    expect(mockPrisma.page.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("trashes a folder's whole subtree with it", async () => {
+    mockPrisma.page.findUnique.mockResolvedValue({ id: "f1", workspaceType: "Lab", workspaceId: null, archivedAt: null, createdById: "u1" });
+    vi.mocked(isCore).mockResolvedValue(false);
+    vi.mocked(collectSubtree).mockResolvedValue({ ids: ["c1", "c2", "g1"], height: 2 });
+
+    const out = await runDeleteLabDocument("u1", { pageId: "f1" });
+
+    expect(collectSubtree).toHaveBeenCalledWith("f1");
+    expect(mockPrisma.page.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ["c1", "c2", "g1"] }, archivedAt: null },
+      data: { archivedAt: expect.any(Date), folderType: null, processType: null, processId: null },
+    });
+    expect(mockPrisma.page.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "f1" }, data: expect.objectContaining({ archivedAt: expect.any(Date) }) }),
+    );
+    expect(out).toEqual({ ok: true, archivedDescendants: 3 });
+  });
+
+  it("trashes nothing when the caller can't trash the folder", async () => {
+    mockPrisma.page.findUnique.mockResolvedValue({ id: "f1", workspaceType: "Lab", workspaceId: null, archivedAt: null, createdById: "u2" });
+    vi.mocked(isCore).mockResolvedValue(false);
+    vi.mocked(collectSubtree).mockResolvedValue({ ids: ["c1"], height: 1 });
+
+    await expect(runDeleteLabDocument("u1", { pageId: "f1" })).rejects.toMatchObject({ status: 403 });
+    expect(mockPrisma.page.updateMany).not.toHaveBeenCalled();
+    expect(mockPrisma.page.update).not.toHaveBeenCalled();
   });
 });

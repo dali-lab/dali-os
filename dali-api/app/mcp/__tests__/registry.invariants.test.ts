@@ -159,6 +159,32 @@ describe("MCP registry invariants", () => {
     expect([...ADDITIVE_TOOLS, ...OPEN_WORLD_TOOLS].filter((n) => scope.get(n) === "mcp:read")).toEqual([]);
   });
 
+  it("has folded the docs, drive and sharing tools into their replacements", () => {
+    const removed = [
+      "delete_lab_document", "create_lab_document", "set_page_content", "get_personal_note",
+      "manage_document_sharing", "list_page_shares", "list_file_shares", "set_file_partner_visibility", "create_slide_deck",
+    ];
+    expect(removed.filter((n) => findRegistryTool(n) !== undefined)).toEqual([]);
+    for (const name of ["share_page", "share_file", "get_sharing", "purge_drive_item", "manage_drive_trash", "create_page"]) {
+      expect(findRegistryTool(name), name).toBeDefined();
+    }
+  });
+
+  it("keeps trash and permanent delete as separate tools with the right scopes and annotations", () => {
+    const actions = (n: string) => (findRegistryTool(n)!.def.inputSchema.properties as Record<string, { enum?: string[] }>).action?.enum;
+    expect(actions("manage_drive_trash")).toEqual(["trash", "restore"]);
+    expect(findRegistryTool("purge_drive_item")!.def.requiredScope).toBe("mcp:write");
+    expect(findRegistryTool("get_sharing")!.def.requiredScope).toBe("mcp:read");
+    for (const name of ["manage_drive_trash", "purge_drive_item", "share_page", "share_file"]) {
+      expect(ADDITIVE_TOOLS.has(name) || OPEN_WORLD_TOOLS.has(name), name).toBe(false);
+    }
+  });
+
+  it("names every action discriminator action, never op", () => {
+    expect(Object.keys(findRegistryTool("apply_doc_tag")!.def.inputSchema.properties as object)).toContain("action");
+    expect(Object.keys(findRegistryTool("apply_doc_tag")!.def.inputSchema.properties as object)).not.toContain("op");
+  });
+
   it("advertises every registry tool", () => {
     expect(registryToolDefs()).toHaveLength(REGISTRY_TOOLS.length);
   });

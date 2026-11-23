@@ -5,8 +5,9 @@ import type { McpTool } from "../../registry";
 import { MANAGE_EPIC_TOOL } from "./manage-epic";
 import { MANAGE_STORY_TOOL } from "./manage-story";
 import { MANAGE_TIME_ENTRY_TOOL } from "./manage-time-entry";
-import { MANAGE_DOCUMENT_SHARING_TOOL } from "./manage-document-sharing";
 import { LIST_PROJECT_TEMPLATES_TOOL } from "./list-project-templates";
+import { SHARE_FILE_TOOL } from "../file-sharing";
+import { SHARE_PAGE_TOOL } from "../page-sharing";
 import { MANAGE_PROJECT_TEMPLATE_TOOL } from "./manage-project-template";
 import { MANAGE_TASK_TOOL } from "./manage-task";
 
@@ -14,8 +15,9 @@ export const FACETED_TOOLS: McpTool[] = [
   MANAGE_EPIC_TOOL,
   MANAGE_STORY_TOOL,
   MANAGE_TIME_ENTRY_TOOL,
-  MANAGE_DOCUMENT_SHARING_TOOL,
   LIST_PROJECT_TEMPLATES_TOOL,
+  SHARE_PAGE_TOOL,
+  SHARE_FILE_TOOL,
   MANAGE_PROJECT_TEMPLATE_TOOL,
   MANAGE_TASK_TOOL,
 ];

@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db.server");
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
+vi.mock("~/drive/lib/page-trash.server", () => ({ restorePageSubtree: vi.fn() }));
 vi.mock("~/forms/lib/form-page.server", () => ({ setFormArchived: vi.fn(), deleteForm: vi.fn() }));
 vi.mock("~/forms/lib/form-usages.server", () => ({ formDeletionBlockers: vi.fn() }));
 vi.mock("~/lib/auth", () => ({
@@ -26,6 +27,7 @@ import { canManageFormPlacement } from "~/forms/lib/form-access.server";
 import { getPageAccess, getPageAccessBulk } from "~/lib/pageAccess.server";
 import { canEditFile } from "~/lib/fileAccess.server";
 import { logAuditEvent } from "~/lib/audit";
+import { restorePageSubtree } from "~/drive/lib/page-trash.server";
 import {
   loader,
   action,
@@ -263,10 +265,7 @@ describe("POST /api/drive/trash (restore)", () => {
     const res = (await action({ request: restoreRequest("doc", "page-1") } as never)) as Response;
 
     expect(res.status).toBe(200);
-    expect(mockPrisma.page.update).toHaveBeenCalledWith({
-      where: { id: "page-1" },
-      data: { archivedAt: null },
-    });
+    expect(restorePageSubtree).toHaveBeenCalledWith("page-1");
     expect(vi.mocked(getPageAccess).mock.calls[0]?.[3]).toEqual({ includeArchived: true });
   });
 
@@ -276,39 +275,20 @@ describe("POST /api/drive/trash (restore)", () => {
     const res = (await action({ request: restoreRequest("doc", "page-1") } as never)) as Response;
 
     expect(res.status).toBe(403);
-    expect(mockPrisma.page.update).not.toHaveBeenCalled();
+    expect(restorePageSubtree).not.toHaveBeenCalled();
   });
 });
 
-describe("POST /api/drive/trash (restore a notebook)", () => {
-  const pageMock = prisma.page as unknown as {
-    findUnique: ReturnType<typeof vi.fn>;
-    updateMany: ReturnType<typeof vi.fn>;
-  };
-
+describe("POST /api/drive/trash (restore a page)", () => {
   beforeEach(() => {
     vi.mocked(getPageAccess).mockResolvedValue(FULL);
   });
 
-  it("brings back the tabs that were trashed with it, by the same instant", async () => {
-    pageMock.findUnique.mockResolvedValue({ kind: "Notebook", archivedAt: ARCHIVED_AT });
-
-    const res = (await action({ request: restoreRequest("doc", "nb-1") } as never)) as Response;
+  it("restores the page with everything trashed along with it", async () => {
+    const res = (await action({ request: restoreRequest("folder", "nb-1") } as never)) as Response;
 
     expect(res.status).toBe(200);
-    expect(mockPrisma.page.update).toHaveBeenCalledWith({ where: { id: "nb-1" }, data: { archivedAt: null } });
-    expect(pageMock.updateMany).toHaveBeenCalledWith({
-      where: { parentPageId: "nb-1", archivedAt: ARCHIVED_AT },
-      data: { archivedAt: null },
-    });
-  });
-
-  it("restores only the page itself for anything that is not a notebook", async () => {
-    pageMock.findUnique.mockResolvedValue({ kind: "FreeForm", archivedAt: ARCHIVED_AT });
-
-    await action({ request: restoreRequest("doc", "page-1") } as never);
-
-    expect(pageMock.updateMany).not.toHaveBeenCalled();
+    expect(restorePageSubtree).toHaveBeenCalledWith("nb-1");
   });
 });
 

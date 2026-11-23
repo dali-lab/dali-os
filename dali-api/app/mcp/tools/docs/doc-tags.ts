@@ -125,16 +125,16 @@ export async function runManageDocTags(callerId: string, input: ManageTagInput) 
 export const APPLY_DOC_TAG_TOOL = {
   name: "apply_doc_tag",
   description:
-    "Add or remove a tag on a document (Page) or project file. Core only. op 'add' is idempotent; 'remove' is a no-op if the tag isn't applied.",
+    "Add or remove a tag on a document (Page) or project file. Core only. 'add' is idempotent; 'remove' is a no-op if the tag isn't applied.",
   inputSchema: {
     type: "object" as const,
     properties: {
       targetType: { type: "string", enum: ["doc", "file"] },
       targetId: { type: "string", minLength: 1 },
       tagId: { type: "string", minLength: 1 },
-      op: { type: "string", enum: ["add", "remove"] },
+      action: { type: "string", enum: ["add", "remove"] },
     },
-    required: ["targetType", "targetId", "tagId", "op"],
+    required: ["action", "targetType", "targetId", "tagId"],
     additionalProperties: false,
   },
   requiredScope: "mcp:write" as const,
@@ -144,7 +144,7 @@ type ApplyInput = {
   targetType: "doc" | "file";
   targetId: string;
   tagId: string;
-  op: "add" | "remove";
+  action: "add" | "remove";
 };
 
 export async function runApplyDocTag(callerId: string, input: ApplyInput) {
@@ -165,7 +165,7 @@ export async function runApplyDocTag(callerId: string, input: ApplyInput) {
     ) {
       throw new DocTagError("Document not found", 404);
     }
-    if (input.op === "add") {
+    if (input.action === "add") {
       await prisma.pageTag.upsert({
         where: { pageId_tagId: { pageId: input.targetId, tagId: input.tagId } },
         create: { pageId: input.targetId, tagId: input.tagId },
@@ -185,7 +185,7 @@ export async function runApplyDocTag(callerId: string, input: ApplyInput) {
     select: { archivedAt: true },
   });
   if (!file || file.archivedAt !== null) throw new DocTagError("File not found", 404);
-  if (input.op === "add") {
+  if (input.action === "add") {
     await prisma.projectFileTag.upsert({
       where: { fileId_tagId: { fileId: input.targetId, tagId: input.tagId } },
       create: { fileId: input.targetId, tagId: input.tagId },

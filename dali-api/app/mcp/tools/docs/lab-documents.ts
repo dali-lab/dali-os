@@ -1,13 +1,10 @@
-// MCP tools for lab-wide documents (Pages with workspaceType=Lab).
-// list_lab_documents (mcp:read), create_lab_document (mcp:write),
-// delete_lab_document (mcp:write).
-
 import { prisma } from "~/lib/db.server";
 import { isCore, isLabMemberOrAlum } from "~/lib/roles";
 import { createLabPage, pageDepth, MAX_PAGE_DEPTH } from "~/lib/pages.server";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { duplicatePage } from "~/drive/lib/page-copy.server";
 import { isRoot, ROOT_DELETE_ERROR, CLEARED_FOLDER_TYPE } from "~/drive/lib/drive-roots";
+import { archiveDescendants } from "~/drive/lib/page-trash.server";
 import { offsetPage, offsetWindow, pageProps, type PageArgs } from "../../pagination";
 
 const PAGE_LIMITS = { defaultLimit: 50, maxLimit: 200 };
@@ -91,37 +88,7 @@ export async function runListLabDocuments(callerId: string, input: ListInput) {
   };
 }
 
-// ─── create_lab_document ──────────────────────────────────────────────────────
-
-export const CREATE_LAB_DOCUMENT_TOOL = {
-  name: "create_lab_document",
-  description:
-    "Create a new lab-wide document, folder, or slide deck. Any lab member may create at the top level; inside a folder you need edit access to it. Documents and folders nest inside any folder, up to 6 levels deep, as in the Drive. Fill a new slide deck with manage_slide_deck.",
-  inputSchema: {
-    type: "object" as const,
-    properties: {
-      title: { type: "string", minLength: 1, maxLength: 200 },
-      kind: {
-        type: "string",
-        enum: ["FreeForm", "Folder", "Slides"],
-        description: "Defaults to 'FreeForm'. 'Slides' creates an empty slide deck.",
-      },
-      parentPageId: {
-        type: "string",
-        description:
-          "Nest it inside this Lab folder (any depth up to 6 levels). Omit for a top-level page.",
-      },
-      fromTemplatePageId: {
-        type: "string",
-        description:
-          "Optional. Create the document by duplicating this template page's content (a Lab page marked as a template). FreeForm only.",
-      },
-    },
-    required: ["title"],
-    additionalProperties: false,
-  },
-  requiredScope: "mcp:write" as const,
-};
+// ─── create (via create_page) ────────────────────────────────────────────────
 
 type CreateInput = {
   title: string;
@@ -203,26 +170,7 @@ export async function runCreateLabDocument(callerId: string, input: CreateInput)
   return { id: page.id };
 }
 
-// ─── delete_lab_document ──────────────────────────────────────────────────────
-
-export const DELETE_LAB_DOCUMENT_TOOL = {
-  name: "delete_lab_document",
-  description:
-    "Archive a lab-wide document or folder. Requires Core access or being the creator of the document.",
-  inputSchema: {
-    type: "object" as const,
-    properties: {
-      pageId: {
-        type: "string",
-        minLength: 1,
-        description: "ID of the lab document to archive.",
-      },
-    },
-    required: ["pageId"],
-    additionalProperties: false,
-  },
-  requiredScope: "mcp:write" as const,
-};
+// ─── trash (via manage_drive_trash) ──────────────────────────────────────────
 
 type DeleteInput = { pageId: string };
 
@@ -252,10 +200,12 @@ export async function runDeleteLabDocument(callerId: string, input: DeleteInput)
     throw new LabDocumentError("Forbidden", 403);
   }
 
+  const at = new Date();
+  const archivedDescendants = await archiveDescendants(input.pageId, at, CLEARED_FOLDER_TYPE);
   await prisma.page.update({
     where: { id: input.pageId },
-    data: { archivedAt: new Date(), ...CLEARED_FOLDER_TYPE },
+    data: { archivedAt: at, ...CLEARED_FOLDER_TYPE },
   });
 
-  return { ok: true };
+  return { ok: true as const, archivedDescendants };
 }

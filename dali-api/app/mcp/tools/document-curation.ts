@@ -1,21 +1,7 @@
-// MCP document + file curation — who can see a project's documents and files,
-// and removing them.
-//
-// The writing tools already existed (create_page / set_page_content /
-// update_page / upload_project_file); what was missing was everything about
-// *audience*: sharing a doc with the partner org, nominating one as the public
-// write-up on dali.website, pinning it, and deleting docs or files.
-//
-// All of it is gated on requireProjectEditAccessForUser — Core or anyone
-// staffed on the project — matching the HTTP routes these mirror.
-//
-// Page visibility goes through handlePageVisibility's sibling logic rather than
-// writing the booleans directly, so partner and public sharing keep their audit
-// events.
-
 import { prisma } from "~/lib/db.server";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { CLEARED_FOLDER_TYPE } from "~/drive/lib/drive-roots";
+import { archiveDescendants } from "~/drive/lib/page-trash.server";
 import { logAuditEvent, type AuditAction } from "~/lib/audit";
 import {
   keysetPage,
@@ -53,7 +39,6 @@ export class CurationInvalidError extends Error {
   }
 }
 
-// The MCP equivalent of requireProjectEditAccess, which takes a Request.
 async function requireProjectEdit(callerId: string, projectId: string): Promise<void> {
   const [core, member] = await Promise.all([
     isCore(callerId),
@@ -83,9 +68,6 @@ async function loadProjectPage(pageId: string) {
 }
 
 // ─── list_document_sharing ───────────────────────────────────────────────────
-// The read half. `list_project_pages` returns titles and archive state but none
-// of the audience flags, so there was no way to answer "what is this project
-// showing its partner?" over MCP.
 
 export const LIST_DOCUMENT_SHARING_TOOL = {
   name: "list_document_sharing",
@@ -223,23 +205,7 @@ export async function runListDocumentSharing(
   };
 }
 
-// ─── set_document_sharing ────────────────────────────────────────────────────
-
-export const SET_DOCUMENT_SHARING_PROPERTIES = {
-  pageId: { type: "string", minLength: 1, description: "Page.id." },
-  partnerVisible: {
-    type: "boolean",
-    description: "Share with (or unshare from) the project's partner org.",
-  },
-  publicVisible: {
-    type: "boolean",
-    description:
-      "Use as the public write-up rendered under the showcase card on dali.website.",
-  },
-  pinned: { type: "boolean", description: "Pin to the top of the project's Documents block." },
-};
-
-export const SET_DOCUMENT_SHARING_REQUIRED = ["pageId"];
+// ─── share_page set_visibility ───────────────────────────────────────────────
 
 export async function runSetDocumentSharing(
   callerId: string,
@@ -247,36 +213,28 @@ export async function runSetDocumentSharing(
     pageId: string;
     partnerVisible?: boolean;
     publicVisible?: boolean;
-    pinned?: boolean;
   },
-): Promise<{ ok: true; partnerVisible: boolean; publicVisible: boolean; pinned: boolean }> {
+): Promise<{ ok: true; partnerVisible: boolean; publicVisible: boolean }> {
   const page = await loadProjectPage(input.pageId);
   if (page.archivedAt !== null) {
-    throw new CurationInvalidError("Archived documents can't be shared — restore it first");
+    throw new CurationInvalidError("Archived documents can't be shared. Restore it first");
   }
   await requireProjectEdit(callerId, page.workspaceId!);
 
-  if (
-    input.partnerVisible === undefined &&
-    input.publicVisible === undefined &&
-    input.pinned === undefined
-  ) {
+  if (input.partnerVisible === undefined && input.publicVisible === undefined) {
     throw new CurationInvalidError("Nothing to change");
   }
 
   const data: Record<string, unknown> = {};
   if (input.partnerVisible !== undefined) data.partnerVisible = input.partnerVisible;
   if (input.publicVisible !== undefined) data.publicVisible = input.publicVisible;
-  if (input.pinned !== undefined) data.pinnedAt = input.pinned ? new Date() : null;
 
   const updated = await prisma.page.update({
     where: { id: input.pageId },
     data,
-    select: { partnerVisible: true, publicVisible: true, pinnedAt: true },
+    select: { partnerVisible: true, publicVisible: true },
   });
 
-  // Same audit actions the HTTP toggles emit, so the project's Recent activity
-  // card attributes MCP changes alongside UI ones.
   const audits: [boolean | undefined, AuditAction, string][] = [
     [input.partnerVisible, "page.partner-visibility", "partnerVisible"],
     [input.publicVisible, "page.public-visibility", "publicVisible"],
@@ -295,65 +253,27 @@ export async function runSetDocumentSharing(
     ok: true,
     partnerVisible: updated.partnerVisible,
     publicVisible: updated.publicVisible,
-    pinned: updated.pinnedAt !== null,
   };
 }
 
-// ─── delete_project_document ─────────────────────────────────────────────────
-
-export const DELETE_PROJECT_DOCUMENT_PROPERTIES = {
-  pageId: { type: "string", minLength: 1 },
-  permanent: {
-    type: "boolean",
-    description: "Delete rather than archive. Irreversible. Defaults to false.",
-  },
-};
-
-export const DELETE_PROJECT_DOCUMENT_REQUIRED = ["pageId"];
+// ─── trash a project page (via manage_drive_trash) ───────────────────────────
 
 export async function runDeleteProjectDocument(
   callerId: string,
-  input: { pageId: string; permanent?: boolean },
-): Promise<{ ok: true; archived: boolean; deleted: boolean }> {
+  input: { pageId: string },
+): Promise<{ ok: true; archivedDescendants: number }> {
   const page = await loadProjectPage(input.pageId);
   await requireProjectEdit(callerId, page.workspaceId!);
+  if (page.archivedAt !== null) throw new CurationInvalidError("Document is already in the trash");
 
-  const childCount = await prisma.page.count({ where: { parentPageId: input.pageId } });
-  if (childCount > 0) {
-    throw new CurationInvalidError(
-      `This folder still holds ${childCount} document(s) — move or delete them first`,
-    );
-  }
-
-  if (!input.permanent) {
-    await prisma.page.update({
-      where: { id: input.pageId },
-      data: { archivedAt: new Date(), partnerVisible: false, publicVisible: false, ...CLEARED_FOLDER_TYPE },
-    });
-    return { ok: true, archived: true, deleted: false };
-  }
-
-  await prisma.$transaction(async (tx) => {
-    await tx.collabDocument.deleteMany({ where: { name: `doc:${input.pageId}:body` } });
-    await tx.page.delete({ where: { id: input.pageId } });
-  });
-  await logAuditEvent({
-    action: "document.delete",
-    userId: callerId,
-    targetId: input.pageId,
-    metadata: { projectId: page.workspaceId, title: page.title, via: "mcp" },
-  });
-  return { ok: true, archived: false, deleted: true };
+  const data = { partnerVisible: false, publicVisible: false, ...CLEARED_FOLDER_TYPE };
+  const at = new Date();
+  const archivedDescendants = await archiveDescendants(input.pageId, at, data);
+  await prisma.page.update({ where: { id: input.pageId }, data: { archivedAt: at, ...data } });
+  return { ok: true, archivedDescendants };
 }
 
-// ─── set_file_sharing / delete_project_file ──────────────────────────────────
-
-export const SET_FILE_SHARING_PROPERTIES = {
-  fileId: { type: "string", minLength: 1, description: "ProjectFile.id." },
-  partnerVisible: { type: "boolean" },
-};
-
-export const SET_FILE_SHARING_REQUIRED = ["fileId", "partnerVisible"];
+// ─── share_file set_partner_visibility / trash a project file ────────────────
 
 export async function runSetFileSharing(
   callerId: string,
@@ -383,12 +303,6 @@ export async function runSetFileSharing(
   return { ok: true, partnerVisible: input.partnerVisible };
 }
 
-export const DELETE_PROJECT_FILE_PROPERTIES = {
-  fileId: { type: "string", minLength: 1 },
-};
-
-export const DELETE_PROJECT_FILE_REQUIRED = ["fileId"];
-
 export async function runDeleteProjectFile(
   callerId: string,
   input: { fileId: string },
@@ -403,8 +317,6 @@ export async function runDeleteProjectFile(
 
   if (file.archivedAt !== null) return { ok: true, alreadyArchived: true };
 
-  // Archive rather than delete: versions carry uploader attribution and S3
-  // keys, and the app's own Files UI archives too.
   await prisma.projectFile.update({
     where: { id: input.fileId },
     data: { archivedAt: new Date(), partnerVisible: false },

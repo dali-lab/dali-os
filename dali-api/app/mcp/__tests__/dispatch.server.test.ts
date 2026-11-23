@@ -28,8 +28,8 @@ vi.mock("~/mcp/registry", async () => {
       def: { name: "read_page", description: "r", requiredScope: "mcp:read", inputSchema: schema },
       run: h.readRun,
     },
-    set_page_content: {
-      def: { name: "set_page_content", description: "w", requiredScope: "mcp:write", inputSchema: schema },
+    edit_content: {
+      def: { name: "edit_content", description: "w", requiredScope: "mcp:write", inputSchema: schema },
       run: h.writeRun,
     },
   };
@@ -137,21 +137,21 @@ describe("dispatchTool", () => {
   });
 
   it("refuses a write tool to a read-only caller, audits the denial and never runs it", async () => {
-    expect(await dispatchTool("set_page_content", PAGE, ASK)).toEqual({
+    expect(await dispatchTool("edit_content", PAGE, ASK)).toEqual({
       ok: false,
       code: -32002,
       message: "Missing required scope: mcp:write",
     });
     expect(h.writeRun).not.toHaveBeenCalled();
     expect(h.logMcpToolCall).toHaveBeenCalledWith(
-      expect.objectContaining({ toolName: "set_page_content", scope: "mcp:write", errorCode: -32002 }),
+      expect.objectContaining({ toolName: "edit_content", scope: "mcp:write", errorCode: -32002 }),
     );
     expect(h.logMcpToolCall.mock.calls[0][0].args).toBeUndefined();
   });
 
   it("allows the write tool once the caller holds the scope", async () => {
     h.writeRun.mockResolvedValue({ ok: true });
-    expect(await dispatchTool("set_page_content", PAGE, MCP)).toEqual({ ok: true, payload: { ok: true } });
+    expect(await dispatchTool("edit_content", PAGE, MCP)).toEqual({ ok: true, payload: { ok: true } });
   });
 
   it.each([
@@ -227,7 +227,7 @@ describe("feature-flagged tools", () => {
   it("omits flag-off tools from the visible list and keeps scope filtering", async () => {
     h.isFeatureEnabled.mockResolvedValue(false);
     const names = (await visibleToolDefs(MCP)).map((d) => d.name);
-    expect(names).toEqual(["read_page", "set_page_content", "list_partner_orgs"]);
+    expect(names).toEqual(["read_page", "edit_content", "list_partner_orgs"]);
     const readOnly = (await visibleToolDefs({ ...MCP, scopes: ["mcp:read"] })).map((d) => d.name);
     expect(readOnly).toEqual(["read_page", "list_partner_orgs"]);
   });
@@ -244,7 +244,7 @@ describe("role-limited tools", () => {
   it("hides a Core-only tool from a member who isn't Core", async () => {
     h.getUserRoles.mockResolvedValue({ isCore: false });
     const names = (await visibleToolDefs(MCP)).map((d) => d.name);
-    expect(names).toEqual(["read_page", "set_page_content"]);
+    expect(names).toEqual(["read_page", "edit_content"]);
     expect(h.getUserRoles).toHaveBeenCalledWith("u1", request);
   });
 

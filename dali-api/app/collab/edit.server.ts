@@ -27,7 +27,7 @@ export type DocEditErrorCode =
   | "NOT_A_TABLE"
   | "TABLE_HAS_MERGED_CELLS"
   | "ID_EXISTS"
-  | "INVALID_OP"
+  | "INVALID_EDIT"
   | "LEGACY_DOC";
 
 export type CurrentBlock = { block: DocBlock; hash: string; treeHash?: string };
@@ -73,18 +73,18 @@ type TreeChecked = Checked & { expectedTreeHash?: string };
 
 export type DocOp =
   | (TreeChecked & {
-      op: "update";
+      action: "update";
       block: { type?: string; props?: Record<string, unknown>; content?: DocBlock["content"] };
       children?: DocBlockInput[];
     })
-  | { op: "insert"; position: DocPosition; blocks: DocBlockInput[] }
-  | (TreeChecked & { op: "delete" })
-  | (TreeChecked & { op: "move"; position: DocPosition })
-  | (Checked & { op: "replace_text"; find: string; replace: string })
-  | { op: "replace_all"; blocks: DocBlockInput[] }
-  | (Checked & { op: "insert_row"; index?: number; cells: DocInline[][] })
-  | (Checked & { op: "delete_row"; index: number })
-  | (Checked & { op: "set_cell"; row: number; col: number; content: DocInline[] });
+  | { action: "insert"; position: DocPosition; blocks: DocBlockInput[] }
+  | (TreeChecked & { action: "delete" })
+  | (TreeChecked & { action: "move"; position: DocPosition })
+  | (Checked & { action: "replace_text"; find: string; replace: string })
+  | { action: "replace_all"; blocks: DocBlockInput[] }
+  | (Checked & { action: "insert_row"; index?: number; cells: DocInline[][] })
+  | (Checked & { action: "delete_row"; index: number })
+  | (Checked & { action: "set_cell"; row: number; col: number; content: DocInline[] });
 
 export interface TextRange {
   start: unknown;
@@ -96,7 +96,7 @@ export interface DocEditResult {
   hashes: Record<string, string>;
   treeHashes: Record<string, string>;
   range: TextRange | null;
-  results: Array<{ op: string; blockIds: string[] }>;
+  results: Array<{ action: string; blockIds: string[] }>;
 }
 
 export interface OutlineBlock {
@@ -115,7 +115,7 @@ const BLOCK_NODES = new Set(["blockContainer", "columnList", "column"]);
 const PREVIEW_MAX = 80;
 const UNDO_LABEL = "Before agent edit";
 const LEGACY_MESSAGE =
-  "This document is in the old editor format. Open the page in the editor once, or use set_page_content, before editing it block by block.";
+  "This document is in the old editor format. Open the page in the editor once, or use edit_content replace_all, before editing it block by block.";
 
 const blockSchema = serverSchema.blockSchema as unknown as Record<string, { content: string }>;
 
@@ -408,7 +408,7 @@ function withRendered<R>(blocks: DocBlockInput[], opIndex: number, fn: (els: Y.X
     try {
       blocksToFragment(blocks.map(toDocBlock), fragment);
     } catch (err) {
-      throw new DocEditError("INVALID_OP", `Could not build blocks: ${(err as Error).message}`, { opIndex });
+      throw new DocEditError("INVALID_EDIT", `Could not build blocks: ${(err as Error).message}`, { opIndex });
     }
     const group = fragment.get(0) as Y.XmlElement;
     return fn(group.toArray().filter(isBlockNode));
@@ -426,11 +426,11 @@ type RunState = {
   changed: Set<string>;
   dirty: Set<string>;
   spans: Span[];
-  results: Array<{ op: string; blockIds: string[] }>;
+  results: Array<{ action: string; blockIds: string[] }>;
 };
 
 function invalid(opIndex: number, message: string, blockId?: string): DocEditError {
-  return new DocEditError("INVALID_OP", message, { opIndex, blockId });
+  return new DocEditError("INVALID_EDIT", message, { opIndex, blockId });
 }
 
 function validateBlocks(blocks: unknown, opIndex: number, parentType: string | null): void {
@@ -608,7 +608,7 @@ function contentKind(type: string): string {
   return blockSchema[type]!.content;
 }
 
-function opInsert(doc: Y.Doc, op: Extract<DocOp, { op: "insert" }>, i: number, st: RunState) {
+function opInsert(doc: Y.Doc, op: Extract<DocOp, { action: "insert" }>, i: number, st: RunState) {
   validateBlocks(op.blocks, i, null);
   if (op.blocks.length === 0) throw invalid(i, "insert needs at least one block");
   if (st.rehearsing) assignIds(op.blocks, collectIds(topGroup(doc)), i);
@@ -627,10 +627,10 @@ function opInsert(doc: Y.Doc, op: Extract<DocOp, { op: "insert" }>, i: number, s
   const first = inserted.map(textSpan).find(Boolean);
   const last = inserted.map(textSpan).reverse().find(Boolean);
   if (first && last) st.spans.push({ start: first.start, end: last.end });
-  st.results.push({ op: "insert", blockIds: ids });
+  st.results.push({ action: "insert", blockIds: ids });
 }
 
-function opUpdate(doc: Y.Doc, op: Extract<DocOp, { op: "update" }>, i: number, st: RunState) {
+function opUpdate(doc: Y.Doc, op: Extract<DocOp, { action: "update" }>, i: number, st: RunState) {
   const loc = requireBlock(doc, op.blockId, i);
   if (loc.el.nodeName !== "blockContainer") {
     throw invalid(i, `${loc.el.nodeName} blocks can't be updated; replace them instead`, op.blockId);
@@ -701,10 +701,10 @@ function opUpdate(doc: Y.Doc, op: Extract<DocOp, { op: "update" }>, i: number, s
   if (op.children !== undefined) markChanged(st, loc.el);
   markDirty(st, loc.el);
   touch(st, op.blockId, textSpan(op.children !== undefined ? loc.el : (loc.el.get(0) as Y.XmlElement)));
-  st.results.push({ op: "update", blockIds: [op.blockId] });
+  st.results.push({ action: "update", blockIds: [op.blockId] });
 }
 
-function opDelete(doc: Y.Doc, op: Extract<DocOp, { op: "delete" }>, i: number, st: RunState) {
+function opDelete(doc: Y.Doc, op: Extract<DocOp, { action: "delete" }>, i: number, st: RunState) {
   const loc = requireBlock(doc, op.blockId, i);
   if (loc.el.nodeName === "column") throw invalid(i, "Columns can't be deleted on their own; replace the column list", op.blockId);
   checkHash(st, op, loc, i);
@@ -712,10 +712,10 @@ function opDelete(doc: Y.Doc, op: Extract<DocOp, { op: "delete" }>, i: number, s
   markDirty(st, loc.el);
   loc.group.delete(loc.index, 1);
   removeIfEmpty(loc.group);
-  st.results.push({ op: "delete", blockIds: [op.blockId] });
+  st.results.push({ action: "delete", blockIds: [op.blockId] });
 }
 
-function opMove(doc: Y.Doc, op: Extract<DocOp, { op: "move" }>, i: number, st: RunState) {
+function opMove(doc: Y.Doc, op: Extract<DocOp, { action: "move" }>, i: number, st: RunState) {
   const loc = requireBlock(doc, op.blockId, i);
   if (loc.el.nodeName === "column") throw invalid(i, "Columns can't be moved on their own; move the column list", op.blockId);
   checkHash(st, op, loc, i);
@@ -733,10 +733,10 @@ function opMove(doc: Y.Doc, op: Extract<DocOp, { op: "move" }>, i: number, st: R
   group.insert(index, [copy]);
   markDirty(st, copy);
   st.moved.push(op.blockId);
-  st.results.push({ op: "move", blockIds: [op.blockId] });
+  st.results.push({ action: "move", blockIds: [op.blockId] });
 }
 
-function opReplaceText(doc: Y.Doc, op: Extract<DocOp, { op: "replace_text" }>, i: number, st: RunState) {
+function opReplaceText(doc: Y.Doc, op: Extract<DocOp, { action: "replace_text" }>, i: number, st: RunState) {
   const loc = requireBlock(doc, op.blockId, i);
   if (loc.el.nodeName !== "blockContainer") throw invalid(i, `${loc.el.nodeName} blocks have no text`, op.blockId);
   if (typeof op.find !== "string" || op.find.length === 0) throw invalid(i, "find must be a non-empty string", op.blockId);
@@ -781,7 +781,7 @@ function opReplaceText(doc: Y.Doc, op: Extract<DocOp, { op: "replace_text" }>, i
   if (op.replace) text.insert(offset, op.replace, attributes);
   markDirty(st, loc.el);
   touch(st, op.blockId, span([text, offset], [text, offset + op.replace.length]));
-  st.results.push({ op: "replace_text", blockIds: [op.blockId] });
+  st.results.push({ action: "replace_text", blockIds: [op.blockId] });
 }
 
 function requireTable(doc: Y.Doc, op: Checked, i: number, st: RunState) {
@@ -820,7 +820,7 @@ function rowOutOfRange(op: { blockId: string }, i: number, row: unknown, count: 
   });
 }
 
-function opInsertRow(doc: Y.Doc, op: Extract<DocOp, { op: "insert_row" }>, i: number, st: RunState) {
+function opInsertRow(doc: Y.Doc, op: Extract<DocOp, { action: "insert_row" }>, i: number, st: RunState) {
   const { table, rows, current, content } = requireTable(doc, op, i, st);
   const index = op.index ?? rows.length;
   if (!isIndex(index) || index < 0 || index > rows.length) throw rowOutOfRange(op, i, index, rows.length);
@@ -846,19 +846,19 @@ function opInsertRow(doc: Y.Doc, op: Extract<DocOp, { op: "insert_row" }>, i: nu
   const row = withRendered([scratchTable], i, ([el]) => ((el!.get(0) as Y.XmlElement).get(0) as Y.XmlElement).clone());
   table.insert(index, [row]);
   touch(st, op.blockId, textSpan(row));
-  st.results.push({ op: "insert_row", blockIds: [op.blockId] });
+  st.results.push({ action: "insert_row", blockIds: [op.blockId] });
 }
 
-function opDeleteRow(doc: Y.Doc, op: Extract<DocOp, { op: "delete_row" }>, i: number, st: RunState) {
+function opDeleteRow(doc: Y.Doc, op: Extract<DocOp, { action: "delete_row" }>, i: number, st: RunState) {
   const { table, rows } = requireTable(doc, op, i, st);
   if (!isIndex(op.index) || op.index < 0 || op.index >= rows.length) throw rowOutOfRange(op, i, op.index, rows.length);
   if (rows.length === 1) throw invalid(i, "Can't delete a table's only row; delete the table instead", op.blockId);
   table.delete(op.index, 1);
   touch(st, op.blockId, null);
-  st.results.push({ op: "delete_row", blockIds: [op.blockId] });
+  st.results.push({ action: "delete_row", blockIds: [op.blockId] });
 }
 
-function opSetCell(doc: Y.Doc, op: Extract<DocOp, { op: "set_cell" }>, i: number, st: RunState) {
+function opSetCell(doc: Y.Doc, op: Extract<DocOp, { action: "set_cell" }>, i: number, st: RunState) {
   const { rows } = requireTable(doc, op, i, st);
   if (!isIndex(op.row) || op.row < 0 || op.row >= rows.length) throw rowOutOfRange(op, i, op.row, rows.length);
   const cells = rows[op.row]!.toArray() as Y.XmlElement[];
@@ -881,10 +881,10 @@ function opSetCell(doc: Y.Doc, op: Extract<DocOp, { op: "set_cell" }>, i: number
   cell.delete(0, cell.length);
   cell.insert(0, fresh);
   touch(st, op.blockId, textSpan(cell));
-  st.results.push({ op: "set_cell", blockIds: [op.blockId] });
+  st.results.push({ action: "set_cell", blockIds: [op.blockId] });
 }
 
-function opReplaceAll(doc: Y.Doc, op: Extract<DocOp, { op: "replace_all" }>, i: number, st: RunState) {
+function opReplaceAll(doc: Y.Doc, op: Extract<DocOp, { action: "replace_all" }>, i: number, st: RunState) {
   validateBlocks(op.blocks, i, null);
   if (st.rehearsing) assignIds(op.blocks, new Set(), i);
   try {
@@ -901,7 +901,7 @@ function opReplaceAll(doc: Y.Doc, op: Extract<DocOp, { op: "replace_all" }>, i: 
     for (const id of ids) touch(st, id, null);
     if (s) st.spans.push(s);
   }
-  st.results.push({ op: "replace_all", blockIds: ids });
+  st.results.push({ action: "replace_all", blockIds: ids });
 }
 
 function runOps(doc: Y.Doc, ops: DocOp[], rehearsing: boolean): RunState {
@@ -915,8 +915,8 @@ function runOps(doc: Y.Doc, ops: DocOp[], rehearsing: boolean): RunState {
     results: [],
   };
   ops.forEach((op, i) => {
-    if (!op || typeof op !== "object") throw invalid(i, "Each op must be an object");
-    switch (op.op) {
+    if (!op || typeof op !== "object") throw invalid(i, "Each edit must be an object");
+    switch (op.action) {
       case "insert":
         return opInsert(doc, op, i, st);
       case "update":
@@ -936,7 +936,7 @@ function runOps(doc: Y.Doc, ops: DocOp[], rehearsing: boolean): RunState {
       case "set_cell":
         return opSetCell(doc, op, i, st);
       default:
-        throw invalid(i, `Unknown op "${String((op as { op?: unknown }).op)}"`);
+        throw invalid(i, `Unknown action "${String((op as { action?: unknown }).action)}"`);
     }
   });
   fillEmptyGroups(doc);
@@ -958,11 +958,11 @@ function liveRange(doc: Y.Doc, spans: Span[]): TextRange | null {
 
 function rehearse(doc: Y.Doc, ops: DocOp[]): DocOp[] {
   if (!Array.isArray(ops) || ops.length === 0) {
-    throw new DocEditError("INVALID_OP", "ops must be a non-empty array");
+    throw new DocEditError("INVALID_EDIT", "edits must be a non-empty array");
   }
-  const replaceAllAt = ops.findIndex((op) => op?.op === "replace_all");
+  const replaceAllAt = ops.findIndex((op) => op?.action === "replace_all");
   if (replaceAllAt !== -1 && ops.length > 1) {
-    throw invalid(replaceAllAt, "replace_all must be the only op in a call");
+    throw invalid(replaceAllAt, "replace_all must be the only edit in a call");
   }
   if (isLegacy(doc)) throw new DocEditError("LEGACY_DOC", LEGACY_MESSAGE);
 
@@ -1006,7 +1006,7 @@ export function applyOpsToDoc(doc: Y.Doc, ops: DocOp[]): DocEditResult {
 
 function needsUndoPoint(ops: DocOp[]): boolean {
   return ops.some(
-    (op) => op?.op === "replace_all" || op?.op === "delete" || (op?.op === "update" && op.children !== undefined),
+    (op) => op?.action === "replace_all" || op?.action === "delete" || (op?.action === "update" && op.children !== undefined),
   );
 }
 

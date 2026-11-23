@@ -1,6 +1,3 @@
-// MCP file sharing: list_file_shares, plus the manage_document_sharing write
-// actions. Thin wrappers over the same gate, audit and notify path the web route uses.
-
 import { listFileShares } from "~/lib/file-sharing.server";
 import { SharePrincipalError } from "~/lib/page-sharing.server";
 import {
@@ -12,47 +9,53 @@ import {
   FileShareNotFoundError,
   FileGeneralAccessError,
 } from "~/lib/file-share-access.server";
-import { McpForbiddenError, McpInvalidError, McpNotFoundError } from "../errors";
+import { McpForbiddenError, McpInvalidError, McpNotFoundError, requireForAction } from "../errors";
+import { runSetFileSharing } from "./document-curation";
+import type { McpCtx, McpTool } from "../registry";
 import type { LinkAccess, SharePermission, SharePrincipalType } from "~/generated/prisma/client";
 
-export const FILE_SHARING_PROPERTIES = {
-  principalType: { type: "string", enum: ["User", "Group"], description: "share_file / share_page: who the grant is for." },
-  principalId: { type: "string", minLength: 1, description: "share_file / share_page: User.id or Group id." },
-  permission: {
-    type: "string",
-    enum: ["View", "Comment", "Edit", "FullAccess"],
-    description: "share_file / share_page: access level. Defaults to View. FullAccess lets them re-share.",
-  },
-  shareId: { type: "string", minLength: 1, description: "unshare_file / unshare_page: the share id from list_file_shares or list_page_shares." },
-  linkAccess: {
-    type: "string",
-    enum: ["Restricted", "LabMembers"],
-    description: "set_file_link_access / set_page_general_access: Restricted = only people you add; LabMembers = everyone in the lab.",
-  },
-  linkPermission: {
-    type: "string",
-    enum: ["View", "Comment", "Edit"],
-    description: "set_file_link_access / set_page_general_access: level for lab members. Defaults to View.",
-  },
-};
+const SHARE_FILE_ACTIONS = ["share", "unshare", "set_link_access", "set_partner_visibility"] as const;
 
-export const LIST_FILE_SHARES_TOOL = {
-  name: "list_file_shares",
+const SHARE_FILE_DEF = {
+  name: "share_file",
   description:
-    "List who a project file is shared with: each share's id, person or group, and permission, plus the file's link access and any access it inherits from its folder. Needs permission to manage the file's sharing. Use the share ids with manage_document_sharing unshare_file.",
+    "Change who can open a file and where it shows. Actions: share (add a person or group), unshare (remove a share), set_link_access (everyone in the lab, or only people you add), set_partner_visibility (show a project file to the project's partner org). You need permission to manage the file's sharing. See who has access with get_sharing.",
   inputSchema: {
     type: "object" as const,
-    properties: { fileId: { type: "string", minLength: 1 } },
-    required: ["fileId"],
+    properties: {
+      action: { type: "string", enum: [...SHARE_FILE_ACTIONS] },
+      fileId: { type: "string", minLength: 1 },
+      principalType: { type: "string", enum: ["User", "Group"], description: "share." },
+      principalId: { type: "string", minLength: 1, description: "share: User.id or Group id." },
+      permission: {
+        type: "string",
+        enum: ["View", "Comment", "Edit", "FullAccess"],
+        description: "share: defaults to View. FullAccess lets them re-share.",
+      },
+      shareId: { type: "string", minLength: 1, description: "unshare: the share id from get_sharing." },
+      linkAccess: {
+        type: "string",
+        enum: ["Restricted", "LabMembers"],
+        description: "set_link_access: Restricted = only people you add; LabMembers = everyone in the lab.",
+      },
+      linkPermission: {
+        type: "string",
+        enum: ["View", "Comment", "Edit"],
+        description: "set_link_access: level for lab members. Defaults to View.",
+      },
+      partnerVisible: { type: "boolean", description: "set_partner_visibility: show to (or hide from) the partner org. Project files only." },
+    },
+    required: ["action", "fileId"],
     additionalProperties: false,
   },
-  requiredScope: "mcp:read" as const,
+  requiredScope: "mcp:write" as const,
 };
 
-export const FILE_SHARING_REQUIRED: Record<string, string[]> = {
-  share_file: ["fileId", "principalType", "principalId"],
-  unshare_file: ["fileId", "shareId"],
-  set_file_link_access: ["fileId", "linkAccess"],
+const ACTION_REQUIRED: Record<string, string[]> = {
+  share: ["fileId", "principalType", "principalId"],
+  unshare: ["fileId", "shareId"],
+  set_link_access: ["fileId", "linkAccess"],
+  set_partner_visibility: ["fileId", "partnerVisible"],
 };
 
 const PERMISSIONS = ["View", "Comment", "Edit", "FullAccess"];
@@ -78,7 +81,7 @@ function permissionArg(v: unknown, fallback: SharePermission): SharePermission {
   return v as SharePermission;
 }
 
-export async function runListFileShares(callerId: string, args: { fileId: string }) {
+export async function runGetFileShares(callerId: string, args: { fileId: string }) {
   return mapErrors(async () => {
     const context = await requireFileShareManager(args.fileId, callerId);
     return {
@@ -97,15 +100,13 @@ export async function runListFileShares(callerId: string, args: { fileId: string
   });
 }
 
-export async function runFileSharingAction(
-  callerId: string,
-  action: string,
-  args: Record<string, unknown>,
-): Promise<unknown> {
+async function runShareFile(callerId: string, args: Record<string, unknown>): Promise<unknown> {
+  const action = args.action as string;
+  requireForAction(action, args, ACTION_REQUIRED);
   const fileId = String(args.fileId);
   return mapErrors(async () => {
     switch (action) {
-      case "share_file": {
+      case "share": {
         if (args.principalType !== "User" && args.principalType !== "Group") {
           throw new McpInvalidError("principalType must be User or Group");
         }
@@ -118,11 +119,11 @@ export async function runFileSharingAction(
           via: "mcp",
         });
       }
-      case "unshare_file": {
+      case "unshare": {
         await unshareFile({ fileId, actorId: callerId, shareId: String(args.shareId), via: "mcp" });
         return { ok: true };
       }
-      case "set_file_link_access": {
+      case "set_link_access": {
         if (args.linkAccess !== "Restricted" && args.linkAccess !== "LabMembers") {
           throw new McpInvalidError("linkAccess must be Restricted or LabMembers");
         }
@@ -133,8 +134,15 @@ export async function runFileSharingAction(
         });
         return { ok: true, ...result };
       }
+      case "set_partner_visibility":
+        return runSetFileSharing(callerId, { fileId, partnerVisible: args.partnerVisible as boolean });
       default:
         throw new McpInvalidError(`Unknown action '${action}'`);
     }
   });
 }
+
+export const SHARE_FILE_TOOL: McpTool = {
+  def: SHARE_FILE_DEF,
+  run: (ctx: McpCtx, args) => runShareFile(ctx.user.id, args),
+};

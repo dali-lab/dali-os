@@ -64,6 +64,13 @@ vi.mock("~/lib/audit", () => ({
   logAuditEvent: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock("~/calendar/lib/notebooks.server", () => ({ trashNotebook: vi.fn() }));
+vi.mock("~/members/lib/personal-notes-actions.server", () => ({ archiveNote: vi.fn() }));
+vi.mock("~/members/lib/personal-notes.server", () => ({
+  requireNoteOwner: vi.fn(),
+  NoteForbiddenError: class NoteForbiddenError extends Error {},
+  NoteNotFoundError: class NoteNotFoundError extends Error {},
+}));
 vi.mock("~/forms/lib/form-page.server", () => ({
   moveForm: vi.fn(),
   deleteForm: vi.fn(),
@@ -77,8 +84,7 @@ vi.mock("~/forms/lib/form-usages.server", () => ({
 
 import { prisma } from "~/lib/db.server";
 import { isCore, isProjectMember } from "~/lib/roles";
-import { deleteForm, moveForm, setFormArchived } from "~/forms/lib/form-page.server";
-import { formDeletionBlockers } from "~/forms/lib/form-usages.server";
+import { moveForm, setFormArchived } from "~/forms/lib/form-page.server";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { canEditFile } from "~/lib/fileAccess.server";
 import {
@@ -239,6 +245,7 @@ describe("manage_drive_trash", () => {
   it("restores an archived doc page", async () => {
     vi.mocked(getPageAccess).mockResolvedValue({ canView: true, canComment: true, canEdit: true } as never);
     mockPrisma.page.update.mockResolvedValue({ id: "p1" });
+    mockPrisma.page.findUnique.mockResolvedValue({ archivedAt: null });
 
     const out = await runManageDriveTrash("u1", { action: "restore", type: "doc", id: "p1" });
     expect(out).toEqual({ ok: true });
@@ -252,18 +259,6 @@ describe("manage_drive_trash", () => {
     ).rejects.toMatchObject({ name: "ManageDriveTrashError", status: 403 });
   });
 
-  it("purges a file for an edit-capable caller", async () => {
-    mockPrisma.projectFile.findUnique.mockResolvedValue({
-      id: "file1", projectId: "proj1", workspaceType: null, workspaceId: null, folderPageId: null, archivedAt: new Date(),
-    });
-    vi.mocked(canEditFile).mockResolvedValue(true);
-    mockPrisma.projectFile.delete.mockResolvedValue({ id: "file1" });
-
-    const out = await runManageDriveTrash("u1", { action: "purge", type: "file", id: "file1" });
-    expect(out).toEqual({ ok: true });
-    expect(mockPrisma.projectFile.delete).toHaveBeenCalledWith({ where: { id: "file1" } });
-  });
-
   it("rejects file operations when caller lacks edit access", async () => {
     mockPrisma.projectFile.findUnique.mockResolvedValue({
       id: "file1", projectId: "proj1", workspaceType: null, workspaceId: null, folderPageId: null,
@@ -274,29 +269,11 @@ describe("manage_drive_trash", () => {
     ).rejects.toMatchObject({ name: "ManageDriveTrashError", status: 403 });
   });
 
-  it("refuses to purge a Drive root", async () => {
-    vi.mocked(getPageAccess).mockResolvedValue({ canView: true, canComment: true, canEdit: true } as never);
-    mockPrisma.page.findUnique.mockResolvedValue({ folderType: "Root" });
-
-    await expect(
-      runManageDriveTrash("u1", { action: "purge", type: "folder", id: "root1" }),
-    ).rejects.toMatchObject({
-      name: "ManageDriveTrashError",
-      status: 400,
-      message: "This is a Drive root and can't be deleted",
-    });
-    expect(mockPrisma.page.delete).not.toHaveBeenCalled();
+  it("takes only trash and restore, so a permanent delete can't go through it", async () => {
+    const props = MANAGE_DRIVE_TRASH_TOOL_DEF.inputSchema.properties as Record<string, { enum?: string[] }>;
+    expect(props.action.enum).toEqual(["trash", "restore"]);
+    await expect(runManageDriveTrash("u1", { action: "purge", type: "doc", id: "p1" } as never)).rejects.toMatchObject({ status: 400 });
   });
-
-  it("purges a non-root folder", async () => {
-    vi.mocked(getPageAccess).mockResolvedValue({ canView: true, canComment: true, canEdit: true } as never);
-    mockPrisma.page.findUnique.mockResolvedValue({ folderType: null });
-    mockPrisma.page.delete.mockResolvedValue({ id: "f1" });
-
-    expect(await runManageDriveTrash("u1", { action: "purge", type: "folder", id: "f1" })).toEqual({ ok: true });
-    expect(mockPrisma.page.delete).toHaveBeenCalledWith({ where: { id: "f1" } });
-  });
-
 });
 
 // ─── move_drive_item ──────────────────────────────────────────────────────────
@@ -406,31 +383,12 @@ describe("forms follow page access", () => {
     expect(setFormArchived).toHaveBeenCalledWith("frm1", null);
   });
 
-  it("refuses restore and purge to a viewer who cannot edit the page", async () => {
+  it("refuses restore to a viewer who cannot edit the page", async () => {
     vi.mocked(getPageAccess).mockResolvedValue(VIEW);
-    for (const action of ["restore", "purge"] as const) {
-      await expect(runManageDriveTrash("u1", { action, type: "form", id: "frm1" })).rejects.toMatchObject({
-        status: 403,
-      });
-    }
-    expect(deleteForm).not.toHaveBeenCalled();
+    await expect(runManageDriveTrash("u1", { action: "restore", type: "form", id: "frm1" })).rejects.toMatchObject({
+      status: 403,
+    });
     expect(setFormArchived).not.toHaveBeenCalled();
-  });
-
-  it("purges a form through the helper for a caller who can edit its page", async () => {
-    vi.mocked(getPageAccess).mockResolvedValue(EDIT);
-    vi.mocked(formDeletionBlockers).mockResolvedValueOnce([]);
-    expect(await runManageDriveTrash("u1", { action: "purge", type: "form", id: "frm1" })).toEqual({ ok: true });
-    expect(deleteForm).toHaveBeenCalledWith("frm1");
-  });
-
-  it("refuses to purge a form that is still in use", async () => {
-    vi.mocked(getPageAccess).mockResolvedValue(EDIT);
-    vi.mocked(formDeletionBlockers).mockResolvedValueOnce(["the 26F application"]);
-    await expect(
-      runManageDriveTrash("u1", { action: "purge", type: "form", id: "frm1" }),
-    ).rejects.toMatchObject({ status: 409 });
-    expect(deleteForm).not.toHaveBeenCalled();
   });
 
   it("move_drive_item unplaces a form when destFolderPageId is omitted", async () => {

@@ -26,7 +26,7 @@ vi.mock("~/collab/blocknote-server", () => ({
   markdownToBlocks: vi.fn(),
 }));
 vi.mock("~/collab/write", () => ({ replaceCollabDocContent: vi.fn() }));
-vi.mock("../../set-page-content", () => ({ MAX_MARKDOWN_LENGTH: 300_000 }));
+vi.mock("../../editable-page", () => ({ MAX_MARKDOWN_LENGTH: 300_000 }));
 
 import { prisma } from "~/lib/db.server";
 import { isAdmin } from "~/lib/roles";

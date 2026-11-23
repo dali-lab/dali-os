@@ -1,26 +1,16 @@
-// MCP `read_page` — returns a Page's body as Markdown. Reads the persisted
-// Yjs binary from CollabDocument as BlockNote blocks (readDocAsBlocks handles
-// legacy pre-migration docs transparently) and renders Markdown via the
-// server BlockNote codec. The doc name is derived from the page id
-// (doc:{pageId}:body — the room DocEditor writes to); Page.contentDocId
-// only overrides for seeded pages that point at a custom doc. Read access
-// mirrors the web `authorizeCollabDoc` gate on the same doc room: Core
-// everywhere, lab members on Lab pages, project members (or partner-visible
-// partners) on Project pages, and the offering's instructors on
-// EducationOffering pages.
-
 import { prisma } from "~/lib/db.server";
 import { readDocAsBlocks } from "~/collab/read";
 import { blocksToMarkdown } from "~/collab/blocknote-server";
 import { pageDocName } from "~/collab/roomName";
 import { authorizeCollabDoc } from "~/lib/collabAuth.server";
+import { getPageAccess } from "~/lib/pageAccess.server";
 import { announceAgent, pagePresenceRoom } from "~/collab/agent-presence.server";
 import { TEXT_PAGE_LIMITS, pageProps, pageText, type PageArgs } from "../pagination";
 
 export const READ_PAGE_TOOL = {
   name: "read_page",
   description:
-    "Read a workspace page's content as Markdown (headings, lists, check lists, quotes, code, tables, images). Lossy for editor-only blocks (callouts/toggles flatten). Member mentions read as [@handle](/members/<userId>), page mentions as [Title](/documents/<pageId>) and task mentions as [Title](/projects/<projectId>?tab=progress&task=<taskId>); all three round-trip through set_page_content. To change part of a page, use outline_content and edit_content (when available) rather than rewriting it. Long pages come back in chunks of limit characters (default 50000, max 200000): pass page.nextCursor as cursor until page.hasMore is false. page.total is the full Markdown length.",
+    "Read a workspace page's content as Markdown (headings, lists, check lists, quotes, code, tables, images). Lossy for editor-only blocks (callouts/toggles flatten). Member mentions read as [@handle](/members/<userId>), page mentions as [Title](/documents/<pageId>) and task mentions as [Title](/projects/<projectId>?tab=progress&task=<taskId>); all three round-trip through edit_content. To change part of a page, use outline_content and edit_content rather than rewriting it; edit_content replace_all swaps the whole body. For a personal note, also returns its tags, public flag, lab listing, share count and whether you own it. Long pages come back in chunks of limit characters (default 50000, max 200000): pass page.nextCursor as cursor until page.hasMore is false. page.total is the full Markdown length.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -53,15 +43,17 @@ export async function runReadPage(callerId: string, input: Input) {
       workspaceId: true,
       contentDocId: true,
       iconEmoji: true,
+      parentPageId: true,
+      profileVisible: true,
+      labListing: true,
+      createdAt: true,
+      updatedAt: true,
+      tags: { select: { tag: { select: { id: true, label: true, color: true } } } },
+      _count: { select: { shares: true } },
     },
   });
   if (!page) throw new ReadPageError("Page not found", 404);
 
-  // Gate the body read exactly like the web editor route does — the page's
-  // workspace membership (Core / lab / project / instructor), not merely an
-  // authenticated session. Without this, any mcp:read caller could read a
-  // page's Markdown for a project they aren't on, or an instructor-only
-  // EducationOffering page.
   if (!(await authorizeCollabDoc(callerId, pageDocName(page.id))).allowed) {
     throw new ReadPageError("Forbidden", 403);
   }
@@ -70,6 +62,21 @@ export async function runReadPage(callerId: string, input: Input) {
   const fullMarkdown = blocks.length ? await blocksToMarkdown(blocks, { inlineRefs: true }) : "";
   const { text: markdown, page: pageInfo } = pageText(fullMarkdown, input);
   void announceAgent({ action: "reading", presenceRoom: pagePresenceRoom(page.id) });
+
+  const note =
+    page.workspaceType === "Member"
+      ? {
+          parentPageId: page.parentPageId,
+          visibility: page.profileVisible ? "public" : "private",
+          labListing: page.labListing,
+          createdAt: page.createdAt.toISOString(),
+          updatedAt: page.updatedAt.toISOString(),
+          tags: page.tags.map((t) => t.tag),
+          shareCount: page._count.shares,
+          isOwner: page.workspaceId === callerId,
+          canEdit: (await getPageAccess(callerId, page.id)).canEdit,
+        }
+      : undefined;
 
   return {
     id: page.id,
@@ -80,5 +87,6 @@ export async function runReadPage(callerId: string, input: Input) {
     iconEmoji: page.iconEmoji,
     markdown,
     page: pageInfo,
+    ...(note ? { note } : {}),
   };
 }
