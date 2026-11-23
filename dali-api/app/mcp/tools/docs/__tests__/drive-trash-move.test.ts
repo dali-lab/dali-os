@@ -245,6 +245,7 @@ describe("manage_drive_trash", () => {
   it("restores an archived doc page", async () => {
     vi.mocked(getPageAccess).mockResolvedValue({ canView: true, canComment: true, canEdit: true } as never);
     mockPrisma.page.update.mockResolvedValue({ id: "p1" });
+    mockPrisma.page.findUnique.mockResolvedValue({ archivedAt: null });
 
     const out = await runManageDriveTrash("u1", { action: "restore", type: "doc", id: "p1" });
     expect(out).toEqual({ ok: true });

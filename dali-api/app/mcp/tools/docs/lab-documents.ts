@@ -4,7 +4,7 @@ import { createLabPage, pageDepth, MAX_PAGE_DEPTH } from "~/lib/pages.server";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { duplicatePage } from "~/drive/lib/page-copy.server";
 import { isRoot, ROOT_DELETE_ERROR, CLEARED_FOLDER_TYPE } from "~/drive/lib/drive-roots";
-import { archiveDescendants } from "./trash-subtree";
+import { archiveDescendants } from "~/drive/lib/page-trash.server";
 import { offsetPage, offsetWindow, pageProps, type PageArgs } from "../../pagination";
 
 const PAGE_LIMITS = { defaultLimit: 50, maxLimit: 200 };
@@ -200,10 +200,11 @@ export async function runDeleteLabDocument(callerId: string, input: DeleteInput)
     throw new LabDocumentError("Forbidden", 403);
   }
 
-  const archivedDescendants = await archiveDescendants(input.pageId, CLEARED_FOLDER_TYPE);
+  const at = new Date();
+  const archivedDescendants = await archiveDescendants(input.pageId, at, CLEARED_FOLDER_TYPE);
   await prisma.page.update({
     where: { id: input.pageId },
-    data: { archivedAt: new Date(), ...CLEARED_FOLDER_TYPE },
+    data: { archivedAt: at, ...CLEARED_FOLDER_TYPE },
   });
 
   return { ok: true as const, archivedDescendants };

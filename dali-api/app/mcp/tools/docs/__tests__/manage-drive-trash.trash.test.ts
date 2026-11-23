@@ -90,6 +90,7 @@ describe("manage_drive_trash trash: pages", () => {
       where: { id: { in: ["a", "b"] }, archivedAt: null },
       data: { ...CLEARED, archivedAt: expect.any(Date) },
     });
+    expect(m.page.update.mock.calls[0][0].data.archivedAt).toBe(m.page.updateMany.mock.calls[0][0].data.archivedAt);
   });
 
   it("trashes a project page for someone staffed on the project", async () => {
@@ -112,6 +113,7 @@ describe("manage_drive_trash trash: pages", () => {
       where: { id: { in: ["a", "b", "c"] }, archivedAt: null },
       data: { partnerVisible: false, publicVisible: false, ...CLEARED, archivedAt: expect.any(Date) },
     });
+    expect(m.page.update.mock.calls[0][0].data.archivedAt).toBe(m.page.updateMany.mock.calls[0][0].data.archivedAt);
   });
 
   it("refuses a project page for someone who is neither Core nor staffed", async () => {
@@ -144,7 +146,7 @@ describe("manage_drive_trash trash: pages", () => {
     m.page.findUnique.mockResolvedValue(livePage({ workspaceType: "Member", workspaceId: "u1" }));
     expect(await trash("doc", "p1")).toEqual({ ok: true, archivedDescendants: 0 });
     expect(requireNoteOwner).toHaveBeenCalledWith("p1", "u1");
-    expect(archiveNote).toHaveBeenCalledWith("p1", "u1");
+    expect(archiveNote).toHaveBeenCalledWith("p1", "u1", expect.any(Date));
   });
 
   it("trashes a personal folder's notes before the folder and takes them off the profile", async () => {
@@ -156,6 +158,7 @@ describe("manage_drive_trash trash: pages", () => {
       data: { profileVisible: false, labListing: "None", archivedAt: expect.any(Date) },
     });
     expect(m.page.updateMany.mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(archiveNote).mock.invocationCallOrder[0]);
+    expect(vi.mocked(archiveNote).mock.calls[0][2]).toBe(m.page.updateMany.mock.calls[0][0].data.archivedAt);
   });
 
   it("refuses someone else's personal note without trashing anything", async () => {

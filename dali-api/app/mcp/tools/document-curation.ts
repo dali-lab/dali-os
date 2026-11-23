@@ -1,7 +1,7 @@
 import { prisma } from "~/lib/db.server";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { CLEARED_FOLDER_TYPE } from "~/drive/lib/drive-roots";
-import { archiveDescendants } from "./docs/trash-subtree";
+import { archiveDescendants } from "~/drive/lib/page-trash.server";
 import { logAuditEvent, type AuditAction } from "~/lib/audit";
 import {
   keysetPage,
@@ -267,8 +267,9 @@ export async function runDeleteProjectDocument(
   if (page.archivedAt !== null) throw new CurationInvalidError("Document is already in the trash");
 
   const data = { partnerVisible: false, publicVisible: false, ...CLEARED_FOLDER_TYPE };
-  const archivedDescendants = await archiveDescendants(input.pageId, data);
-  await prisma.page.update({ where: { id: input.pageId }, data: { archivedAt: new Date(), ...data } });
+  const at = new Date();
+  const archivedDescendants = await archiveDescendants(input.pageId, at, data);
+  await prisma.page.update({ where: { id: input.pageId }, data: { archivedAt: at, ...data } });
   return { ok: true, archivedDescendants };
 }
 

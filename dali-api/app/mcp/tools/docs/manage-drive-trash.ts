@@ -11,12 +11,12 @@ import { requireForAction } from "../../errors";
 import type { McpCtx, McpTool } from "~/mcp/registry";
 import { runDeleteProjectDocument, runDeleteProjectFile } from "../document-curation";
 import { runDeleteLabDocument } from "./lab-documents";
-import { archiveDescendants } from "./trash-subtree";
+import { archiveDescendants, restorePageSubtree } from "~/drive/lib/page-trash.server";
 
 export const MANAGE_DRIVE_TRASH_TOOL_DEF = {
   name: "manage_drive_trash",
   description:
-    "Move a drive item to the trash, or restore it from the trash. Works on pages in any workspace (lab, project, notebook, personal note), project and drive files, and forms. Trashing a folder trashes everything inside it. Restoring a folder restores only the folder. Pages need edit access (lab pages: the creator or Core; personal notes: the owner; notebooks: someone who can manage them); files need edit-file access; forms need edit access on the form. See list_drive_trash for what is in the trash and purge_drive_item to delete for good.",
+    "Move a drive item to the trash, or restore it from the trash. Works on pages in any workspace (lab, project, notebook, personal note), project and drive files, and forms. Trashing a folder trashes everything inside it, and restoring it brings back what was trashed with it. Pages need edit access (lab pages: the creator or Core; personal notes: the owner; notebooks: someone who can manage them); files need edit-file access; forms need edit access on the form. See list_drive_trash for what is in the trash and purge_drive_item to delete for good.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -107,8 +107,9 @@ async function trashPage(callerId: string, id: string) {
     case "Member":
       try {
         await requireNoteOwner(id, callerId);
-        const archivedDescendants = await archiveDescendants(id, { profileVisible: false, labListing: "None" });
-        await archiveNote(id, callerId);
+        const at = new Date();
+        const archivedDescendants = await archiveDescendants(id, at, { profileVisible: false, labListing: "None" });
+        await archiveNote(id, callerId, at);
         return { ok: true as const, archivedDescendants };
       } catch (err) {
         if (err instanceof NoteNotFoundError) throw new ManageDriveTrashError("Document not found", 404);
@@ -152,7 +153,7 @@ export async function runManageDriveTrash(callerId: string, input: ManageDriveTr
 
   const access = await getPageAccess(callerId, id, undefined, { includeArchived: true });
   if (!access.canEdit) throw new ManageDriveTrashError("Forbidden", 403);
-  await prisma.page.update({ where: { id }, data: { archivedAt: null } });
+  await restorePageSubtree(id);
   return { ok: true };
 }
 

@@ -23,6 +23,7 @@ import { isRoot, ROOT_DELETE_ERROR } from "~/drive/lib/drive-roots";
 import { canManageFormPlacement } from "~/forms/lib/form-access.server";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { logAuditEvent } from "~/lib/audit";
+import { restorePageSubtree } from "~/drive/lib/page-trash.server";
 import { CURSOR_DONE, decodeCursor, encodeCursor, joinPairCursor, keysetAfter, splitPairCursor, type KeysetCursor } from "~/lib/pagination";
 
 export const TRASH_PAGE_SIZE = 50;
@@ -248,17 +249,8 @@ export async function action({ request }: Route.ActionArgs) {
     } else if (type === "doc" || type === "folder") {
       const access = await getPageAccess(userId, id, request, { includeArchived: true });
       if (!access.canEdit) return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
-      const trashed = await prisma.page.findUnique({ where: { id }, select: { kind: true, archivedAt: true, title: true } });
-      title = trashed?.title ?? null;
-      await prisma.page.update({ where: { id }, data: { archivedAt: null } });
-      // A notebook was archived together with its tabs at one instant; bring
-      // back exactly those, not tabs that were trashed on their own earlier.
-      if (trashed?.kind === "Notebook" && trashed.archivedAt) {
-        await prisma.page.updateMany({
-          where: { parentPageId: id, archivedAt: trashed.archivedAt },
-          data: { archivedAt: null },
-        });
-      }
+      title = await pageTitle(id);
+      await restorePageSubtree(id);
     } else {
       return withCors(request, Response.json({ error: "Unknown type" }, { status: 400 }));
     }

@@ -4487,7 +4487,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
 }
 {
   "name": "manage_drive_trash",
-  "description": "Move a drive item to the trash, or restore it from the trash. Works on pages in any workspace (lab, project, notebook, personal note), project and drive files, and forms. Trashing a folder trashes everything inside it. Restoring a folder restores only the folder. Pages need edit access (lab pages: the creator or Core; personal notes: the owner; notebooks: someone who can manage them); files need edit-file access; forms need edit access on the form. See list_drive_trash for what is in the trash and purge_drive_item to delete for good.",
+  "description": "Move a drive item to the trash, or restore it from the trash. Works on pages in any workspace (lab, project, notebook, personal note), project and drive files, and forms. Trashing a folder trashes everything inside it, and restoring it brings back what was trashed with it. Pages need edit access (lab pages: the creator or Core; personal notes: the owner; notebooks: someone who can manage them); files need edit-file access; forms need edit access on the form. See list_drive_trash for what is in the trash and purge_drive_item to delete for good.",
   "inputSchema": {
     "type": "object",
     "properties": {
