@@ -199,6 +199,7 @@ async function createDeck(userId: string, args: Args) {
   return { pageId: id, title: args.title, themeId: read.themeId, slides: await Promise.all(created.map((s) => slideView(s))) };
 }
 
+export function runManageSlideDeck(userId: string, args: Args & { action: "create" }): ReturnType<typeof createDeck>;
 export function runManageSlideDeck(userId: string, args: Args & { action: SlideAction }): Promise<SlideOutputDeck>;
 export function runManageSlideDeck(userId: string, args: Args): Promise<object>;
 export async function runManageSlideDeck(userId: string, input: Args) {

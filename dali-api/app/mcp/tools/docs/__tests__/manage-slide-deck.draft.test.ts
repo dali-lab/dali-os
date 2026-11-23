@@ -216,8 +216,8 @@ describe("manage_slide_deck create", () => {
     expect(labDocs.runCreateLabDocument).toHaveBeenCalledWith("u1", { title: "Launch", kind: "Slides", parentPageId: "folder1" });
     expect(out).toMatchObject({ pageId: "p1", themeId: "dali-light" });
     expect(read().slides.map((s) => s.layoutId)).toEqual(["title", "content"]);
-    expect(read().slides.map((s) => s.id)).toEqual(out.slides.map((s) => s.id));
-    expect(out.slides[1].elements.find((e) => e.kind === "chart")).toBeTruthy();
+    expect(read().slides.map((s) => s.id)).toEqual(out.slides.map((s: { id: string }) => s.id));
+    expect(out.slides[1].elements.find((e: { kind: string }) => e.kind === "chart")).toBeTruthy();
     expect(env.pageUpdate).toHaveBeenCalledWith({ where: { id: "p1" }, data: { lastEditedById: "u1" } });
   });
 

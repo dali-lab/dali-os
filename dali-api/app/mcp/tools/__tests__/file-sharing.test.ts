@@ -152,7 +152,7 @@ describe("file sharing tools", () => {
     vi.mocked(listFileShares).mockResolvedValue([]);
     const res = (await runGetSharing("user-1", { fileId: "f1" })) as { file: { id: string } };
     expect(res.file.id).toBe("f1");
-    expect(GET_SHARING_TOOL.inputSchema.required).toBeUndefined();
+    expect("required" in GET_SHARING_TOOL.inputSchema).toBe(false);
   });
 
   it("get_sharing (file) is manager-gated and returns labels without internal fields", async () => {
