@@ -40,6 +40,14 @@ import {
   runManagePartnerApplication,
 } from "./manage-partner-application";
 import {
+  EVALUATE_PARTNER_APPLICATION_TOOL,
+  runEvaluatePartnerApplication,
+} from "./evaluate-partner-application";
+import {
+  SET_PARTNER_APPLICATION_SCOPE_TOOL,
+  runSetPartnerApplicationScope,
+} from "./set-partner-application-scope";
+import {
   MANAGE_PARTNER_MEETING_TOOL,
   runManagePartnerMeeting,
 } from "./manage-partner-meeting";
@@ -68,9 +76,9 @@ import {
   runManagePartnerInvoice,
 } from "./manage-partner-invoice";
 import {
-  PARTNER_PIPELINE_REPORT_TOOL,
-  runPartnerPipelineReport,
-} from "./partner-pipeline-report";
+  GET_PARTNER_PIPELINE_TOOL,
+  runGetPartnerPipeline,
+} from "./get-partner-pipeline";
 
 export const PARTNERS_TOOLS: McpTool[] = [
   {
@@ -124,6 +132,14 @@ export const PARTNERS_TOOLS: McpTool[] = [
     run: (ctx: McpCtx, args) => runManagePartnerApplication(ctx.user.id, args),
   },
   {
+    def: EVALUATE_PARTNER_APPLICATION_TOOL,
+    run: (ctx: McpCtx, args) => runEvaluatePartnerApplication(ctx.user.id, args),
+  },
+  {
+    def: SET_PARTNER_APPLICATION_SCOPE_TOOL,
+    run: (ctx: McpCtx, args) => runSetPartnerApplicationScope(ctx.user.id, args),
+  },
+  {
     def: MANAGE_PARTNER_MEETING_TOOL,
     run: (ctx: McpCtx, args) => runManagePartnerMeeting(ctx.user.id, args),
   },
@@ -157,8 +173,8 @@ export const PARTNERS_TOOLS: McpTool[] = [
     run: (ctx: McpCtx, args) => runManagePartnerInvoice(ctx.user.id, args),
   },
   {
-    def: PARTNER_PIPELINE_REPORT_TOOL,
+    def: GET_PARTNER_PIPELINE_TOOL,
     run: (ctx: McpCtx, args) =>
-      runPartnerPipelineReport(ctx.user.id, args as Parameters<typeof runPartnerPipelineReport>[1]),
+      runGetPartnerPipeline(ctx.user.id, args as Parameters<typeof runGetPartnerPipeline>[1]),
   },
 ];

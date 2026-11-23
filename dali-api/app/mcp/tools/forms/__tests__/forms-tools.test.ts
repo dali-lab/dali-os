@@ -72,10 +72,10 @@ import { prisma } from "~/lib/db.server";
 import { LIST_FORMS_TOOL, runListForms } from "../list-forms";
 import { GET_FORM_TOOL, runGetForm } from "../get-form";
 import { GET_FORM_RESPONSES_TOOL, runGetFormResponses } from "../get-form-responses";
-import { GET_FORM_SUMMARY_TOOL, runGetFormSummary } from "../get-form-summary";
-import { GET_FORM_TRACKER_TOOL, runGetFormTracker } from "../get-form-tracker";
 import { SUBMIT_FORM_TOOL, runSubmitForm } from "../submit-form";
 import { MANAGE_FORM_TOOL, runManageForm } from "../manage-form";
+import { SET_FORM_QUESTIONS_TOOL, runSetFormQuestions } from "../set-form-questions";
+import { REMIND_FORM_RESPONDENTS_TOOL, runRemindFormRespondents } from "../remind-form-respondents";
 
 const mockPrisma = prisma as unknown as {
   form: {
@@ -125,8 +125,6 @@ describe("scopes", () => {
   });
   it("the form read tools require mcp:read", () => {
     expect(GET_FORM_TOOL.requiredScope).toBe("mcp:read");
-    expect(GET_FORM_SUMMARY_TOOL.requiredScope).toBe("mcp:read");
-    expect(GET_FORM_TRACKER_TOOL.requiredScope).toBe("mcp:read");
   });
 });
 
@@ -215,13 +213,13 @@ describe("get_form_summary", () => {
 
   it("refuses without edit access", async () => {
     vi.mocked(canBuildForm).mockResolvedValue(false);
-    await expect(runGetFormSummary(ctx(), { formId: "fm1" })).rejects.toMatchObject({
+    await expect(runGetFormResponses(ctx(), { view: "summary", formId: "fm1" })).rejects.toMatchObject({
       name: "McpForbiddenError",
     });
   });
 
   it("defaults to the latest version", async () => {
-    const out = await runGetFormSummary(ctx(), { formId: "fm1" });
+    const out = await runGetFormResponses(ctx(), { view: "summary", formId: "fm1" });
     expect(out).toEqual({
       formId: "fm1",
       formName: "Form",
@@ -232,7 +230,7 @@ describe("get_form_summary", () => {
   });
 
   it("reads the version and slot asked for", async () => {
-    await runGetFormSummary(ctx(), { formId: "fm1", versionNumber: 1, slot: "project-bids" });
+    await runGetFormResponses(ctx(), { view: "summary", formId: "fm1", versionNumber: 1, slot: "project-bids" });
     expect(loadVersionSummary).toHaveBeenCalledWith("fm1", form.versions[0], {
       slot: "project-bids",
       answers: [],
@@ -244,8 +242,8 @@ describe("get_form_summary", () => {
       ...form,
       versions: [{ versionNumber: 1, questions: filterQuestions }],
     } as never);
-    await runGetFormSummary(ctx(), {
-      formId: "fm1",
+    await runGetFormResponses(ctx(), {
+      view: "summary", formId: "fm1",
       answers: [{ questionKey: "k", kind: "is", values: ["A"] }],
     });
     expect(loadVersionSummary).toHaveBeenCalledWith("fm1", expect.anything(), {
@@ -259,8 +257,8 @@ describe("get_form_summary", () => {
       ...form,
       versions: [{ versionNumber: 1, questions: filterQuestions }],
     } as never);
-    const run = runGetFormSummary(ctx(), {
-      formId: "fm1",
+    const run = runGetFormResponses(ctx(), {
+      view: "summary", formId: "fm1",
       answers: [{ questionKey: "k", kind: "is", values: ["Z"] }, { questionKey: "nope", kind: "blank" }],
     });
     await expect(run).rejects.toMatchObject({ name: "McpInvalidError", message: expect.stringContaining('"Z" is not an option') });
@@ -270,7 +268,7 @@ describe("get_form_summary", () => {
 
   it("404s an unknown version", async () => {
     await expect(
-      runGetFormSummary(ctx(), { formId: "fm1", versionNumber: 9 }),
+      runGetFormResponses(ctx(), { view: "summary", formId: "fm1", versionNumber: 9 }),
     ).rejects.toMatchObject({ name: "McpNotFoundError" });
   });
 });
@@ -284,7 +282,7 @@ describe("get_form_tracker", () => {
 
   it("refuses without edit access", async () => {
     vi.mocked(canBuildForm).mockResolvedValue(false);
-    await expect(runGetFormTracker(ctx(), { formId: "fm1" })).rejects.toMatchObject({
+    await expect(runGetFormResponses(ctx(), { view: "tracker", formId: "fm1" })).rejects.toMatchObject({
       name: "McpForbiddenError",
     });
   });
@@ -299,13 +297,13 @@ describe("get_form_tracker", () => {
       expected: 5,
       notResponded: [person],
     });
-    const out = await runGetFormTracker(ctx(), { formId: "fm1" });
+    const out = await runGetFormResponses(ctx(), { view: "tracker", formId: "fm1" });
     expect(out.tracker).toMatchObject({ expected: 5, responded: 4, notResponded: [person] });
   });
 
   it("returns a null tracker when nobody is expected", async () => {
     vi.mocked(loadTrackerList).mockResolvedValue(null);
-    await expect(runGetFormTracker(ctx(), { formId: "fm1" })).resolves.toEqual({
+    await expect(runGetFormResponses(ctx(), { view: "tracker", formId: "fm1" })).resolves.toEqual({
       formId: "fm1",
       tracker: null,
     });
@@ -500,7 +498,6 @@ describe("get_form_responses filters", () => {
     expect(Object.keys(GET_FORM_RESPONSES_TOOL.inputSchema.properties)).toEqual(
       expect.arrayContaining(["q", "slot", "answers"]),
     );
-    expect(Object.keys(GET_FORM_SUMMARY_TOOL.inputSchema.properties)).toContain("answers");
     expect(GET_FORM_RESPONSES_TOOL.inputSchema.required).toEqual(["formId"]);
   });
 });
@@ -705,36 +702,125 @@ describe("manage_form", () => {
     });
   });
 
-  describe("send_reminder", () => {
-    const args = { action: "send_reminder", formId: "fm1", message: "Please fill this in" };
-
-    beforeEach(() => {
-      vi.mocked(canBuildForm).mockResolvedValue(true);
-    });
-
-    it("needs a message", async () => {
-      await expect(
-        runManageForm(ctx(), { action: "send_reminder", formId: "fm1" }),
-      ).rejects.toMatchObject({ name: "McpInvalidError" });
-    });
-
-    it("returns how many people were reminded", async () => {
-      vi.mocked(sendFormReminder).mockResolvedValue({ ok: true, sent: 4 });
-      await expect(runManageForm(ctx(), args)).resolves.toEqual({ ok: true, sent: 4 });
-      expect(sendFormReminder).toHaveBeenCalledWith(
-        expect.objectContaining({ formId: "fm1", actorId: "u1", message: "Please fill this in" }),
-      );
-    });
-
-    it("surfaces the 24 hour limit", async () => {
-      vi.mocked(sendFormReminder).mockResolvedValue({
-        error: "A reminder went out in the last 24 hours. Try again later.",
-        status: 429,
-      });
-      await expect(runManageForm(ctx(), args)).rejects.toMatchObject({
+  it("no longer takes question or reminder actions", async () => {
+    vi.mocked(canBuildForm).mockResolvedValue(true);
+    for (const action of ["save_version", "save_draft", "send_reminder"]) {
+      await expect(runManageForm(ctx(), { action, formId: "fm1" })).rejects.toMatchObject({
         name: "McpInvalidError",
-        message: "A reminder went out in the last 24 hours. Try again later.",
+        message: expect.stringContaining("Unknown action"),
       });
+    }
+    expect(runFormsAction).not.toHaveBeenCalled();
+    expect(MANAGE_FORM_TOOL.inputSchema.properties).not.toHaveProperty("questions");
+    expect(MANAGE_FORM_TOOL.inputSchema.properties).not.toHaveProperty("message");
+  });
+});
+
+describe("set_form_questions", () => {
+  const sentFields = () => Object.fromEntries(vi.mocked(runFormsAction).mock.calls[0][0].entries());
+
+  beforeEach(() => {
+    vi.mocked(canBuildForm).mockResolvedValue(true);
+    vi.mocked(runFormsAction).mockResolvedValue({ ok: true });
+  });
+
+  it("requires mcp:write and only offers save_version and save_draft", () => {
+    expect(SET_FORM_QUESTIONS_TOOL.requiredScope).toBe("mcp:write");
+    expect(SET_FORM_QUESTIONS_TOOL.inputSchema.properties.action.enum).toEqual(["save_version", "save_draft"]);
+  });
+
+  it("refuses without edit access", async () => {
+    vi.mocked(canBuildForm).mockResolvedValue(false);
+    await expect(
+      runSetFormQuestions(ctx(), { action: "save_draft", formId: "fm1", questions: "[]" }),
+    ).rejects.toMatchObject({ name: "McpForbiddenError" });
+    expect(runFormsAction).not.toHaveBeenCalled();
+  });
+
+  it("rejects other actions and a missing questions string", async () => {
+    await expect(
+      runSetFormQuestions(ctx(), { action: "create", formId: "fm1", questions: "[]" }),
+    ).rejects.toMatchObject({ name: "McpInvalidError" });
+    await expect(
+      runSetFormQuestions(ctx(), { action: "save_draft", formId: "fm1" } as never),
+    ).rejects.toMatchObject({ name: "McpInvalidError" });
+  });
+
+  it("saves a draft and a version through the form action", async () => {
+    await runSetFormQuestions(ctx(), { action: "save_draft", formId: "fm1", questions: "[1]", description: "d" });
+    expect(sentFields()).toEqual({ intent: "save-draft", id: "fm1", questions: "[1]", description: "d" });
+    vi.mocked(runFormsAction).mockClear();
+    await expect(
+      runSetFormQuestions(ctx(), { action: "save_version", formId: "fm1", questions: "[1]" }),
+    ).resolves.toEqual({ ok: true });
+    expect(sentFields()).toEqual({ intent: "save-version", id: "fm1", questions: "[1]" });
+  });
+
+  it("maps a validation failure to invalid", async () => {
+    vi.mocked(runFormsAction).mockResolvedValue({ error: "Add at least one valid question.", status: 400 });
+    await expect(
+      runSetFormQuestions(ctx(), { action: "save_version", formId: "fm1", questions: "[]" }),
+    ).rejects.toMatchObject({ name: "McpInvalidError" });
+  });
+});
+
+describe("remind_form_respondents", () => {
+  const args = { formId: "fm1", message: "Please fill this in" };
+
+  beforeEach(() => {
+    vi.mocked(canBuildForm).mockResolvedValue(true);
+  });
+
+  it("requires mcp:write", () => {
+    expect(REMIND_FORM_RESPONDENTS_TOOL.requiredScope).toBe("mcp:write");
+  });
+
+  it("needs a message", async () => {
+    await expect(runRemindFormRespondents(ctx(), { formId: "fm1" } as never)).rejects.toMatchObject({
+      name: "McpInvalidError",
     });
+  });
+
+  it("refuses without edit access", async () => {
+    vi.mocked(canBuildForm).mockResolvedValue(false);
+    await expect(runRemindFormRespondents(ctx(), args)).rejects.toMatchObject({ name: "McpForbiddenError" });
+    expect(sendFormReminder).not.toHaveBeenCalled();
+  });
+
+  it("returns how many people were reminded", async () => {
+    vi.mocked(sendFormReminder).mockResolvedValue({ ok: true, sent: 4 });
+    await expect(runRemindFormRespondents(ctx(), args)).resolves.toEqual({ ok: true, sent: 4 });
+    expect(sendFormReminder).toHaveBeenCalledWith(
+      expect.objectContaining({ formId: "fm1", actorId: "u1", message: "Please fill this in" }),
+    );
+  });
+
+  it("surfaces the 24 hour limit", async () => {
+    vi.mocked(sendFormReminder).mockResolvedValue({
+      error: "A reminder went out in the last 24 hours. Try again later.",
+      status: 429,
+    });
+    await expect(runRemindFormRespondents(ctx(), args)).rejects.toMatchObject({
+      name: "McpInvalidError",
+      message: "A reminder went out in the last 24 hours. Try again later.",
+    });
+  });
+});
+
+describe("get_form_responses view", () => {
+  it("defaults to the submission grid and skips summary and tracker", async () => {
+    vi.mocked(canBuildForm).mockResolvedValue(true);
+    mockPrisma.form.findUnique.mockResolvedValue({ id: "fm1", name: "F" });
+    mockPrisma.formSubmission.count.mockResolvedValue(0);
+    mockPrisma.formSubmission.findMany.mockResolvedValue([]);
+    vi.mocked(buildResponseGrid).mockResolvedValue({ columns: [], rowsBySubmission: [] } as never);
+    const out = await runGetFormResponses(ctx(), { formId: "fm1" });
+    expect(out).toHaveProperty("responses");
+    expect(loadVersionSummary).not.toHaveBeenCalled();
+    expect(loadTrackerList).not.toHaveBeenCalled();
+  });
+
+  it("offers the three views and the old tools are gone", () => {
+    expect(GET_FORM_RESPONSES_TOOL.inputSchema.properties.view.enum).toEqual(["rows", "summary", "tracker"]);
   });
 });

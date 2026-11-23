@@ -1,5 +1,5 @@
 // MCP `manage_project_template` — faceted router over the project-template
-// lifecycle: capture a project into a reusable blueprint, list templates,
+// lifecycle: capture a project into a reusable blueprint,
 // instantiate a new project from one, and delete. Core only.
 
 import type { McpTool, McpCtx } from "../../registry";
@@ -23,7 +23,7 @@ const MANAGE_PROJECT_TEMPLATE_DEF = {
     properties: {
       action: {
         type: "string",
-        enum: ["capture", "list", "instantiate", "delete"],
+        enum: ["capture", "instantiate", "delete"],
         description: "Operation to perform.",
       },
       projectId: { type: "string", description: "capture: the source project." },
@@ -49,7 +49,6 @@ const MANAGE_PROJECT_TEMPLATE_DEF = {
 
 const ACTION_REQUIRED: Record<string, string[]> = {
   capture: ["projectId", "name"],
-  list: [],
   instantiate: ["templateId", "name"],
   delete: ["templateId"],
 };
@@ -69,14 +68,6 @@ async function run(ctx: McpCtx, args: Record<string, unknown>) {
         createdBy: ctx.user.id,
         includeOverviewPage: Boolean(args.includeOverviewPage),
       });
-
-    case "list": {
-      const rows = await prisma.projectTemplate.findMany({
-        orderBy: [{ isDefault: "desc" }, { name: "asc" }],
-        select: { id: true, name: true, description: true, iconEmoji: true, isDefault: true, createdAt: true },
-      });
-      return { templates: rows };
-    }
 
     case "instantiate": {
       return instantiateProjectTemplate({

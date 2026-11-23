@@ -17,7 +17,10 @@ vi.mock("~/lib/db.server", () => ({
     partnerApplicationDomain: {
       findUnique: vi.fn(),
       update: vi.fn(),
+      create: vi.fn(),
+      delete: vi.fn(),
     },
+    domain: { findUnique: vi.fn() },
     partnerActivity: {
       create: vi.fn(),
     },
@@ -73,6 +76,15 @@ import {
   runManagePartnerApplication,
   MANAGE_PARTNER_APPLICATION_TOOL,
 } from "../manage-partner-application";
+import {
+  runEvaluatePartnerApplication,
+  EVALUATE_PARTNER_APPLICATION_TOOL,
+} from "../evaluate-partner-application";
+import {
+  runSetPartnerApplicationScope,
+  SET_PARTNER_APPLICATION_SCOPE_TOOL,
+} from "../set-partner-application-scope";
+import { setApplicationFormBinding, clearApplicationFormBinding } from "~/partners/lib/application-form.server";
 
 const mockPrisma = prisma as unknown as {
   partnerApplication: {
@@ -82,7 +94,10 @@ const mockPrisma = prisma as unknown as {
   partnerApplicationDomain: {
     findUnique: ReturnType<typeof vi.fn>;
     update: ReturnType<typeof vi.fn>;
+    create: ReturnType<typeof vi.fn>;
+    delete: ReturnType<typeof vi.fn>;
   };
+  domain: { findUnique: ReturnType<typeof vi.fn> };
   partnerActivity: {
     create: ReturnType<typeof vi.fn>;
   };
@@ -156,7 +171,7 @@ describe("save_eval", () => {
     mockPrisma.partnerApplication.update.mockResolvedValue({ id: "a1" });
     vi.mocked(logPartnerActivity).mockResolvedValue(undefined);
 
-    const out = await runManagePartnerApplication("u1", {
+    const out = await runEvaluatePartnerApplication("u1", {
       action: "save_eval",
       applicationId: "a1",
       evalScores: { feasibility: 4, impact: 5 },
@@ -184,7 +199,7 @@ describe("save_eval", () => {
   it("rejects an unknown criterion key", async () => {
     vi.mocked(isCore).mockResolvedValue(true);
     await expect(
-      runManagePartnerApplication("u1", {
+      runEvaluatePartnerApplication("u1", {
         action: "save_eval",
         applicationId: "a1",
         evalScores: { badKey: 3 },
@@ -195,7 +210,7 @@ describe("save_eval", () => {
   it("rejects out-of-range scores", async () => {
     vi.mocked(isCore).mockResolvedValue(true);
     await expect(
-      runManagePartnerApplication("u1", {
+      runEvaluatePartnerApplication("u1", {
         action: "save_eval",
         applicationId: "a1",
         evalScores: { feasibility: 6 },
@@ -207,7 +222,7 @@ describe("save_eval", () => {
     vi.mocked(isCore).mockResolvedValue(true);
     mockPrisma.partnerApplication.update.mockResolvedValue({ id: "a1" });
     vi.mocked(logPartnerActivity).mockResolvedValue(undefined);
-    const out = await runManagePartnerApplication("u1", {
+    const out = await runEvaluatePartnerApplication("u1", {
       action: "save_eval",
       applicationId: "a1",
       evalNotes: "First impressions noted",
@@ -222,7 +237,7 @@ describe("save_acceptance", () => {
   it("saves ambiguity rating and funding type", async () => {
     vi.mocked(isCore).mockResolvedValue(true);
     mockPrisma.partnerApplication.update.mockResolvedValue({ id: "a1" });
-    const out = await runManagePartnerApplication("u1", {
+    const out = await runEvaluatePartnerApplication("u1", {
       action: "save_acceptance",
       applicationId: "a1",
       ambiguityRating: 3,
@@ -239,7 +254,7 @@ describe("save_acceptance", () => {
   it("rejects an invalid fundingType", async () => {
     vi.mocked(isCore).mockResolvedValue(true);
     await expect(
-      runManagePartnerApplication("u1", {
+      runEvaluatePartnerApplication("u1", {
         action: "save_acceptance",
         applicationId: "a1",
         fundingType: "NOT_A_TYPE",
@@ -250,7 +265,7 @@ describe("save_acceptance", () => {
   it("requires at least one field", async () => {
     vi.mocked(isCore).mockResolvedValue(true);
     await expect(
-      runManagePartnerApplication("u1", {
+      runEvaluatePartnerApplication("u1", {
         action: "save_acceptance",
         applicationId: "a1",
       }),
@@ -260,7 +275,7 @@ describe("save_acceptance", () => {
   it("clamps ambiguity rating to 1-5", async () => {
     vi.mocked(isCore).mockResolvedValue(true);
     mockPrisma.partnerApplication.update.mockResolvedValue({ id: "a1" });
-    await runManagePartnerApplication("u1", {
+    await runEvaluatePartnerApplication("u1", {
       action: "save_acceptance",
       applicationId: "a1",
       ambiguityRating: 99,
@@ -279,7 +294,7 @@ describe("add_note", () => {
     mockPrisma.partnerApplication.findUnique.mockResolvedValue({ id: "a1" });
     vi.mocked(logPartnerActivity).mockResolvedValue(undefined);
 
-    const out = await runManagePartnerApplication("u1", {
+    const out = await runEvaluatePartnerApplication("u1", {
       action: "add_note",
       applicationId: "a1",
       body: "Had a great discovery call",
@@ -299,7 +314,7 @@ describe("add_note", () => {
   it("rejects empty body", async () => {
     vi.mocked(isCore).mockResolvedValue(true);
     await expect(
-      runManagePartnerApplication("u1", {
+      runEvaluatePartnerApplication("u1", {
         action: "add_note",
         applicationId: "a1",
         body: "   ",
@@ -311,7 +326,7 @@ describe("add_note", () => {
     vi.mocked(isCore).mockResolvedValue(true);
     mockPrisma.partnerApplication.findUnique.mockResolvedValue(null);
     await expect(
-      runManagePartnerApplication("u1", {
+      runEvaluatePartnerApplication("u1", {
         action: "add_note",
         applicationId: "missing",
         body: "note",
@@ -328,7 +343,7 @@ describe("update_domain_scope (expectedChallenges)", () => {
     mockPrisma.partnerApplicationDomain.findUnique.mockResolvedValue({ id: "dom-1" });
     mockPrisma.partnerApplicationDomain.update.mockResolvedValue({ id: "dom-1" });
 
-    const out = await runManagePartnerApplication("u1", {
+    const out = await runSetPartnerApplicationScope("u1", {
       action: "update_domain_scope",
       applicationDomainId: "dom-1",
       expectedMembers: 2,
@@ -352,7 +367,7 @@ describe("update_domain_scope (expectedChallenges)", () => {
     mockPrisma.partnerApplicationDomain.findUnique.mockResolvedValue({ id: "dom-1" });
     mockPrisma.partnerApplicationDomain.update.mockResolvedValue({ id: "dom-1" });
 
-    await runManagePartnerApplication("u1", {
+    await runSetPartnerApplicationScope("u1", {
       action: "update_domain_scope",
       applicationDomainId: "dom-1",
       expectedMembers: 3,
@@ -380,5 +395,90 @@ describe("update_details preserves term planning", () => {
       data: [{ applicationId: "a1", termId: "kept" }, { applicationId: "a1", termId: "added" }],
       skipDuplicates: true,
     });
+  });
+});
+
+// ─── split tools ───────────────────────────────────────────────────────────────
+
+describe("partner application split", () => {
+  const actionsOf = (tool: { inputSchema: { properties: Record<string, unknown> } }) =>
+    (tool.inputSchema.properties.action as { enum: string[] }).enum;
+
+  it("gives each tool only its own actions", () => {
+    expect(actionsOf(MANAGE_PARTNER_APPLICATION_TOOL)).toEqual([
+      "create", "update_stage", "update_title", "update_details", "start_return", "delete",
+    ]);
+    expect(actionsOf(EVALUATE_PARTNER_APPLICATION_TOOL)).toEqual(["save_eval", "save_acceptance", "add_note"]);
+    expect(actionsOf(SET_PARTNER_APPLICATION_SCOPE_TOOL)).toEqual([
+      "set_form", "clear_form", "add_domain", "update_domain_scope", "remove_domain",
+    ]);
+  });
+
+  it("keeps the old actions out of manage_partner_application", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    for (const action of ["save_eval", "add_note", "set_form", "remove_domain"]) {
+      await expect(runManagePartnerApplication("u1", { action })).rejects.toMatchObject({ name: "McpInvalidError" });
+    }
+  });
+
+  it("rejects non-Core callers on both new tools", async () => {
+    vi.mocked(isCore).mockResolvedValue(false);
+    await expect(
+      runEvaluatePartnerApplication("u1", { action: "add_note", applicationId: "a1", body: "x" }),
+    ).rejects.toMatchObject({ name: "McpForbiddenError" });
+    await expect(
+      runSetPartnerApplicationScope("u1", { action: "clear_form" }),
+    ).rejects.toMatchObject({ name: "McpForbiddenError" });
+    expect(clearApplicationFormBinding).not.toHaveBeenCalled();
+  });
+
+  it("rejects an evaluate action that is not an evaluation", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    await expect(
+      runEvaluatePartnerApplication("u1", { action: "update_stage", applicationId: "a1" }),
+    ).rejects.toMatchObject({ name: "McpInvalidError" });
+  });
+
+  it("binds and clears the application form", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    vi.mocked(setApplicationFormBinding).mockResolvedValue({ ok: true } as never);
+    await runSetPartnerApplicationScope("u1", { action: "set_form", formId: "f1" });
+    expect(setApplicationFormBinding).toHaveBeenCalledWith("f1", "u1");
+    await runSetPartnerApplicationScope("u1", { action: "clear_form" });
+    expect(clearApplicationFormBinding).toHaveBeenCalled();
+  });
+
+  it("refuses a form binding the helper rejects", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    vi.mocked(setApplicationFormBinding).mockResolvedValue({ ok: false, error: "No such form" } as never);
+    await expect(
+      runSetPartnerApplicationScope("u1", { action: "set_form", formId: "f1" }),
+    ).rejects.toMatchObject({ name: "McpInvalidError" });
+  });
+
+  it("adds a domain and rejects a duplicate", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    mockPrisma.partnerApplication.findUnique.mockResolvedValue({ id: "a1" });
+    mockPrisma.domain.findUnique.mockResolvedValue({ id: "d1" });
+    mockPrisma.partnerApplicationDomain.create.mockResolvedValueOnce({ id: "ad1" });
+    await expect(
+      runSetPartnerApplicationScope("u1", { action: "add_domain", applicationId: "a1", domainId: "d1" }),
+    ).resolves.toEqual({ id: "ad1" });
+    mockPrisma.partnerApplicationDomain.create.mockRejectedValueOnce({ code: "P2002" });
+    await expect(
+      runSetPartnerApplicationScope("u1", { action: "add_domain", applicationId: "a1", domainId: "d1" }),
+    ).rejects.toMatchObject({ name: "McpInvalidError" });
+  });
+
+  it("removes a domain and 404s a missing one", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    mockPrisma.partnerApplicationDomain.delete.mockResolvedValueOnce({});
+    await expect(
+      runSetPartnerApplicationScope("u1", { action: "remove_domain", applicationDomainId: "ad1" }),
+    ).resolves.toEqual({ ok: true });
+    mockPrisma.partnerApplicationDomain.delete.mockRejectedValueOnce({ code: "P2025" });
+    await expect(
+      runSetPartnerApplicationScope("u1", { action: "remove_domain", applicationDomainId: "ad1" }),
+    ).rejects.toMatchObject({ name: "McpNotFoundError" });
   });
 });

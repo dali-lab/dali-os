@@ -1,25 +1,3 @@
-// MCP tool: manage_partner_application — create and manage partner applications.
-// Scope: mcp:write. Gated to isCore.
-//
-// Actions:
-//   create              — create a new PartnerApplication (title + partnerOrgId required).
-//   update_stage        — change application stage (applicationId + stage required).
-//   update_title        — rename the application (applicationId + title required).
-//   update_details      — update summary and/or replace target terms.
-//   save_eval           — save the 8-criterion rubric + interviewRating + notes.
-//   save_acceptance     — save ambiguityRating and/or fundingType post-accept.
-//   add_note            — add a free-text Note to the activity timeline.
-//   set_form            — bind a Form as the application form (formId required).
-//   clear_form          — remove the application form binding.
-//   add_domain          — add a domain to an application (applicationId + domainId required).
-//   update_domain_scope — update expectedMembers (and optionally expectedChallenges as plain text) on an application domain.
-//   remove_domain       — remove a domain from an application.
-//
-// NOTE: actions that trigger partner-facing emails (offer-meeting, send-application,
-// reject, learn-more, accept) are intentionally not exposed. Use update_stage to
-// move the stage silently (logs the change; no email sent). No ownership in this
-// model — there is no meeter to assign.
-
 import { prisma } from "~/lib/db.server";
 import { deletePartnerApplication } from "~/partners/lib/partner-application-delete.server";
 import { startProjectReturn } from "~/partners/lib/partner-returns.server";
@@ -28,20 +6,7 @@ import {
   PARTNER_STAGES,
   isPartnerStage,
 } from "~/partners/lib/partner-application";
-import {
-  setApplicationFormBinding,
-  clearApplicationFormBinding,
-} from "~/partners/lib/application-form.server";
-import {
-  setApplicationStage,
-  logPartnerActivity,
-} from "~/partners/lib/partner-activity.server";
-import {
-  EVAL_CRITERIA,
-  EVAL_CRITERIA_VERSION,
-  type EvalCriterionKey,
-} from "~/partners/lib/discovery-rubric";
-import { PROJECT_FUNDING_TYPES } from "~/lib/chart-string";
+import { setApplicationStage } from "~/partners/lib/partner-activity.server";
 import {
   McpForbiddenError,
   McpNotFoundError,
@@ -53,20 +18,10 @@ export const MANAGE_PARTNER_APPLICATION_TOOL = {
   name: "manage_partner_application",
   description:
     "Create and manage partner applications (Core only, no partner-facing emails). " +
-    "Actions: create (title required; applicantContactId OR applicantEmail+applicantName; partnerOrgId optional), " +
-    "update_stage (applicationId+stage; silent move — no email sent to partner), " +
-    "update_title (applicationId+title required), " +
-    "update_details (applicationId; updates summary/targetTermIds), " +
-    "save_eval (applicationId; evalScores object with any of the 8 criterion keys feasibility/impact/originality/learning/devChallenges/designChallenges/partnerTeam/funding as 1-5 integers; optional interviewRating 1-5; optional evalNotes string), " +
-    "save_acceptance (applicationId; ambiguityRating 1-5 and/or fundingType enum), " +
-    "add_note (applicationId+body; writes a Note-type activity to the timeline), " +
-    "set_form (formId), clear_form, " +
-    "add_domain (applicationId+domainId), " +
-    "update_domain_scope (applicationDomainId; expectedMembers and/or expectedChallenges as plain text — NOTE: expectedChallenges is a collab block doc on the web; MCP writes a plain-text paragraph block), " +
-    "remove_domain (applicationDomainId), " +
-    "start_return (projectId+targetTermIds; opens an application for a past project coming back, carrying over its partner org, primary contact and last term's spots; promoting it reopens that project), " +
-    "delete (applicationId; permanently removes an application that was never promoted). " +
-    "create also accepts continuesProjectId to mark the application as a return of that project.",
+    "Actions: create, update_stage (silent move, no email to the partner), update_title, update_details, " +
+    "start_return (opens an application for a past project coming back; promoting it reopens that project), " +
+    "delete (only for applications that were never promoted). " +
+    "Evaluation is in evaluate_partner_application; form and domains are in set_partner_application_scope.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -77,14 +32,6 @@ export const MANAGE_PARTNER_APPLICATION_TOOL = {
           "update_stage",
           "update_title",
           "update_details",
-          "save_eval",
-          "save_acceptance",
-          "add_note",
-          "set_form",
-          "clear_form",
-          "add_domain",
-          "update_domain_scope",
-          "remove_domain",
           "start_return",
           "delete",
         ],
@@ -92,7 +39,7 @@ export const MANAGE_PARTNER_APPLICATION_TOOL = {
       },
       applicationId: {
         type: "string",
-        description: "Required for most actions (not create, set_form, clear_form).",
+        description: "Required for update_stage, update_title, update_details and delete.",
       },
       title: { type: "string", description: "Required for create and update_title." },
       applicantContactId: {
@@ -124,56 +71,11 @@ export const MANAGE_PARTNER_APPLICATION_TOOL = {
         enum: PARTNER_STAGES as unknown as string[],
         description: "Required for update_stage. Move is silent — no partner email sent.",
       },
-      summary: { type: "string" },
+      summary: { type: "string", description: "Application summary (update_details)." },
       targetTermIds: {
         type: "array",
         items: { type: "string" },
         description: "Replace all target terms (update_details), or the terms a return would run (start_return).",
-      },
-      evalScores: {
-        type: "object",
-        description:
-          "Criterion scores for save_eval. Object with any subset of keys: feasibility, impact, originality, learning, devChallenges, designChallenges, partnerTeam, funding — each an integer 1–5.",
-        additionalProperties: true,
-      },
-      interviewRating: {
-        type: "number",
-        description: "Overall interview rating 1–5 (save_eval).",
-      },
-      evalNotes: {
-        type: "string",
-        description: "Free-text eval notes (save_eval).",
-      },
-      ambiguityRating: {
-        type: "number",
-        description: "Ambiguity rating 1–5 (save_acceptance).",
-      },
-      fundingType: {
-        type: "string",
-        enum: PROJECT_FUNDING_TYPES as unknown as string[],
-        description: "Funding type (save_acceptance).",
-      },
-      body: {
-        type: "string",
-        description: "Note text (add_note). Cannot be empty.",
-      },
-      formId: { type: "string", description: "Required for set_form." },
-      domainId: { type: "string", description: "Required for add_domain." },
-      applicationDomainId: {
-        type: "string",
-        description:
-          "Required for update_domain_scope and remove_domain (PartnerApplicationDomain.id).",
-      },
-      expectedMembers: {
-        type: "number",
-        description: "Expected member count (update_domain_scope).",
-      },
-      expectedChallenges: {
-        type: "string",
-        description:
-          "Plain-text description of expected challenges for this domain (update_domain_scope). " +
-          "COLLAB-BODY FLAG: the web UI stores this as a BlockNote collab doc — MCP writes a single paragraph block. " +
-          "This will overwrite collab content; use only when setting from scratch or the doc is empty.",
       },
     },
     required: ["action"],
@@ -197,14 +99,6 @@ export async function runManagePartnerApplication(
     update_stage: ["applicationId", "stage"],
     update_title: ["applicationId", "title"],
     update_details: ["applicationId"],
-    save_eval: ["applicationId"],
-    save_acceptance: ["applicationId"],
-    add_note: ["applicationId", "body"],
-    set_form: ["formId"],
-    clear_form: [],
-    add_domain: ["applicationId", "domainId"],
-    update_domain_scope: ["applicationDomainId"],
-    remove_domain: ["applicationDomainId"],
     start_return: ["projectId", "targetTermIds"],
     delete: ["applicationId"],
   });
@@ -397,233 +291,6 @@ export async function runManagePartnerApplication(
       throw e;
     }
     return { ok: true };
-  }
-
-  // ── save_eval ─────────────────────────────────────────────────────────────
-  if (action === "save_eval") {
-    const applicationId = input.applicationId as string;
-
-    // Validate and extract criterion scores from the evalScores object.
-    const rubric: Record<string, unknown> = {};
-    const criterionKeys = new Set<string>(EVAL_CRITERIA.map((c) => c.key));
-    const scoresRaw =
-      input.evalScores && typeof input.evalScores === "object"
-        ? (input.evalScores as Record<string, unknown>)
-        : {};
-    for (const [key, val] of Object.entries(scoresRaw)) {
-      if (!criterionKeys.has(key)) {
-        throw new McpInvalidError(
-          `Unknown criterion key '${key}'. Valid keys: ${[...criterionKeys].join(", ")}`,
-        );
-      }
-      const n = Number(val);
-      if (!Number.isInteger(n) || n < 1 || n > 5) {
-        throw new McpInvalidError(`Score for '${key}' must be an integer 1–5`);
-      }
-      rubric[key as EvalCriterionKey] = n;
-    }
-
-    const notes =
-      typeof input.evalNotes === "string" ? input.evalNotes.trim() : undefined;
-    if (notes) rubric.notes = notes;
-    rubric.criteriaVersion = EVAL_CRITERIA_VERSION;
-
-    const interviewRatingRaw = input.interviewRating;
-    const interviewRating =
-      typeof interviewRatingRaw === "number"
-        ? Math.min(5, Math.max(1, Math.round(interviewRatingRaw)))
-        : null;
-
-    try {
-      await prisma.partnerApplication.update({
-        where: { id: applicationId },
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        data: { evalRubric: rubric as any, ...(interviewRating !== null ? { interviewRating } : {}) },
-      });
-    } catch (e) {
-      if ((e as { code?: string })?.code === "P2025") {
-        throw new McpNotFoundError(`Partner application ${applicationId} not found`);
-      }
-      throw e;
-    }
-    await logPartnerActivity(prisma, {
-      applicationId,
-      actorUserId: callerId,
-      type: "Evaluated",
-      ...(interviewRating !== null ? { metadata: { interviewRating } } : {}),
-    });
-    return { ok: true };
-  }
-
-  // ── save_acceptance ────────────────────────────────────────────────────────
-  if (action === "save_acceptance") {
-    const applicationId = input.applicationId as string;
-
-    const ambiguityRaw = input.ambiguityRating;
-    const ambiguityRating =
-      typeof ambiguityRaw === "number"
-        ? Math.min(5, Math.max(1, Math.round(ambiguityRaw)))
-        : undefined;
-    const fundingTypeRaw = input.fundingType;
-    const fundingType =
-      fundingTypeRaw === undefined || fundingTypeRaw === null
-        ? undefined
-        : fundingTypeRaw;
-    if (
-      fundingType !== undefined &&
-      !PROJECT_FUNDING_TYPES.includes(fundingType as (typeof PROJECT_FUNDING_TYPES)[number])
-    ) {
-      throw new McpInvalidError(
-        `Invalid fundingType '${String(fundingType)}'. Valid values: ${PROJECT_FUNDING_TYPES.join(", ")}`,
-      );
-    }
-
-    if (ambiguityRating === undefined && fundingType === undefined) {
-      throw new McpInvalidError(
-        "save_acceptance requires at least one of: ambiguityRating, fundingType",
-      );
-    }
-    try {
-      await prisma.partnerApplication.update({
-        where: { id: applicationId },
-        data: {
-          ...(ambiguityRating !== undefined ? { ambiguityRating } : {}),
-          ...(fundingType !== undefined
-            ? { fundingType: fundingType as (typeof PROJECT_FUNDING_TYPES)[number] }
-            : {}),
-        },
-      });
-    } catch (e) {
-      if ((e as { code?: string })?.code === "P2025") {
-        throw new McpNotFoundError(`Partner application ${applicationId} not found`);
-      }
-      throw e;
-    }
-    return { ok: true };
-  }
-
-  // ── add_note ──────────────────────────────────────────────────────────────
-  if (action === "add_note") {
-    const applicationId = input.applicationId as string;
-    const body = (input.body as string).trim();
-    if (!body) throw new McpInvalidError("Note body cannot be empty");
-
-    // Verify the application exists before logging.
-    const exists = await prisma.partnerApplication.findUnique({
-      where: { id: applicationId },
-      select: { id: true },
-    });
-    if (!exists) throw new McpNotFoundError(`Partner application ${applicationId} not found`);
-
-    await logPartnerActivity(prisma, {
-      applicationId,
-      actorUserId: callerId,
-      type: "Note",
-      body,
-    });
-    return { ok: true };
-  }
-
-  // ── set_form ──────────────────────────────────────────────────────────────
-  if (action === "set_form") {
-    const result = await setApplicationFormBinding(input.formId as string, callerId);
-    if (!result.ok) throw new McpInvalidError(result.error);
-    return { ok: true };
-  }
-
-  // ── clear_form ────────────────────────────────────────────────────────────
-  if (action === "clear_form") {
-    await clearApplicationFormBinding();
-    return { ok: true };
-  }
-
-  // ── add_domain ────────────────────────────────────────────────────────────
-  if (action === "add_domain") {
-    const applicationId = input.applicationId as string;
-    const domainId = input.domainId as string;
-
-    const [app, domain] = await Promise.all([
-      prisma.partnerApplication.findUnique({
-        where: { id: applicationId },
-        select: { id: true },
-      }),
-      prisma.domain.findUnique({
-        where: { id: domainId },
-        select: { id: true },
-      }),
-    ]);
-    if (!app) throw new McpNotFoundError(`Partner application ${applicationId} not found`);
-    if (!domain) throw new McpNotFoundError(`Domain ${domainId} not found`);
-
-    try {
-      const row = await prisma.partnerApplicationDomain.create({
-        data: { applicationId, domainId, expectedMembers: 0 },
-        select: { id: true },
-      });
-      return { id: row.id };
-    } catch (e) {
-      if ((e as { code?: string })?.code === "P2002") {
-        throw new McpInvalidError("That domain is already on this application");
-      }
-      throw e;
-    }
-  }
-
-  // ── update_domain_scope ───────────────────────────────────────────────────
-  if (action === "update_domain_scope") {
-    const applicationDomainId = input.applicationDomainId as string;
-    const existing = await prisma.partnerApplicationDomain.findUnique({
-      where: { id: applicationDomainId },
-      select: { id: true },
-    });
-    if (!existing) throw new McpNotFoundError(`Application domain ${applicationDomainId} not found`);
-
-    const expectedMembers =
-      typeof input.expectedMembers === "number"
-        ? Math.max(0, Math.floor(input.expectedMembers))
-        : undefined;
-
-    // expectedChallenges is a collab block doc on the web (BlockNote JSON
-    // stored in PartnerApplicationDomain.expectedChallenges). MCP writes a
-    // plain-text paragraph block. This will overwrite any existing collab
-    // content — only use when setting from scratch or the doc is known empty.
-    // COLLAB-BODY FLAG: write goes through a direct Prisma update, not the
-    // Hocuspocus pipeline, so it will not be broadcast to live editing sessions.
-    let expectedChallengesBlock: unknown = undefined;
-    if (typeof input.expectedChallenges === "string" && input.expectedChallenges.trim()) {
-      expectedChallengesBlock = [
-        {
-          id: "mcp-challenges-1",
-          type: "paragraph",
-          props: { textColor: "default", backgroundColor: "default", textAlignment: "left" },
-          content: [{ type: "text", text: input.expectedChallenges.trim(), styles: {} }],
-          children: [],
-        },
-      ];
-    }
-
-    await prisma.partnerApplicationDomain.update({
-      where: { id: applicationDomainId },
-      data: {
-        ...(expectedMembers !== undefined ? { expectedMembers } : {}),
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        ...(expectedChallengesBlock !== undefined ? { expectedChallenges: expectedChallengesBlock as any } : {}),
-      },
-    });
-    return { ok: true };
-  }
-
-  // ── remove_domain ─────────────────────────────────────────────────────────
-  const applicationDomainId = input.applicationDomainId as string;
-  try {
-    await prisma.partnerApplicationDomain.delete({
-      where: { id: applicationDomainId },
-    });
-  } catch (e) {
-    if ((e as { code?: string })?.code === "P2025") {
-      throw new McpNotFoundError(`Application domain ${applicationDomainId} not found`);
-    }
-    throw e;
   }
   return { ok: true };
 }

@@ -7,10 +7,12 @@ import {
   GET_GALLERY_POST_DEF,
   LIST_GALLERY_POSTS_DEF,
   MANAGE_GALLERY_POST_DEF,
+  MODERATE_GALLERY_POST_DEF,
   runCreateGalleryUpload,
   runGetGalleryPost,
   runListGalleryPosts,
   runManageGalleryPost,
+  runModerateGalleryPost,
 } from "./gallery";
 
 export const COMMUNITY_TOOLS: McpTool[] = [
@@ -30,5 +32,9 @@ export const COMMUNITY_TOOLS: McpTool[] = [
   {
     def: MANAGE_GALLERY_POST_DEF,
     run: (ctx, args) => runManageGalleryPost(ctx, args as Parameters<typeof runManageGalleryPost>[1]),
+  },
+  {
+    def: MODERATE_GALLERY_POST_DEF,
+    run: (ctx, args) => runModerateGalleryPost(ctx, args as Parameters<typeof runModerateGalleryPost>[1]),
   },
 ];

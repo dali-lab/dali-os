@@ -14,14 +14,19 @@ const ACTIVITIES = {
 } as const;
 type Activity = keyof typeof ACTIVITIES;
 
+const CODE_LAB_HELP =
+  "code_lab: a small web project learners edit in the browser while guided steps check their work. files maps paths to contents and must include index.html (local stylesheets and scripts are inlined; <script type=\"module\"> files can import each other, and bare imports load from esm.sh). Each step's check is a JavaScript expression evaluated in the learner's page that is true once the step is done, e.g. document.querySelector('h1')?.textContent.includes('Hello').";
+
+const STUDIO_LAB_HELP = `studio_lab: a whiteboard (kind canvas) or document (kind document) lab for non-code work like critiques, affinity maps and ticket writing. Each criterion is checked automatically (mode auto, with a rule), ticked by the learner (self), or approved by a journey owner or editor after the learner submits (mentor). ${RULE_HELP} Canvas labs take a starter board: items {type: sticky|text|shape|image|pin, x, y, width?, height?, text?, color: yellow|pink|green|blue|purple, src?, alt?, locked?} and hidden hotspots {label, x, y, width, height} learners should pin. Document labs take a starter template in Markdown (use ### headings for the sections rules look for).`;
+
+const QUIZ_HELP =
+  "quiz: learners must reach passingScore (percent correct) to finish the module, and can retry. multiple-choice questions take options (strings) and correctOption (0-based index); short-answer questions take acceptedAnswers, matched ignoring case, extra spaces and trailing punctuation (leave it empty to accept any response, for reflection questions).";
+
 export const SET_JOURNEY_ACTIVITY: McpTool = {
   def: {
     name: "set_journey_activity",
     description:
-      "Set or remove a journey module's coding lab, whiteboard or document lab, or quiz. Pick it with activity, pass its content in the matching field, or pass remove: true to delete it. Each call replaces that whole activity and saves to the draft. A module has at most one lab, code or studio. " +
-      "code_lab (codeLab): a small web project learners edit in the browser while guided steps check their work. files maps paths to contents and must include index.html (local stylesheets and scripts are inlined; <script type=\"module\"> files can import each other, and bare imports load from esm.sh). Each step's check is a JavaScript expression evaluated in the learner's page that is true once the step is done, e.g. document.querySelector('h1')?.textContent.includes('Hello'). " +
-      `studio_lab (studioLab): a whiteboard (kind canvas) or document (kind document) lab for non-code work like critiques, affinity maps and ticket writing. Each criterion is checked automatically (mode auto, with a rule), ticked by the learner (self), or approved by a journey owner or editor after the learner submits (mentor). ${RULE_HELP} Canvas labs take a starter board: items {type: sticky|text|shape|image|pin, x, y, width?, height?, text?, color: yellow|pink|green|blue|purple, src?, alt?, locked?} and hidden hotspots {label, x, y, width, height} learners should pin. Document labs take a starter template in Markdown (use ### headings for the sections rules look for). ` +
-      "quiz (quiz): learners must reach passingScore (percent correct) to finish the module, and can retry. multiple-choice questions take options (strings) and correctOption (0-based index); short-answer questions take acceptedAnswers, matched ignoring case, extra spaces and trailing punctuation (leave it empty to accept any response, for reflection questions).",
+      "Set or remove a journey module's coding lab, whiteboard or document lab, or quiz. Pick it with activity, pass its content in the matching field (codeLab, studioLab or quiz), or pass remove: true to delete it. Each call replaces that whole activity and saves to the draft. A module has at most one lab, code or studio.",
     inputSchema: inputSchema({
       type: "object" as const,
       properties: {
@@ -29,9 +34,9 @@ export const SET_JOURNEY_ACTIVITY: McpTool = {
         journeyId: { type: "string", minLength: 1 },
         moduleId: { type: "string", minLength: 1 },
         remove: { type: "boolean" },
-        codeLab: propsOf(SET_JOURNEY_LAB).lab,
-        studioLab: propsOf(SET_JOURNEY_STUDIO_LAB).lab,
-        quiz: propsOf(SET_JOURNEY_QUIZ).quiz,
+        codeLab: { ...propsOf(SET_JOURNEY_LAB).lab, description: CODE_LAB_HELP },
+        studioLab: { ...propsOf(SET_JOURNEY_STUDIO_LAB).lab, description: STUDIO_LAB_HELP },
+        quiz: { ...propsOf(SET_JOURNEY_QUIZ).quiz, description: QUIZ_HELP },
       },
       required: ["activity", "journeyId", "moduleId"],
       additionalProperties: false,

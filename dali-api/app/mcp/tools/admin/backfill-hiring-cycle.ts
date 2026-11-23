@@ -20,14 +20,7 @@ const TX_MAX_WAIT_MS = 30_000;
 export const BACKFILL_HIRING_CYCLE_TOOL = {
   name: "backfill_hiring_cycle",
   description:
-    "Import ONE finished historical hiring cycle: the cycle (Completed, stamped with the dates you pass), " +
-    "its application form, per-domain rubrics and challenge forms, applications, reviews, Released decisions " +
-    "and completed interviews. Rows are written directly with the historical timestamps; nothing is released, " +
-    "so no emails, notifications, Slack messages, members, or domain eligibility are created. Applicants without " +
-    "an account get a plain User with no membership. A waitlisted applicant needs a final outcome: pass " +
-    "outcome.waitlistedAt with Rejected (came off the waitlist) or Accepted (hired from it), so nobody lands on " +
-    "the live waitlist. Omit the outcome for undecided applicants. Pass cycleId to append more applications to a cycle created by an " +
-    "earlier call; reruns skip rows that already exist. Max 200 applications per call. Admins only.",
+    "Import ONE finished historical hiring cycle (Completed): its application form, rubrics and challenge forms, applications, reviews, Released decisions and completed interviews, written with the historical timestamps. Nothing is released, so no emails, notifications, Slack messages, members, or domain eligibility are created. Applicants without an account get a plain User with no membership. Pass cycleId to append more applications to a cycle from an earlier call; reruns skip existing rows. Max 200 applications per call. Admins only.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -58,7 +51,8 @@ export const BACKFILL_HIRING_CYCLE_TOOL = {
           "[{ applicant: { userId?, email?, netId?, firstName?, lastName? }, createdAt, answers?, domainApplications: " +
           "[{ domainId, submittedAt, answers?, withdrawn?, outcome?: { type: Accepted|Rejected, decidedAt, notes?, " +
           "invitedToInterviewAt?, waitlistedAt? }, reviews?: [{ reviewerUserId, submittedAt, scores, feedback?, rejectionRationale?, " +
-          "overallRecommendation? }], interview?: { startTime, endTime, interviewerUserIds?, notes? } }] }]",
+          "overallRecommendation? }], interview?: { startTime, endTime, interviewerUserIds?, notes? } }] }]. " +
+          "A waitlisted applicant needs a final outcome: set outcome.waitlistedAt with Rejected (came off the waitlist) or Accepted (hired from it). Omit outcome for undecided applicants.",
         items: { type: "object" },
       },
     },

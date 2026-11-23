@@ -108,14 +108,12 @@ const GALLERY_ACTIONS = [
   "comment",
   "delete_comment",
   "report",
-  "hide",
-  "restore",
 ] as const;
 type GalleryAction = (typeof GALLERY_ACTIONS)[number];
 
 export const MANAGE_GALLERY_POST_DEF = {
   name: "manage_gallery_post",
-  description: `Write to the Community gallery, as the web does. Actions: 'create' (posts: up to ${GALLERY_MAX_PHOTOS}, one per photo, with the keys create_gallery_upload returned); 'delete' (your own post); 'react' (toggle one of ${GALLERY_EMOJI.join(" ")}, notifies the poster); 'comment' (body, @handles mention people); 'delete_comment' (yours, or any as Core); 'report' (someone else's post; two reports hide it); 'hide' and 'restore' (Core only; restoring clears its reports).`,
+  description: `Write to the Community gallery, as the web does. Actions: 'create' (posts: up to ${GALLERY_MAX_PHOTOS}, one per photo, with the keys create_gallery_upload returned); 'delete' (your own post); 'react' (toggle one of ${GALLERY_EMOJI.join(" ")}, notifies the poster); 'comment' (body, @handles mention people); 'delete_comment' (yours, or any as Core); 'report' (someone else's post; two reports hide it). Hiding and restoring are in moderate_gallery_post.`,
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -154,6 +152,22 @@ export const MANAGE_GALLERY_POST_DEF = {
       reason: { type: "string", maxLength: 500 },
     },
     required: ["action"],
+    additionalProperties: false,
+  },
+  requiredScope: "mcp:write" as const,
+};
+
+export const MODERATE_GALLERY_POST_DEF = {
+  name: "moderate_gallery_post",
+  description:
+    "Hide a Community gallery post from the feed, or restore a hidden one (Core only). Restoring clears the post's reports.",
+  inputSchema: {
+    type: "object" as const,
+    properties: {
+      action: { type: "string", enum: ["hide", "restore"] },
+      postId: { type: "string", minLength: 1 },
+    },
+    required: ["action", "postId"],
     additionalProperties: false,
   },
   requiredScope: "mcp:write" as const,
@@ -281,6 +295,8 @@ type NewPostArg = {
   takenAt?: string;
 };
 
+type ModerateArgs = { action: "hide" | "restore"; postId: string };
+
 type ManageArgs = {
   action: GalleryAction;
   postId?: string;
@@ -298,13 +314,11 @@ const REQUIRED: Record<GalleryAction, string[]> = {
   comment: ["postId", "body"],
   delete_comment: ["commentId"],
   report: ["postId"],
-  hide: ["postId"],
-  restore: ["postId"],
 };
 
 // The web's delete intents succeed quietly when nothing matches; an agent
 // needs to hear that the post or comment wasn't there or wasn't theirs.
-async function checkTarget(viewer: GalleryViewer, args: ManageArgs) {
+async function checkTarget(viewer: GalleryViewer, args: { action: string; postId?: string; commentId?: string }) {
   if (args.action === "delete_comment") {
     const comment = await prisma.galleryComment.findFirst({
       where: { id: args.commentId, post: visibleTo(viewer) },
@@ -386,4 +400,16 @@ export async function runManageGalleryPost(ctx: McpCtx, args: ManageArgs) {
       link: ids.has(p.imageKey) ? `/community/gallery/${ids.get(p.imageKey)}` : null,
     })),
   };
+}
+
+export async function runModerateGalleryPost(ctx: McpCtx, args: ModerateArgs) {
+  requireForAction(args.action, args as Record<string, unknown>, { hide: ["postId"], restore: ["postId"] });
+  const viewer = await galleryViewerFor(ctx);
+  if (!viewer.core) throw new McpForbiddenError("Only Core members can moderate gallery posts");
+  await checkTarget(viewer, args);
+  const result = await applyGalleryIntent(ctx.request, viewer, { intent: args.action, postId: args.postId });
+  if (!result.ok) {
+    throw new McpError(result.error ?? "That change could not be made", result.status);
+  }
+  return { ok: true };
 }

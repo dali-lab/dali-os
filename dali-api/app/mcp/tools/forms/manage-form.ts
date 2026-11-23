@@ -1,12 +1,11 @@
 import { runFormsAction } from "~/forms/lib/forms-data";
 import { canBuildForm, canCreateForm } from "~/forms/lib/form-access.server";
 import { deleteFormResponse } from "~/forms/lib/form-response.server";
-import { sendFormReminder } from "~/forms/lib/form-tracker.server";
+import { unwrapFormResult } from "./shared";
 import {
   requireForAction,
   McpForbiddenError,
   McpInvalidError,
-  McpNotFoundError,
   type McpCtx,
   type McpTool,
 } from "../../registry";
@@ -14,7 +13,7 @@ import {
 export const MANAGE_FORM_TOOL = {
   name: "manage_form",
   description:
-    "Create, version, publish, configure, or delete a form, delete a response, or remind people who haven't responded. Actions: create · save_version · save_draft · publish · unpublish · set_window · set_audience · set_settings · rename · move · duplicate · delete · delete_response · send_reminder. Needs edit access on the form (create: on the folder). set_audience sets the form page's general access. set_settings changes only the settings you pass. delete_response is permanent and lets the person fill the form again. send_reminder is limited to one per form every 24 hours.",
+    "Create, publish, configure, move or delete a form, or delete a response. Actions: create · publish · unpublish · set_window · set_audience · set_settings · rename · move · duplicate · delete · delete_response. Needs edit access on the form (create: on the folder). set_audience sets the form page's general access. set_settings changes only the settings you pass. delete_response is permanent and lets the person fill the form again. Questions are written with set_form_questions.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -22,8 +21,6 @@ export const MANAGE_FORM_TOOL = {
         type: "string",
         enum: [
           "create",
-          "save_version",
-          "save_draft",
           "publish",
           "unpublish",
           "set_window",
@@ -34,7 +31,6 @@ export const MANAGE_FORM_TOOL = {
           "duplicate",
           "delete",
           "delete_response",
-          "send_reminder",
         ],
         description: "The management action to perform.",
       },
@@ -50,15 +46,6 @@ export const MANAGE_FORM_TOOL = {
         type: "string",
         description:
           "Target Drive folder Page ID (create / move) — a Page of kind=Folder. Empty string = top level.",
-      },
-      questions: {
-        type: "string",
-        description:
-          "JSON-encoded Question[] (save_version / save_draft). Each question is {key, type, required, data: {label, description?, options?, ...}}. Types: text, textarea, select, radio, checkbox, scale, date, number, email, github_url, figma_url, drive_url, file, skills_rating, reference, info, pageBreak. radio is single choice and needs data.options with at least two entries. radio and checkbox accept data.allowOther: true, which adds an Other write-in (up to 200 characters). scale is a fixed 1 to 5 rating with optional data.scaleLow and data.scaleHigh end labels. number accepts optional numeric data.min and data.max. date answers are YYYY-MM-DD. file accepts optional data.accept (comma-separated types) and data.maxFiles (1 to 10, default 1); data.exactFiles: true makes an answer need exactly maxFiles files instead of up to that many. email answers are stored lowercased. Any question can carry data.showIf: {match: 'all' | 'any', conditions: [{questionKey, op, values}]}, which shows it only when earlier answers match; on a pageBreak it shows or hides that whole page. Each condition's source must come earlier. Ops by source type: select, radio, reference: is, isNot (values: any of the options, or row ids for reference); scale: is, isNot (values '1' to '5'), atLeast, atMost (one value); checkbox: includes, excludes (any of the options); number and date: atLeast, atMost (one number, or one YYYY-MM-DD date); text, textarea, email and link types: contains (one text); every source above plus file: answered, blank (values []). For radio and checkbox with allowOther, '__other__' matches a write-in. skills_rating can't be a source. The older single-condition form {questionKey, op, value} is still read. A question that staffing reads through a column mapping can't be conditional, and neither can the page it sits on. Hidden questions are never required and store no answer.",
-      },
-      description: {
-        type: "string",
-        description: "JSON-encoded rich-text description (save_version / save_draft).",
       },
       opensAt: {
         type: "string",
@@ -113,10 +100,6 @@ export const MANAGE_FORM_TOOL = {
         type: "string",
         description: "The response to delete, an id from get_form_responses (delete_response).",
       },
-      message: {
-        type: "string",
-        description: "The reminder text (send_reminder).",
-      },
     },
     required: ["action"],
     additionalProperties: false,
@@ -126,8 +109,6 @@ export const MANAGE_FORM_TOOL = {
 
 const ACTION_REQUIRED: Record<string, string[]> = {
   create: ["name"],
-  save_version: ["formId", "questions"],
-  save_draft: ["formId", "questions"],
   publish: ["formId"],
   unpublish: ["formId"],
   set_window: ["formId"],
@@ -138,13 +119,10 @@ const ACTION_REQUIRED: Record<string, string[]> = {
   duplicate: ["formId"],
   delete: ["formId"],
   delete_response: ["formId", "submissionId"],
-  send_reminder: ["formId", "message"],
 };
 
 const ACTION_INTENT: Record<string, string> = {
   create: "create-form",
-  save_version: "save-version",
-  save_draft: "save-draft",
   publish: "publish-form",
   unpublish: "unpublish-form",
   set_window: "update-form-window",
@@ -161,8 +139,6 @@ type Args = {
   formId?: string;
   name?: string;
   folderPageId?: string;
-  questions?: string;
-  description?: string;
   opensAt?: string;
   closesAt?: string;
   audience?: string;
@@ -175,16 +151,7 @@ type Args = {
   sendReceipt?: boolean;
   confirmationMessage?: string;
   submissionId?: string;
-  message?: string;
 };
-
-function unwrap<T extends object>(result: T | { error: string; status: number }): T {
-  if ("error" in result) {
-    if (result.status === 404) throw new McpNotFoundError(result.error);
-    throw new McpInvalidError(result.error);
-  }
-  return result;
-}
 
 export async function runManageForm(ctx: McpCtx, args: Args) {
   requireForAction(args.action, args, ACTION_REQUIRED);
@@ -196,22 +163,11 @@ export async function runManageForm(ctx: McpCtx, args: Args) {
   if (!allowed) throw new McpForbiddenError("You do not have edit access to this form");
 
   if (args.action === "delete_response") {
-    return unwrap(
+    return unwrapFormResult(
       await deleteFormResponse({
         formId: args.formId!,
         submissionId: args.submissionId!,
         actorId: ctx.user.id,
-        request: ctx.request,
-      }),
-    );
-  }
-
-  if (args.action === "send_reminder") {
-    return unwrap(
-      await sendFormReminder({
-        formId: args.formId!,
-        actorId: ctx.user.id,
-        message: args.message!,
         request: ctx.request,
       }),
     );
@@ -237,8 +193,6 @@ export async function runManageForm(ctx: McpCtx, args: Args) {
   if (args.formId) fd.set("id", args.formId);
   if (args.name !== undefined) fd.set("name", args.name);
   if (args.folderPageId !== undefined) fd.set("folderPageId", args.folderPageId);
-  if (args.questions !== undefined) fd.set("questions", args.questions);
-  if (args.description !== undefined) fd.set("description", args.description);
   if (args.opensAt !== undefined) fd.set("opensAt", args.opensAt);
   if (args.closesAt !== undefined) fd.set("closesAt", args.closesAt);
   if (args.audience !== undefined) fd.set("audience", args.audience);
@@ -257,7 +211,7 @@ export async function runManageForm(ctx: McpCtx, args: Args) {
   if (args.confirmationMessage !== undefined)
     fd.set("confirmationMessage", args.confirmationMessage);
 
-  const result = unwrap(await runFormsAction(fd, ctx.user.id));
+  const result = unwrapFormResult(await runFormsAction(fd, ctx.user.id));
 
   if (args.action === "duplicate" && result.formId) {
     return { ok: true, formId: result.formId };
