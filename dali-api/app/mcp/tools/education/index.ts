@@ -18,7 +18,6 @@ import { UPSERT_EDUCATION_STUDENT_NOTE } from "./upsert-education-student-note";
 import { CLOSE_OUT_EDUCATION_OFFERING } from "./close-out-education-offering";
 // New tools added for UI parity
 import { SUBMIT_ASSIGNMENT } from "./submit-assignment";
-import { CHECK_IN_TO_SESSION } from "./check-in-to-session";
 import { GRADE_SUBMISSION } from "./grade-submission";
 import { GET_CERTIFICATE } from "./get-certificate";
 import { MANAGE_OFFERING_MATERIALS } from "./manage-offering-materials";
@@ -46,7 +45,6 @@ export const EDUCATION_TOOLS: McpTool[] = [
   CLOSE_OUT_EDUCATION_OFFERING,
   // New tools
   SUBMIT_ASSIGNMENT,
-  CHECK_IN_TO_SESSION,
   GRADE_SUBMISSION,
   GET_CERTIFICATE,
   MANAGE_OFFERING_MATERIALS,

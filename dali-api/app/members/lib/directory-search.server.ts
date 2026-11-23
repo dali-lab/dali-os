@@ -12,6 +12,24 @@ export type DirectoryRow = {
   currentTermRoles: string[];
 };
 
+export function directoryTextWhere(q: string) {
+  return userTextWhere(q, ["firstName", "lastName", "daliEmail", "netId"], (word) => [
+    {
+      domainEligibilities: {
+        some: {
+          domain: {
+            OR: [
+              { displayName: { contains: word, mode: "insensitive" } },
+              { code: { contains: word, mode: "insensitive" } },
+            ],
+          },
+        },
+      },
+    },
+    { coreAssignments: { some: { leadTitle: { contains: word, mode: "insensitive" } } } },
+  ]);
+}
+
 export async function searchDirectory({
   query,
   skip = 0,
@@ -37,21 +55,7 @@ export async function searchDirectory({
     where: {
       AND: [
         memberWhere,
-        userTextWhere(q, ["firstName", "lastName", "daliEmail", "netId"], (word) => [
-          {
-            domainEligibilities: {
-              some: {
-                domain: {
-                  OR: [
-                    { displayName: { contains: word, mode: "insensitive" } },
-                    { code: { contains: word, mode: "insensitive" } },
-                  ],
-                },
-              },
-            },
-          },
-          { coreAssignments: { some: { leadTitle: { contains: word, mode: "insensitive" } } } },
-        ]),
+        directoryTextWhere(q),
       ],
     },
     orderBy: [{ lastName: "asc" }, { firstName: "asc" }, { id: "asc" }],

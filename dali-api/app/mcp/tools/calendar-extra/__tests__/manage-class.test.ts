@@ -49,33 +49,33 @@ describe("manage_class", () => {
 
   it("throws McpInvalidError when deleting without classId", async () => {
     await expect(
-      runManageClass("u1", { intent: "delete" }),
+      runManageClass("u1", { action: "delete" }),
     ).rejects.toMatchObject({ name: "McpInvalidError" });
   });
 
-  it("calls removeClass for delete intent", async () => {
+  it("calls removeClass for delete action", async () => {
     vi.mocked(removeClass).mockResolvedValue(undefined);
-    const out = await runManageClass("u1", { intent: "delete", classId: "cls1" });
+    const out = await runManageClass("u1", { action: "delete", classId: "cls1" });
     expect(out).toEqual({ ok: true });
     expect(removeClass).toHaveBeenCalledWith("u1", "cls1");
   });
 
-  it("throws McpInvalidError when adding without termId", async () => {
+  it("throws McpInvalidError when creating without termId", async () => {
     await expect(
-      runManageClass("u1", { intent: "add", title: "COSC 89", destination: "local", periodCode: "2A" }),
+      runManageClass("u1", { action: "create", title: "COSC 89", destination: "local", periodCode: "2A" }),
     ).rejects.toMatchObject({ name: "McpInvalidError" });
   });
 
-  it("throws McpInvalidError when adding without periodCode or customMeetings", async () => {
+  it("throws McpInvalidError when creating without periodCode or customMeetings", async () => {
     await expect(
-      runManageClass("u1", { intent: "add", termId: "t1", title: "COSC 89", destination: "local" }),
+      runManageClass("u1", { action: "create", termId: "t1", title: "COSC 89", destination: "local" }),
     ).rejects.toMatchObject({ name: "McpInvalidError" });
   });
 
-  it("calls createClass for add intent", async () => {
+  it("calls createClass for create action", async () => {
     vi.mocked(createClass).mockResolvedValue(undefined);
     const out = await runManageClass("u1", {
-      intent: "add",
+      action: "create",
       termId: "t1",
       title: "COSC 89",
       destination: "local",
@@ -92,10 +92,10 @@ describe("manage_class", () => {
     );
   });
 
-  it("calls updateClass for update intent", async () => {
+  it("calls updateClass for update action", async () => {
     vi.mocked(updateClass).mockResolvedValue(undefined);
     const out = await runManageClass("u1", {
-      intent: "update",
+      action: "update",
       classId: "cls1",
       termId: "t1",
       title: "COSC 89",
@@ -117,7 +117,7 @@ describe("manage_class", () => {
     });
     await expect(
       runManageClass("u1", {
-        intent: "add",
+        action: "create",
         termId: "t1",
         title: "COSC 89",
         destination: "invalid",

@@ -3,10 +3,19 @@
 exports[`MCP registered tool definitions > keeps every tool name, description, scope and input schema stable 1`] = `
 "{
   "name": "whoami",
-  "description": "Return the authenticated DALI OS member's identity and role tier.",
+  "description": "Return the authenticated DALI OS member's identity and role tier. With includeRoles, also list their paid roles for the current term, each with the assignmentType and roleRefId needed to attribute a time entry. Call that before logging time.",
   "inputSchema": {
     "type": "object",
-    "properties": {},
+    "properties": {
+      "includeRoles": {
+        "type": "boolean",
+        "description": "Also return paid roles as roles. Default false."
+      },
+      "allTerms": {
+        "type": "boolean",
+        "description": "includeRoles only: roles from every term, not just the current one. Default false."
+      }
+    },
     "additionalProperties": false
   },
   "requiredScope": "mcp:read"
@@ -71,83 +80,6 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
   "requiredScope": "mcp:read"
 }
 {
-  "name": "find_mutual_freebusy",
-  "description": "Find time slots where all listed participants are mutually free. The authenticated caller is implicitly included.",
-  "inputSchema": {
-    "type": "object",
-    "properties": {
-      "participantUserIds": {
-        "type": "array",
-        "items": {
-          "type": "string",
-          "minLength": 1
-        },
-        "maxItems": 8,
-        "description": "User IDs of other participants. Caller is added if not already present. Max 8 total."
-      },
-      "windowStart": {
-        "type": "string",
-        "description": "ISO 8601 window start (e.g. 2026-05-14T13:00:00Z)."
-      },
-      "windowEnd": {
-        "type": "string",
-        "description": "ISO 8601 window end. Span must be ≤ 7 days."
-      },
-      "slotMinutes": {
-        "type": "integer",
-        "enum": [
-          15,
-          30,
-          45,
-          60
-        ],
-        "description": "Minimum slot length in minutes (default 30)."
-      }
-    },
-    "required": [
-      "participantUserIds",
-      "windowStart",
-      "windowEnd"
-    ],
-    "additionalProperties": false
-  },
-  "requiredScope": "mcp:read"
-}
-{
-  "name": "search_directory",
-  "description": "Search the DALI member directory. Matches against name fragments, daliEmail, netId, domain names, and role titles. Returns current-term-active members by default (set includeInactive to also match alumni / members inactive this term). Pass page.nextCursor as cursor to read the next page until page.hasMore is false.",
-  "inputSchema": {
-    "type": "object",
-    "properties": {
-      "query": {
-        "type": "string",
-        "minLength": 1,
-        "maxLength": 100,
-        "description": "Search query (≤ 100 chars). Case-insensitive substring match."
-      },
-      "limit": {
-        "type": "integer",
-        "minimum": 1,
-        "maximum": 50,
-        "description": "Page size (default 20, max 50)."
-      },
-      "cursor": {
-        "type": "string",
-        "description": "Pass page.nextCursor from the previous response to get the next page."
-      },
-      "includeInactive": {
-        "type": "boolean",
-        "description": "If true, also match members with no current-term assignment (alumni / inactive). Defaults to false — mirrors the web directory's current-term filter."
-      }
-    },
-    "required": [
-      "query"
-    ],
-    "additionalProperties": false
-  },
-  "requiredScope": "mcp:read"
-}
-{
   "name": "get_member_profile",
   "description": "Get a single member's profile. Publicly visible fields (name, email, domains, roles, projects, achievements) are returned for any member. Private fields (personalEmail, netId, phone, birthday, dietary, timezone, bioDocId) are returned only when looking up your own profile. Education profile (attended courses, taught, CE credits) is returned for self or Core/Admin callers.",
   "inputSchema": {
@@ -168,7 +100,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
 }
 {
   "name": "schedule_meeting",
-  "description": "Create a meeting. Supports inviting a DALI Group or an explicit user list. Optionally schedule it for a specific start time; otherwise the meeting is created in 'Searching' state. Sends in-app MeetingInvite notifications to participants, and pushes to Google Calendar when the organizer has a linked calendar.",
+  "description": "Create a meeting for a Group or an explicit user list. Without startTime it stays in 'Searching' state. Notifies participants in app and pushes to Google Calendar when the organizer has a linked calendar.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -176,13 +108,13 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
         "type": "string",
         "minLength": 1,
         "maxLength": 200,
-        "description": "Meeting title (1–200 chars)."
+        "description": "Meeting title."
       },
       "durationMinutes": {
         "type": "integer",
         "minimum": 5,
         "maximum": 480,
-        "description": "Duration in minutes (5–480)."
+        "description": "Duration in minutes."
       },
       "scopeType": {
         "type": "string",
@@ -191,7 +123,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
           "Group",
           "None"
         ],
-        "description": "How to resolve participants. 'UserList' (default) uses participantUserIds; 'Group' resolves a GroupDefinition; 'None' creates the meeting with no participants (org-wide)."
+        "description": "UserList (default) uses participantUserIds, Group uses groupId, None invites no one (org-wide)."
       },
       "participantUserIds": {
         "type": "array",
@@ -200,22 +132,22 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
           "minLength": 1
         },
         "minItems": 1,
-        "description": "DALI member User IDs to invite — required when scopeType is 'UserList'. Use \`search_directory\` to look up IDs by name."
+        "description": "User IDs to invite. Required for UserList. Find IDs with \`list_members\`."
       },
       "groupId": {
         "type": "string",
         "minLength": 1,
-        "description": "GroupDefinition.id — required when scopeType is 'Group'. Use \`list_groups\` to find available groups."
+        "description": "GroupDefinition.id. Required for Group. See \`list_groups\`."
       },
       "startTime": {
         "type": "string",
         "format": "date-time",
-        "description": "Optional ISO 8601 start time. If omitted, the meeting is created in 'Searching' state with no confirmed time."
+        "description": "ISO 8601 start. Omit to leave the meeting unscheduled."
       },
       "recurrenceRule": {
         "type": "string",
         "maxLength": 500,
-        "description": "Optional RFC 5545 RRULE for recurring meetings."
+        "description": "RFC 5545 RRULE."
       },
       "roomIds": {
         "type": "array",
@@ -224,18 +156,18 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
           "minLength": 1
         },
         "maxItems": 10,
-        "description": "DALI rooms the meeting occupies, from \`list_rooms\`. Requires startTime. Every room must be free for every occurrence, or the meeting isn't created."
+        "description": "Room ids from \`list_rooms\`. Requires startTime. Every room must be free for every occurrence."
       },
       "organizerCalendarLinkId": {
         "type": "string",
         "minLength": 1,
-        "description": "Optional UserCalendarLink ID. When provided (and enabled), the meeting is pushed to that external calendar and Gmail invites are sent. Use \`list_my_calendar_links\` to discover available IDs."
+        "description": "UserCalendarLink.id from \`list_my_calendar_links\`. Pushes the meeting to that calendar and sends Gmail invites."
       },
       "organizerCalendarId": {
         "type": "string",
         "minLength": 1,
         "maxLength": 320,
-        "description": "Optional calendar ID within the linked account. Omitted = the account's primary calendar."
+        "description": "Calendar within the linked account. Default: its primary calendar."
       },
       "meetingType": {
         "type": "string",
@@ -244,22 +176,22 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
           "Partner",
           "Other"
         ],
-        "description": "'Team' or 'Partner' require projectId and create a meeting note in that project. 'Other' creates a general meeting note (no project). Omit for meetings without notes."
+        "description": "Team and Partner need projectId and file a note in that project. Other files a general note. Omit for no note."
       },
       "meetingTypeLabel": {
         "type": "string",
         "minLength": 1,
         "maxLength": 80,
-        "description": "Display label for the meeting type — required when meetingType is 'Other'."
+        "description": "Label for the type. Required for Other."
       },
       "projectId": {
         "type": "string",
         "minLength": 1,
-        "description": "Project.id — required for 'Team' and 'Partner' meeting types."
+        "description": "Project.id. Required for Team and Partner."
       },
       "notebook": {
         "type": "object",
-        "description": "The notebook the meeting's note files into: { existingId } for a notebook you can edit, or { title, templatePageId? } to create one at the meeting's space. Omit for the default.",
+        "description": "Where the note files: { existingId } or { title, templatePageId? } to create one. Default if omitted.",
         "properties": {
           "existingId": {
             "type": "string",
@@ -286,22 +218,22 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
           "Roster",
           "SelfCheckIn"
         ],
-        "description": "'Roster' (default): organizer/Core mark attendees. 'SelfCheckIn': attendees self-check-in via QR — Core/Instructor only."
+        "description": "Roster (default): organizer or Core marks attendees. SelfCheckIn: attendees check in by QR; Core or Instructor only."
       },
       "isCoreMeeting": {
         "type": "boolean",
-        "description": "Legacy. Core is decided by where the meeting's notebook is filed; this only files a project-less note in Core's Meetings folder. Only takes effect when the caller is Core. Defaults to false."
+        "description": "Legacy. Files a project-less note in Core's Meetings folder. Only applies to Core callers."
       },
       "addMeet": {
         "type": "boolean",
-        "description": "Attach a Google Meet link. Requires an organizerCalendarLinkId (the link is minted on that calendar); ignored otherwise."
+        "description": "Attach a Google Meet link. Needs organizerCalendarLinkId; ignored otherwise."
       },
       "guestEmails": {
         "type": "array",
         "items": {
           "type": "string"
         },
-        "description": "People with no DALI profile, invited by address (e.g. an outside partner). They reach the meeting only through the Google event invite, which requires organizerCalendarLinkId and a startTime."
+        "description": "Email addresses of people with no DALI profile. Invited through the Google event, so needs organizerCalendarLinkId and startTime."
       }
     },
     "required": [
@@ -324,7 +256,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
 }
 {
   "name": "mark_notification_read",
-  "description": "Mark one or all of the authenticated member's notifications as read. Pass \`all: true\` to bulk-clear the entire inbox (same as the web \\"mark all read\\" button). For a single notification, \`notificationId\` is required. Meeting invites are not cleared — use \`rsvp_to_notification\` for those. Form todos only clear when their form is submitted, unless you pass \`intent: \\"dismiss\\"\` to force-clear. Pass \`intent: \\"unread\\"\` to re-open a previously cleared notification.",
+  "description": "Mark one or all of the authenticated member's notifications as read. Pass \`all: true\` to bulk-clear the entire inbox (same as the web \\"mark all read\\" button). For a single notification, \`notificationId\` is required. Meeting invites are not cleared — use \`rsvp_to_notification\` for those. Form todos only clear when their form is submitted, unless you pass \`action: \\"dismiss\\"\` to force-clear. Pass \`action: \\"unread\\"\` to re-open a previously cleared notification.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -335,9 +267,9 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
       },
       "all": {
         "type": "boolean",
-        "description": "If true, mark ALL eligible notifications read (bulk clear). Ignores \`notificationId\` and \`intent\`."
+        "description": "If true, mark ALL eligible notifications read (bulk clear). Ignores \`notificationId\` and \`action\`."
       },
-      "intent": {
+      "action": {
         "type": "string",
         "enum": [
           "read",
@@ -392,95 +324,13 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
 }
 {
   "name": "set_notification_preference",
-  "description": "Set the authenticated member's notification channels for one event type. Omitted fields keep their current effective value. Locked in-app events can't be muted; externally-emailed events accept no email setting.",
+  "description": "Set your notification channels for one event type. Omitted fields keep their current value. Locked in-app events can't be muted; externally-emailed events take no email setting.",
   "inputSchema": {
     "type": "object",
     "properties": {
       "eventType": {
         "type": "string",
-        "enum": [
-          "meeting.invite",
-          "meeting.reminder",
-          "meeting.cancelled",
-          "meeting.time_proposed",
-          "meeting.record_prompt",
-          "meeting.transcript_ready",
-          "room.booking_bumped",
-          "class.schedule_changed",
-          "mentorship.note_reminder",
-          "task.due_reminder",
-          "task.assigned",
-          "task.comment",
-          "task.status_changed",
-          "task.github_update",
-          "project.sprint_closed",
-          "collab.comment_reply",
-          "file.comment",
-          "file.new_version",
-          "pagedoc.mention",
-          "pagedoc.maintainer_assigned",
-          "document.shared_with_you",
-          "document.sign_request",
-          "document.countersign_request",
-          "staffing.assigned",
-          "timesheet.due_reminder",
-          "hiring.interview_assigned",
-          "hiring.interview_cancelled",
-          "hiring.fellowship_invite",
-          "hiring.core_invite",
-          "hiring.core_decision",
-          "partner.inquiry_received",
-          "partner.meeting_requested",
-          "partner.stale",
-          "partner.next_step_due",
-          "partner.renewal_due",
-          "partner.contract_signed",
-          "partner.survey_received",
-          "partner.referral_received",
-          "announcement",
-          "listserv",
-          "release.published",
-          "member.onboarding",
-          "member.onboarding.reminder",
-          "journey.lab_submitted",
-          "journey.lab_reviewed",
-          "form.submission",
-          "form.reminder",
-          "education.announcement",
-          "education.decision",
-          "education.assignment",
-          "education.discussion",
-          "education.feedback_request",
-          "education.certificate",
-          "education.session_reminder",
-          "education.grade",
-          "education.ce_reminder",
-          "member.promotion",
-          "blog.submitted",
-          "blog.approved",
-          "blog.comment",
-          "blog.reaction",
-          "alumni.history_correction",
-          "coffee_chat.invite",
-          "coffee_chat.accepted",
-          "resume_review.invite",
-          "resume_review.accepted",
-          "gallery.comment",
-          "gallery.reaction",
-          "community.event_nearby",
-          "opportunities.interest",
-          "opportunities.chat_offered",
-          "opportunities.chat_ask_match",
-          "opportunities.still_open",
-          "opportunities.referral_shipped",
-          "expense.submitted",
-          "expense.returned",
-          "expense.approved",
-          "expense.paid",
-          "expense.needs_receipt",
-          "expense.unpaid_reminder"
-        ],
-        "description": "Event type key, as returned by \`list_notification_preferences\`."
+        "description": "Event type key from \`list_notification_preferences\`."
       },
       "inApp": {
         "type": "boolean",
@@ -488,7 +338,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
       },
       "desktop": {
         "type": "boolean",
-        "description": "Raise a native banner in the DALI OS desktop app (applies when in-app is on)."
+        "description": "Native banner in the desktop app (needs in-app on)."
       },
       "slackDm": {
         "type": "boolean",
@@ -561,28 +411,21 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
   "requiredScope": "mcp:read"
 }
 {
-  "name": "list_my_projects",
-  "description": "List projects the authenticated DALI OS member is staffed on. Past-term assignments stay visible (matches in-app access). Each row includes the current-term role/domain (if assigned this term), the current sprint, and open task count.",
+  "name": "list_projects",
+  "description": "List projects. Default: every project in the lab (id, name, status, terms, partner orgs, staffed flag), paged. With mine: only projects the caller is staffed on (any term), each with current-term role, current sprint and open task count, unpaged. Use get_project to drill into one.",
   "inputSchema": {
     "type": "object",
     "properties": {
+      "mine": {
+        "type": "boolean",
+        "description": "Only the caller's staffed projects, with current-term detail. Ignores status and paging."
+      },
       "currentTermOnly": {
         "type": "boolean",
-        "description": "If true, only return projects the member is staffed on for the current term (default false — past assignments included, matching project workspace access)."
-      }
-    },
-    "additionalProperties": false
-  },
-  "requiredScope": "mcp:read"
-}
-{
-  "name": "list_projects",
-  "description": "List every project in the lab (id, name, status, terms, partner orgs): the full directory, not just the caller's assignments. Use list_my_projects for staffed-on detail; get_project_overview to drill into one. Pass page.nextCursor as cursor to read the next page until page.hasMore is false.",
-  "inputSchema": {
-    "type": "object",
-    "properties": {
+        "description": "mine only: limit to projects staffed for the current term. Default false."
+      },
       "status": {
-        "description": "Restrict to these statuses. Default: all (Active, Paused, Archived).",
+        "description": "Restrict to these statuses. Default: all (Active, Paused, Archived). Ignored with mine.",
         "type": "array",
         "items": {
           "enum": [
@@ -610,30 +453,43 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
   "requiredScope": "mcp:read"
 }
 {
-  "name": "list_terms",
-  "description": "List all lab terms chronologically (id, code like '26X', year, season, start/end dates). isCurrent marks the active term (rolls forward to the next term during inter-term gaps). Read-only.",
-  "inputSchema": {
-    "type": "object",
-    "properties": {},
-    "additionalProperties": false
-  },
-  "requiredScope": "mcp:read"
-}
-{
-  "name": "get_project_overview",
-  "description": "Get a Project's overview: status, current-term roster, active sprint, current epic, task counts by status. Read-only.",
+  "name": "get_project",
+  "description": "Read one project, as the project page shows it. include picks the parts: overview (default) is status, current-term roster, active sprint, current epic and task counts; settings is terms, domains, per-term scopes, repos, Figma files and Slack/GitHub/Google identities (no payroll chart strings); showcase is the public dali.website card. Each part comes back under its own key.",
   "inputSchema": {
     "type": "object",
     "properties": {
       "projectId": {
         "type": "string",
         "minLength": 1,
-        "description": "Project.id, as returned by \`list_my_projects\`."
+        "description": "Project.id, as returned by \`list_projects\`."
+      },
+      "include": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "enum": [
+            "overview",
+            "settings",
+            "showcase"
+          ]
+        },
+        "minItems": 1,
+        "description": "Parts to return. Default: overview."
       }
     },
     "required": [
       "projectId"
     ],
+    "additionalProperties": false
+  },
+  "requiredScope": "mcp:read"
+}
+{
+  "name": "list_terms",
+  "description": "List all lab terms chronologically (id, code like '26X', year, season, start/end dates). isCurrent marks the active term (rolls forward to the next term during inter-term gaps). Read-only.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {},
     "additionalProperties": false
   },
   "requiredScope": "mcp:read"
@@ -790,30 +646,6 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
     },
     "required": [
       "name"
-    ],
-    "additionalProperties": false
-  },
-  "requiredScope": "mcp:write"
-}
-{
-  "name": "add_task_comment",
-  "description": "Append a comment to a project task. Allowed for anyone with project edit access (Core or staffed on the project — the same gate the web comment box uses) and, as self-service, the task's own assignees.",
-  "inputSchema": {
-    "type": "object",
-    "properties": {
-      "taskId": {
-        "type": "string",
-        "minLength": 1
-      },
-      "body": {
-        "type": "string",
-        "minLength": 1,
-        "maxLength": 10000
-      }
-    },
-    "required": [
-      "taskId",
-      "body"
     ],
     "additionalProperties": false
   },
@@ -1093,22 +925,6 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
   "requiredScope": "mcp:write"
 }
 {
-  "name": "list_my_roles",
-  "description": "List the authenticated member's paid roles for the current term, each with the assignmentType and roleRefId needed to attribute a time entry or a work block. Call this before adding time.",
-  "inputSchema": {
-    "type": "object",
-    "properties": {
-      "allTerms": {
-        "type": "boolean",
-        "description": "Include roles from every term rather than just the current one. Defaults to false."
-      }
-    },
-    "required": [],
-    "additionalProperties": false
-  },
-  "requiredScope": "mcp:read"
-}
-{
   "name": "list_my_time_entries",
   "description": "List the authenticated member's logged time entries, newest first. Use it to find the id of an entry to update or delete, or to check what is already logged before adding more. Pass page.nextCursor as cursor to read older entries until page.hasMore is false.",
   "inputSchema": {
@@ -1134,44 +950,6 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
       }
     },
     "required": [],
-    "additionalProperties": false
-  },
-  "requiredScope": "mcp:read"
-}
-{
-  "name": "get_project_settings",
-  "description": "Read a project's configuration: its planned terms, declared domains, the per-domain-per-term scope grid, repos, Figma files, deployment URL, and its Slack/GitHub/Google identities. Complements \`get_project_overview\`, which covers the live working state instead. Payroll chart strings are not included.",
-  "inputSchema": {
-    "type": "object",
-    "properties": {
-      "projectId": {
-        "type": "string",
-        "minLength": 1,
-        "description": "Project.id, as returned by \`list_projects\` or \`list_my_projects\`."
-      }
-    },
-    "required": [
-      "projectId"
-    ],
-    "additionalProperties": false
-  },
-  "requiredScope": "mcp:read"
-}
-{
-  "name": "get_project_showcase",
-  "description": "Read a project's public showcase card — the statement, tags, links and publication status shown on dali.website — plus which page is its public write-up. Returns nulls when the project has no showcase row yet.",
-  "inputSchema": {
-    "type": "object",
-    "properties": {
-      "projectId": {
-        "type": "string",
-        "minLength": 1,
-        "description": "Project.id."
-      }
-    },
-    "required": [
-      "projectId"
-    ],
     "additionalProperties": false
   },
   "requiredScope": "mcp:read"
@@ -1281,101 +1059,6 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
     "additionalProperties": false
   },
   "requiredScope": "mcp:read"
-}
-{
-  "name": "set_staffing_assignment",
-  "description": "Propose a member's staffing on a project for a cycle. A member can be staffed on multiple projects at once, so this only replaces their Proposed rows ON THAT project — other projects are untouched. Pass projectId: null with fromProjectId to remove them from just that project, or projectId: null with no fromProjectId to clear all their Proposed rows (full unassign). Confirmed/Declined rows are left as the audit trail (removing from a finalized project Declines its Confirmed rows). Staffing managers only.",
-  "inputSchema": {
-    "type": "object",
-    "properties": {
-      "cycleId": {
-        "type": "string",
-        "minLength": 1,
-        "description": "StaffingCycle.id."
-      },
-      "userId": {
-        "type": "string",
-        "minLength": 1,
-        "description": "The member being staffed."
-      },
-      "projectId": {
-        "type": [
-          "string",
-          "null"
-        ],
-        "description": "Project to staff them on (additive — keeps their other projects), or null to remove/unassign."
-      },
-      "fromProjectId": {
-        "type": "string",
-        "description": "When moving between projects, the source project to also clear. With projectId: null, the single project to remove them from."
-      },
-      "domains": {
-        "type": "array",
-        "description": "One entry per domain they'll work in on this project. Required unless projectId is null.",
-        "items": {
-          "type": "object",
-          "properties": {
-            "domainId": {
-              "type": "string"
-            },
-            "level": {
-              "type": "string",
-              "enum": [
-                "P1",
-                "P2",
-                "P3"
-              ]
-            }
-          },
-          "required": [
-            "domainId",
-            "level"
-          ],
-          "additionalProperties": false
-        }
-      }
-    },
-    "required": [
-      "cycleId",
-      "userId",
-      "projectId"
-    ],
-    "additionalProperties": false
-  },
-  "requiredScope": "mcp:write"
-}
-{
-  "name": "set_domain_eligibility",
-  "description": "Set a member's eligibility level in a domain — the ceiling on what they can be staffed at. Staffing managers only.",
-  "inputSchema": {
-    "type": "object",
-    "properties": {
-      "userId": {
-        "type": "string",
-        "minLength": 1
-      },
-      "domainId": {
-        "type": "string",
-        "minLength": 1
-      },
-      "level": {
-        "type": "string",
-        "enum": [
-          "P1",
-          "P2",
-          "P3"
-        ],
-        "description": "P1 learner, P2 doer, P3 mentor."
-      }
-    },
-    "required": [
-      "userId",
-      "domainId",
-      "level"
-    ],
-    "additionalProperties": false
-  },
-  "requiredScope": "mcp:write"
 }
 {
   "name": "list_document_sharing",
@@ -2189,24 +1872,6 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
     "required": [
       "assignmentId",
       "offeringId"
-    ],
-    "additionalProperties": false
-  },
-  "requiredScope": "mcp:write"
-}
-{
-  "name": "check_in_to_session",
-  "description": "Mark yourself present for a session via self check-in. The instructor must have the check-in window open (set_check_in_open), and you must be an Approved enrollee.",
-  "inputSchema": {
-    "type": "object",
-    "properties": {
-      "sessionId": {
-        "type": "string",
-        "minLength": 1
-      }
-    },
-    "required": [
-      "sessionId"
     ],
     "additionalProperties": false
   },
@@ -5861,8 +5526,8 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
   "requiredScope": "mcp:read"
 }
 {
-  "name": "get_group_availability",
-  "description": "Compute group availability for a set of users over a window of up to 14 days. Returns day-bucketed match windows, busy blocks, and shared working hours, plus per-user free and working-hours intervals. A user who isn't free during a slot that falls outside their working intervals is outside their working hours, not busy.",
+  "name": "find_free_times",
+  "description": "Find when people are free over a window of up to 14 days. The caller is always included; userIds adds others (up to 50), so omitting it reads only the caller's own calendar. detail slots (default) lists the times everyone is free for at least durationMinutes. detail full returns day-bucketed match, busy and shared working-hours windows plus each person's free, busy and working intervals. Free outside someone's working intervals means outside working hours, not busy. hasCalendar false or calendarError true means free is a working-hours default, not confirmed free. truncated true means a calendar had more than 2,500 events, so busy may be missing some.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -5872,38 +5537,42 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
           "type": "string",
           "minLength": 1
         },
-        "minItems": 1,
         "maxItems": 50,
-        "description": "User IDs to include (1–50)."
+        "description": "Other users to include. The caller is added automatically."
       },
-      "weekStartIso": {
+      "start": {
         "type": "string",
         "minLength": 1,
-        "description": "ISO 8601 start of the window (inclusive)."
+        "description": "ISO 8601 window start (inclusive)."
       },
-      "weekEndIso": {
+      "end": {
         "type": "string",
         "minLength": 1,
-        "description": "ISO 8601 end of the window (exclusive). Span must be at most 14 days."
+        "description": "ISO 8601 window end (exclusive). At most 14 days after start."
       },
       "durationMinutes": {
         "type": "integer",
         "minimum": 5,
         "maximum": 480,
-        "description": "Minimum match duration in minutes."
+        "description": "Minimum free length in minutes. Default 30."
       },
       "timezone": {
         "type": "string",
         "minLength": 1,
-        "description": "IANA timezone for day bucketing (e.g. America/New_York)."
+        "description": "IANA timezone for day bucketing and for people with no zone set. Default is the lab's zone."
+      },
+      "detail": {
+        "type": "string",
+        "enum": [
+          "slots",
+          "full"
+        ],
+        "description": "slots: mutual free slots only (default). full: day buckets and per-user intervals."
       }
     },
     "required": [
-      "userIds",
-      "weekStartIso",
-      "weekEndIso",
-      "durationMinutes",
-      "timezone"
+      "start",
+      "end"
     ],
     "additionalProperties": false
   },
@@ -5911,7 +5580,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
 }
 {
   "name": "optimize_group_meetings",
-  "description": "Plan multiple meetings — one per group — over a time window so total attendance is maximized across all of them. Unlike find_mutual_freebusy (single-group overlap), this jointly places every meeting so people who belong to more than one group aren't double-booked, and reports the recommended slot, attendees, double-bookings, and who has no linked calendar. Read-only: create the chosen meetings with schedule_meeting.",
+  "description": "Plan one meeting per group over a window so total attendance is maximized. Unlike find_free_times (one group's overlap), it places every meeting jointly so people in several groups aren't double-booked, and reports each recommended slot, attendees, double-bookings and who has no linked calendar. Read-only: create the chosen meetings with schedule_meeting.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -5919,7 +5588,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
         "type": "array",
         "minItems": 1,
         "maxItems": 15,
-        "description": "One entry per meeting to schedule. Give each a groupId, an explicit memberUserIds list, or both.",
+        "description": "One entry per meeting. Give each a groupId, memberUserIds, or both.",
         "items": {
           "type": "object",
           "properties": {
@@ -5927,17 +5596,17 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
               "type": "string",
               "minLength": 1,
               "maxLength": 64,
-              "description": "Stable identifier for this meeting, echoed in the result and used to name double-booking conflicts. Auto-assigned (m1, m2, …) if omitted."
+              "description": "Identifier echoed in the result and in conflicts. Default m1, m2, …."
             },
             "label": {
               "type": "string",
               "maxLength": 200,
-              "description": "Human label. Defaults to the group name or the key."
+              "description": "Label. Default: the group name or key."
             },
             "groupId": {
               "type": "string",
               "minLength": 1,
-              "description": "Existing group; members are resolved automatically."
+              "description": "Group whose members attend."
             },
             "memberUserIds": {
               "type": "array",
@@ -5945,7 +5614,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
                 "type": "string",
                 "minLength": 1
               },
-              "description": "Ad-hoc member userIds. Merged with groupId members if both are given."
+              "description": "Extra attendee user ids, merged with the group's members."
             },
             "requiredUserIds": {
               "type": "array",
@@ -5953,13 +5622,13 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
                 "type": "string",
                 "minLength": 1
               },
-              "description": "Members who MUST be able to attend — slots where any of them is busy are discarded. Added to the member set if not already present."
+              "description": "Users who must attend: slots where any is busy are dropped. Added to the members if missing."
             },
             "durationMinutes": {
               "type": "integer",
               "minimum": 5,
               "maximum": 480,
-              "description": "Overrides the top-level durationMinutes for this meeting."
+              "description": "Overrides the top-level duration for this meeting."
             }
           },
           "additionalProperties": false
@@ -5968,18 +5637,18 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
       "windowStart": {
         "type": "string",
         "minLength": 1,
-        "description": "ISO 8601 start of the scheduling window (inclusive)."
+        "description": "ISO 8601 window start (inclusive)."
       },
       "windowEnd": {
         "type": "string",
         "minLength": 1,
-        "description": "ISO 8601 end of the scheduling window (exclusive). Span must be ≤ 14 days."
+        "description": "ISO 8601 window end (exclusive). At most 14 days after windowStart."
       },
       "durationMinutes": {
         "type": "integer",
         "minimum": 5,
         "maximum": 480,
-        "description": "Default meeting length in minutes (per-meeting durationMinutes overrides it)."
+        "description": "Default meeting length in minutes."
       },
       "slotMinutes": {
         "type": "integer",
@@ -5988,34 +5657,34 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
           30,
           60
         ],
-        "description": "Granularity of candidate start times (default 30)."
+        "description": "Candidate start granularity in minutes. Default 30."
       },
       "timezone": {
         "type": "string",
         "minLength": 1,
-        "description": "IANA timezone the working-hours band and slot times are expressed in (e.g. America/New_York)."
+        "description": "IANA timezone for the working-hours band and slot times."
       },
       "dayStartHour": {
         "type": "integer",
         "minimum": 0,
         "maximum": 23,
-        "description": "Earliest local hour a meeting may start (default 9)."
+        "description": "Earliest local start hour. Default 9."
       },
       "dayEndHour": {
         "type": "integer",
         "minimum": 1,
         "maximum": 24,
-        "description": "Latest local hour a meeting may end (default 18)."
+        "description": "Latest local end hour. Default 18."
       },
       "includeWeekends": {
         "type": "boolean",
-        "description": "Allow Saturday/Sunday slots (default false)."
+        "description": "Allow weekend slots. Default false."
       },
       "alternativesPerMeeting": {
         "type": "integer",
         "minimum": 0,
         "maximum": 5,
-        "description": "How many runner-up slots to return per meeting (default 3)."
+        "description": "Runner-up slots per meeting. Default 3."
       }
     },
     "required": [
@@ -6030,52 +5699,29 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
   "requiredScope": "mcp:read"
 }
 {
-  "name": "get_google_calendar_busy",
-  "description": "Fetch your own Google Calendar busy blocks for a time range. Returns an empty array if no Google calendar is linked. Every page of events is read, up to 2,500 events per calendar; truncated is true when a calendar had more events than that, so the busy list may be missing some.",
-  "inputSchema": {
-    "type": "object",
-    "properties": {
-      "start": {
-        "type": "string",
-        "minLength": 1,
-        "description": "ISO 8601 start of the range (inclusive)."
-      },
-      "end": {
-        "type": "string",
-        "minLength": 1,
-        "description": "ISO 8601 end of the range (exclusive)."
-      }
-    },
-    "required": [
-      "start",
-      "end"
-    ],
-    "additionalProperties": false
-  },
-  "requiredScope": "mcp:read"
-}
-{
-  "name": "check_in_to_meeting",
-  "description": "Self check-in to a meeting with SelfCheckIn attendance mode. Only allowed within ±15 minutes of the meeting window.",
+  "name": "check_in",
+  "description": "Mark yourself present. Pass meetingId for a SelfCheckIn meeting (allowed within 15 minutes of its start or end) or sessionId for an education session (you must be an Approved enrollee and the instructor must have opened check-in). Exactly one.",
   "inputSchema": {
     "type": "object",
     "properties": {
       "meetingId": {
         "type": "string",
         "minLength": 1,
-        "description": "ScheduledMeeting.id to check in to."
+        "description": "ScheduledMeeting.id. Use this or sessionId."
+      },
+      "sessionId": {
+        "type": "string",
+        "minLength": 1,
+        "description": "Education session id. Use this or meetingId."
       }
     },
-    "required": [
-      "meetingId"
-    ],
     "additionalProperties": false
   },
   "requiredScope": "mcp:write"
 }
 {
   "name": "update_profile",
-  "description": "Edit your own profile fields. All fields are optional; provide only those you want to change. firstName and lastName must both be non-empty if either is provided. birthday must be YYYY-MM-DD. classYear must be 1900–2100. personalEmail must contain @. Empty string clears a nullable field. bio is a collaborative document and cannot be changed here.",
+  "description": "Edit your own profile fields. All fields are optional; provide only those you want to change. firstName and lastName must both be non-empty if either is provided. birthday must be YYYY-MM-DD. classYear must be 1900–2100. personalEmail must contain @. Empty string clears a nullable field. hideActivity true hides your online presence from other members. bio is a collaborative document and cannot be changed here.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -6158,6 +5804,10 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
       "personalEmail": {
         "type": "string",
         "description": "Personal (non-Dartmouth) email. Must contain @. Empty string clears."
+      },
+      "hideActivity": {
+        "type": "boolean",
+        "description": "True to hide your activity from other members, false to show it."
       }
     },
     "additionalProperties": false
@@ -6166,7 +5816,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
 }
 {
   "name": "mark_meeting_attendance",
-  "description": "Mark a participant present or absent for a meeting. Only meetings with an attendance roster (a type, a notebook, self check-in or invited people) can be marked. Allowed for: the meeting organizer, Core members, or project members of the meeting's project.",
+  "description": "Mark a participant present or absent for a meeting, by userId or by scanning their wallet-pass barcode (memberToken, which marks present and returns the member). Allowed for the meeting organizer, Core members, or project members of the meeting's project. Without a token, only meetings with an attendance roster (a type, a notebook, self check-in or invited people) can be marked.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -6178,21 +5828,24 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
       "userId": {
         "type": "string",
         "minLength": 1,
-        "description": "User.id of the participant to mark."
+        "description": "User.id of the participant to mark. Use this or memberToken."
+      },
+      "memberToken": {
+        "type": "string",
+        "minLength": 1,
+        "description": "Signed wallet-pass member token from the scanned barcode. Use this or userId."
       },
       "present": {
         "type": "boolean",
-        "description": "true = present, false = absent."
+        "description": "true = present, false = absent. Required with userId; with memberToken it is always present."
       },
       "occurrenceStart": {
         "type": "string",
-        "description": "For a recurring meeting, when the occurrence to mark starts (ISO 8601). Omit for a one-off meeting or its first occurrence."
+        "description": "userId only: for a recurring meeting, when the occurrence to mark starts (ISO 8601). Omit for a one-off meeting or its first occurrence."
       }
     },
     "required": [
-      "meetingId",
-      "userId",
-      "present"
+      "meetingId"
     ],
     "additionalProperties": false
   },
@@ -6348,14 +6001,14 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
 }
 {
   "name": "manage_class",
-  "description": "Add, update, or delete a Dartmouth class for yourself. Classes appear in the DALI calendar. Use 'add' or 'update' with a periodCode (e.g. '2A') for scheduled classes, or omit it and provide customMeetings for irregular schedules. The destination controls where events live — use 'local' for DALI-only.",
+  "description": "Create, update, or delete a Dartmouth class for yourself. Classes appear in the DALI calendar. Use 'create' or 'update' with a periodCode (e.g. '2A') for scheduled classes, or omit it and provide customMeetings for irregular schedules. The destination controls where events live — use 'local' for DALI-only.",
   "inputSchema": {
     "type": "object",
     "properties": {
-      "intent": {
+      "action": {
         "type": "string",
         "enum": [
-          "add",
+          "create",
           "update",
           "delete"
         ],
@@ -6369,13 +6022,13 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
       "termId": {
         "type": "string",
         "minLength": 1,
-        "description": "Term.id for the class — required for 'add' and 'update'."
+        "description": "Term.id for the class — required for 'create' and 'update'."
       },
       "title": {
         "type": "string",
         "minLength": 1,
         "maxLength": 200,
-        "description": "Course title — required for 'add' and 'update'."
+        "description": "Course title — required for 'create' and 'update'."
       },
       "location": {
         "type": "string",
@@ -6385,7 +6038,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
       "periodCode": {
         "type": "string",
         "maxLength": 10,
-        "description": "Dartmouth period code (e.g. '2A', '10'). Either periodCode OR customMeetings must be provided for add/update."
+        "description": "Dartmouth period code (e.g. '2A', '10'). Either periodCode OR customMeetings must be provided for create/update."
       },
       "includeXHour": {
         "type": "boolean",
@@ -6446,7 +6099,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
       }
     },
     "required": [
-      "intent"
+      "action"
     ],
     "additionalProperties": false
   },
@@ -6488,43 +6141,18 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
   "requiredScope": "mcp:read"
 }
 {
-  "name": "scan_attendee",
-  "description": "Scan a member's wallet-pass barcode token to mark them present at a meeting. The caller must be the meeting organizer, a Core member, or a project member. Wallet check-in must be configured.",
-  "inputSchema": {
-    "type": "object",
-    "properties": {
-      "meetingId": {
-        "type": "string",
-        "minLength": 1,
-        "description": "ScheduledMeeting.id."
-      },
-      "memberToken": {
-        "type": "string",
-        "minLength": 1,
-        "description": "Signed wallet-pass member token from the scanned barcode."
-      }
-    },
-    "required": [
-      "meetingId",
-      "memberToken"
-    ],
-    "additionalProperties": false
-  },
-  "requiredScope": "mcp:write"
-}
-{
   "name": "manage_calendar_link",
   "description": "Remove a connected calendar account link, or toggle a sub-calendar's visibility in the DALI calendar. Use list_my_calendar_links to discover link and calendar IDs.",
   "inputSchema": {
     "type": "object",
     "properties": {
-      "intent": {
+      "action": {
         "type": "string",
         "enum": [
-          "remove-calendar-link",
-          "toggle-sub-calendar"
+          "remove",
+          "toggle_sub_calendar"
         ],
-        "description": "'remove-calendar-link' disconnects the calendar account. 'toggle-sub-calendar' shows/hides a sub-calendar layer."
+        "description": "'remove' disconnects the calendar account. 'toggle_sub_calendar' shows/hides a sub-calendar layer."
       },
       "linkId": {
         "type": "string",
@@ -6534,15 +6162,15 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
       "calendarId": {
         "type": "string",
         "minLength": 1,
-        "description": "Sub-calendar ID — required for 'toggle-sub-calendar'."
+        "description": "Sub-calendar ID — required for 'toggle_sub_calendar'."
       },
       "enabled": {
         "type": "boolean",
-        "description": "true = show this sub-calendar in DALI; false = hide it. Required for 'toggle-sub-calendar'."
+        "description": "true = show this sub-calendar in DALI; false = hide it. Required for 'toggle_sub_calendar'."
       }
     },
     "required": [
-      "intent",
+      "action",
       "linkId"
     ],
     "additionalProperties": false
@@ -8409,14 +8037,14 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
 }
 {
   "name": "list_project_chart_strings",
-  "description": "Read a project's payroll chart strings for one term or all terms, including superseded history. Returns both the project's own entries and the effective string per term — what payroll charges — which may be inherited from the lab-wide default, or be the lab's built-in projects GL when no default is recorded. Core-only; chart strings are deliberately absent from \`get_project_settings\`.",
+  "description": "Read a project's payroll chart strings for one term or all terms, including superseded history. Returns both the project's own entries and the effective string per term — what payroll charges — which may be inherited from the lab-wide default, or be the lab's built-in projects GL when no default is recorded. Core-only; chart strings are deliberately absent from \`get_project (include settings)\`.",
   "inputSchema": {
     "type": "object",
     "properties": {
       "projectId": {
         "type": "string",
         "minLength": 1,
-        "description": "Project.id, as returned by \`list_projects\` or \`list_my_projects\`."
+        "description": "Project.id, as returned by \`list_projects\`."
       },
       "termCode": {
         "type": "string",
@@ -8505,7 +8133,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
 }
 {
   "name": "update_project",
-  "description": "Edit a project's settings. Writable fields: name, status (Active/Paused/Archived), iconEmoji, description, imageUrl, isPrivate, calendarEmail, repoUrls, deploymentUrl, termCount, githubTeamSlug, slackChannelName. Requires Core or project-member access; status and isPrivate are Core only. Pairs with \`get_project_settings\` which reads these same fields.",
+  "description": "Edit a project's settings. Writable fields: name, status (Active/Paused/Archived), iconEmoji, description, imageUrl, isPrivate, calendarEmail, repoUrls, deploymentUrl, termCount, githubTeamSlug, slackChannelName. Requires Core or project-member access; status and isPrivate are Core only. Pairs with \`get_project (include settings)\` which reads these same fields.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -8581,40 +8209,6 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
   "requiredScope": "mcp:write"
 }
 {
-  "name": "manage_task_files",
-  "description": "Link or unlink a project file artifact on a task. action: 'link' attaches the file (idempotent); 'unlink' removes the link without deleting the file.",
-  "inputSchema": {
-    "type": "object",
-    "properties": {
-      "action": {
-        "type": "string",
-        "enum": [
-          "link",
-          "unlink"
-        ],
-        "description": "'link' or 'unlink'."
-      },
-      "taskId": {
-        "type": "string",
-        "minLength": 1,
-        "description": "Task.id."
-      },
-      "fileId": {
-        "type": "string",
-        "minLength": 1,
-        "description": "ProjectFile.id. Must belong to the same project as the task and be live (not archived)."
-      }
-    },
-    "required": [
-      "action",
-      "taskId",
-      "fileId"
-    ],
-    "additionalProperties": false
-  },
-  "requiredScope": "mcp:write"
-}
-{
   "name": "set_file_partner_visibility",
   "description": "Set whether a project file is visible in the partner portal. The file must be live (not archived).",
   "inputSchema": {
@@ -8640,13 +8234,15 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
 }
 {
   "name": "manage_staffing",
-  "description": "Manage staffing-board metadata. Actions: set_mentor_role (mark a user as mentor/non-mentor), add_external_mentor / remove_external_mentor (external mentor entries on a project), add_board_member / remove_board_member (who appears on the board). Staffing managers only.",
+  "description": "Manage staffing. Actions: assign (propose a member's placement on a project; Proposed rows only, Confirmed/Declined stay as the audit trail), set_eligibility (a member's level ceiling in a domain), set_mentor_role (mark a user as mentor/non-mentor), add_external_mentor / remove_external_mentor (external mentor entries on a project), add_board_member / remove_board_member (who appears on the board). Staffing managers only.",
   "inputSchema": {
     "type": "object",
     "properties": {
       "action": {
         "type": "string",
         "enum": [
+          "assign",
+          "set_eligibility",
           "set_mentor_role",
           "add_external_mentor",
           "remove_external_mentor",
@@ -8657,26 +8253,66 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
       "cycleId": {
         "type": "string",
         "minLength": 1,
-        "description": "StaffingCycle.id."
+        "description": "StaffingCycle.id. Every action except set_eligibility."
       },
       "userId": {
         "type": "string",
         "minLength": 1,
-        "description": "User.id (for set_mentor_role, add/remove_board_member)."
+        "description": "User.id. Every action except remove_external_mentor."
       },
       "isMentor": {
         "type": "boolean",
         "description": "For set_mentor_role: true to mark as mentor, false to override as non-mentor."
       },
       "projectId": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "description": "assign: project to staff them on (keeps their other projects), or null to remove them. add_external_mentor: Project.id."
+      },
+      "fromProjectId": {
         "type": "string",
-        "minLength": 1,
-        "description": "Project.id (for add/remove_external_mentor)."
+        "description": "assign: the source project to also clear when moving; with projectId null, the one project to remove them from (omit to clear all Proposed rows)."
+      },
+      "domains": {
+        "type": "array",
+        "description": "assign: one entry per domain they'll work in on the project. Required unless projectId is null.",
+        "items": {
+          "type": "object",
+          "properties": {
+            "domainId": {
+              "type": "string"
+            },
+            "level": {
+              "type": "string",
+              "enum": [
+                "P1",
+                "P2",
+                "P3"
+              ]
+            }
+          },
+          "required": [
+            "domainId",
+            "level"
+          ],
+          "additionalProperties": false
+        }
       },
       "domainId": {
         "type": "string",
         "minLength": 1,
-        "description": "Domain.id (for add_external_mentor)."
+        "description": "Domain.id. add_external_mentor, set_eligibility."
+      },
+      "level": {
+        "type": "string",
+        "enum": [
+          "P1",
+          "P2",
+          "P3"
+        ],
+        "description": "set_eligibility: P1 learner, P2 doer, P3 mentor."
       },
       "externalMentorId": {
         "type": "string",
@@ -8685,8 +8321,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
       }
     },
     "required": [
-      "action",
-      "cycleId"
+      "action"
     ],
     "additionalProperties": false
   },
@@ -8971,26 +8606,8 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
   "requiredScope": "mcp:write"
 }
 {
-  "name": "provision_epic_description_doc",
-  "description": "Provision (or return) the collab-doc room ID for an epic's rich description. Call this before opening the collab editor for an epic. If the epic has a plain-text description and the doc room is empty, seeds the doc from that text. Returns { descriptionDocId }. Requires Core or project-member access.",
-  "inputSchema": {
-    "type": "object",
-    "properties": {
-      "epicId": {
-        "type": "string",
-        "minLength": 1
-      }
-    },
-    "required": [
-      "epicId"
-    ],
-    "additionalProperties": false
-  },
-  "requiredScope": "mcp:write"
-}
-{
   "name": "manage_epic",
-  "description": "Manage project epics. Pass \`action\` to select the operation:\\n- \`create\`: create an epic. Requires: projectId, title.\\n- \`update\`: edit an epic's fields (title, description, status, dates, target term). Requires: epicId.\\n- \`delete\`: delete an epic; sprints and tasks have their epicId nulled. Requires: epicId.",
+  "description": "Manage project epics. Pass \`action\` to select the operation:\\n- \`create\`: create an epic. Requires: projectId, title.\\n- \`update\`: edit an epic's fields (title, description, status, dates, target term). Requires: epicId.\\n- \`delete\`: delete an epic; sprints and tasks have their epicId nulled. Requires: epicId.\\n- \`provision_description_doc\`: get (creating if needed) the collab doc ID for the epic's rich description, seeded from its plain-text description when empty. Returns { descriptionDocId }. Requires: epicId.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -8999,7 +8616,8 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
         "enum": [
           "create",
           "update",
-          "delete"
+          "delete",
+          "provision_description_doc"
         ],
         "description": "Operation to perform."
       },
@@ -9134,14 +8752,14 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
 }
 {
   "name": "manage_time_entry",
-  "description": "Manage the authenticated member's time entries (Manual and Meeting). Pass \`action\` to select the operation:\\n- \`add\`: log a manual time entry. Requires: date, hours, assignmentType, roleRefId, startTime, endTime (ISO with offset). Two-step: call without \`confirmed\` first to see a preview, then re-call with \`confirmed: true\`.\\n- \`update\`: change an entry's date, hours, role, note, or time range, including a Meeting entry's role and note. Requires: id. Same two-step confirmation as add.\\n- \`delete\`: delete a time entry. Requires: id. No confirmation gate.",
+  "description": "Manage the authenticated member's time entries (Manual and Meeting). Pass \`action\` to select the operation:\\n- \`create\`: log a manual time entry. Requires: date, hours, assignmentType, roleRefId, startTime, endTime (ISO with offset). Two-step: call without \`confirmed\` first to see a preview, then re-call with \`confirmed: true\`.\\n- \`update\`: change an entry's date, hours, role, note, or time range, including a Meeting entry's role and note. Requires: id. Same two-step confirmation as create.\\n- \`delete\`: delete a time entry. Requires: id. No confirmation gate.",
   "inputSchema": {
     "type": "object",
     "properties": {
       "action": {
         "type": "string",
         "enum": [
-          "add",
+          "create",
           "update",
           "delete"
         ],
@@ -9383,7 +9001,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
 }
 {
   "name": "manage_task",
-  "description": "Create and edit project or Core tasks. Pass \`action\`:\\n- \`create\`: file a task at the end of its column. Requires title, plus projectId unless core is true. With no status and no dueAt it goes to Backlog. Optional mirrorToGithubRepo (one of the project's repoUrls) mirrors it to a GitHub issue.\\n- \`update\`: edit title, description, priority, startsAt, dueAt, epicId, storyId, domainId, assigneeUserIds. Requires taskId. Omit a field to keep it; empty string clears it. A task's sprint follows its dates. A story pins its epic.\\n- \`set_status\`: move a task to another column, e.g. Done. Requires taskId, status. Assignees can do this too.\\n- \`set_checklist\`: replace the whole checklist. Requires taskId, items (empty array clears). Assignees can do this too.\\n- \`delete\`: hard-delete a task with its assignees and comments. Requires taskId. Prefer status Cancelled to keep history.\\n- \`link_github\`: mirror a task to a new GitHub issue. Requires taskId, repo (one of the project's repoUrls).\\n- \`unlink_github\`: stop mirroring; the GitHub issue stays. Requires taskId.\\nEverything except set_status and set_checklist needs Core or project-member access.",
+  "description": "Create and edit project or Core tasks. Pass \`action\`:\\n- \`create\`: file a task at the end of its column. Requires title, plus projectId unless core is true. With no status and no dueAt it goes to Backlog. Optional mirrorToGithubRepo (one of the project's repoUrls) mirrors it to a GitHub issue.\\n- \`update\`: edit title, description, priority, startsAt, dueAt, epicId, storyId, domainId, assigneeUserIds. Requires taskId. Omit a field to keep it; empty string clears it. A task's sprint follows its dates. A story pins its epic.\\n- \`set_status\`: move a task to another column, e.g. Done. Requires taskId, status. Assignees can do this too.\\n- \`set_checklist\`: replace the whole checklist. Requires taskId, items (empty array clears). Assignees can do this too.\\n- \`delete\`: hard-delete a task with its assignees and comments. Requires taskId. Prefer status Cancelled to keep history.\\n- \`link_github\`: mirror a task to a new GitHub issue. Requires taskId, repo (one of the project's repoUrls).\\n- \`unlink_github\`: stop mirroring; the GitHub issue stays. Requires taskId.\\n- \`comment\`: add a comment. Requires taskId, body. Assignees can do this too.\\n- \`link_file\`: attach a project file to the task (idempotent). Requires taskId, fileId.\\n- \`unlink_file\`: detach the file; the file itself stays. Requires taskId, fileId.\\nEverything except set_status, set_checklist and comment needs Core or project-member access.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -9396,7 +9014,10 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
           "set_checklist",
           "delete",
           "link_github",
-          "unlink_github"
+          "unlink_github",
+          "comment",
+          "link_file",
+          "unlink_file"
         ],
         "description": "Operation to perform."
       },
@@ -9500,6 +9121,17 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
         "type": "string",
         "minLength": 1,
         "description": "owner/repo (or a github.com URL). Must appear in the project's repoUrls."
+      },
+      "body": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 10000,
+        "description": "comment: the comment text."
+      },
+      "fileId": {
+        "type": "string",
+        "minLength": 1,
+        "description": "link_file, unlink_file: ProjectFile.id. Must belong to the task's project and not be archived."
       }
     },
     "required": [
@@ -9511,14 +9143,14 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
 }
 {
   "name": "list_members",
-  "description": "Browse the DALI member directory. Returns current-term-active members by default. Optionally filter by domain name/code, tier, or a name/email substring. Use \`includeInactive\` to also include alumni and members inactive this term. Pass page.nextCursor as cursor to read the next page until page.hasMore is false; page.total is the full match count.",
+  "description": "Search or browse the DALI member directory. Returns current-term-active members by default. Optionally filter by domain name/code, tier, or a search query. Use \`includeInactive\` to also include alumni and members inactive this term. Pass page.nextCursor as cursor to read the next page until page.hasMore is false; page.total is the full match count.",
   "inputSchema": {
     "type": "object",
     "properties": {
       "q": {
         "type": "string",
         "maxLength": 100,
-        "description": "Optional substring to match against name or daliEmail (case-insensitive)."
+        "description": "Optional search text, matched case-insensitively against name, daliEmail, netId, domain names and role titles."
       },
       "domain": {
         "type": "string",
@@ -9552,34 +9184,6 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
     "additionalProperties": false
   },
   "requiredScope": "mcp:read"
-}
-{
-  "name": "complete_onboarding_tour",
-  "description": "Mark the authenticated member's onboarding tour as completed. Safe to call even if the tour is already complete — it is a no-op in that case.",
-  "inputSchema": {
-    "type": "object",
-    "properties": {},
-    "additionalProperties": false
-  },
-  "requiredScope": "mcp:write"
-}
-{
-  "name": "set_activity_visibility",
-  "description": "Control whether your activity (online presence) is visible to other lab members. Pass \`hideActivity: true\` to go invisible; \`false\` to show your status again.",
-  "inputSchema": {
-    "type": "object",
-    "properties": {
-      "hideActivity": {
-        "type": "boolean",
-        "description": "True to hide your activity from others; false to show it."
-      }
-    },
-    "required": [
-      "hideActivity"
-    ],
-    "additionalProperties": false
-  },
-  "requiredScope": "mcp:write"
 }
 {
   "name": "list_journeys",

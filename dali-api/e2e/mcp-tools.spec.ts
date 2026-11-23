@@ -119,8 +119,8 @@ test.describe('MCP Tier 1 read tools', () => {
         'whoami',
         'list_my_notifications',
         'list_my_upcoming_meetings',
-        'find_mutual_freebusy',
-        'search_directory',
+        'find_free_times',
+        'list_members',
         'get_member_profile',
       ]),
     );
@@ -139,25 +139,24 @@ test.describe('MCP Tier 1 read tools', () => {
     expect(meetings.error).toBeUndefined();
     expect(Array.isArray(meetings.result.structuredContent.meetings)).toBe(true);
 
-    // find_mutual_freebusy — caller is implicit; no other participants needed.
+    // find_free_times — caller is implicit; no other participants needed.
     const now = new Date();
     const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-    const freebusy = await callTool(request, bearer, 'find_mutual_freebusy', {
-      participantUserIds: [],
-      windowStart: now.toISOString(),
-      windowEnd: tomorrow.toISOString(),
-      slotMinutes: 30,
+    const freebusy = await callTool(request, bearer, 'find_free_times', {
+      start: now.toISOString(),
+      end: tomorrow.toISOString(),
+      durationMinutes: 30,
     });
     expect(freebusy.error).toBeUndefined();
     expect(Array.isArray(freebusy.result.structuredContent.slots)).toBe(true);
 
-    // search_directory — query "a" hits most member names.
-    const search = await callTool(request, bearer, 'search_directory', {
-      query: 'a',
+    // list_members — query "a" hits most member names.
+    const search = await callTool(request, bearer, 'list_members', {
+      q: 'a',
       limit: 5,
     });
     expect(search.error).toBeUndefined();
-    expect(Array.isArray(search.result.structuredContent.results)).toBe(true);
+    expect(Array.isArray(search.result.structuredContent.members)).toBe(true);
 
     // get_member_profile — call against the caller's own id (via whoami).
     const whoami = await callTool(request, bearer, 'whoami', {});

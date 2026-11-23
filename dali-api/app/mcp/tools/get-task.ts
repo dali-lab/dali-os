@@ -1,7 +1,7 @@
 // MCP `get_task` — full drill-down on a single task: description, checklist,
 // comment thread, assignees, GitHub mirror, linked project files. The list
 // tools/resources intentionally return summary rows; this is the detail read.
-// Read access is any authenticated member (mirrors get_project_overview).
+// Read access is any authenticated member (mirrors get_project).
 
 import { prisma } from "~/lib/db.server";
 import { fullName } from "~/lib/display";

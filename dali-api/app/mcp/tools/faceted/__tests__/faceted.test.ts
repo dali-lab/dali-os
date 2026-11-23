@@ -76,6 +76,10 @@ vi.mock("../../document-curation", () => ({
   runDeleteProjectFile: vi.fn(),
 }));
 
+vi.mock("../../projects-extra/provision-epic-description-doc", () => ({
+  runProvisionEpicDescriptionDoc: vi.fn(),
+}));
+
 // ─── Import faceted tools AFTER mocks ────────────────────────────────────────
 
 import { MANAGE_EPIC_TOOL } from "../manage-epic";
@@ -86,6 +90,7 @@ import { MANAGE_DOCUMENT_SHARING_TOOL } from "../manage-document-sharing";
 import { runCreateEpic } from "../../create-epic";
 import { runUpdateEpic } from "../../update-epic";
 import { runDeleteEpic } from "../../delete-epic";
+import { runProvisionEpicDescriptionDoc } from "../../projects-extra/provision-epic-description-doc";
 
 import { runCreateStory } from "../../create-story";
 import { runUpdateStory } from "../../update-story";
@@ -149,6 +154,21 @@ describe("manage_epic", () => {
     expect(runDeleteEpic).toHaveBeenCalledWith("user-1", { epicId: "e1" });
   });
 
+  it("provision_description_doc routes to the provisioner as the caller", async () => {
+    vi.mocked(runProvisionEpicDescriptionDoc).mockResolvedValue({ descriptionDocId: "d1" });
+    await expect(MANAGE_EPIC_TOOL.run(ctx, { action: "provision_description_doc", epicId: "e1" })).resolves.toEqual({
+      descriptionDocId: "d1",
+    });
+    expect(runProvisionEpicDescriptionDoc).toHaveBeenCalledWith("user-1", { epicId: "e1" });
+  });
+
+  it("provision_description_doc without epicId throws McpInvalidError", async () => {
+    await expect(
+      MANAGE_EPIC_TOOL.run(ctx, { action: "provision_description_doc" }),
+    ).rejects.toBeInstanceOf(McpInvalidError);
+    expect(runProvisionEpicDescriptionDoc).not.toHaveBeenCalled();
+  });
+
   it("create missing required field throws McpInvalidError", async () => {
     // Missing title
     await expect(
@@ -208,10 +228,16 @@ describe("manage_time_entry", () => {
     ).rejects.toBeInstanceOf(McpInvalidError);
   });
 
-  it("add routes to runAddTimeEntry with userId and stripped args (passes confirmed through)", async () => {
+  it("rejects the old add action", async () => {
+    await expect(
+      MANAGE_TIME_ENTRY_TOOL.run(ctx, { action: "add", date: "2026-08-01", hours: 2, assignmentType: "Project", roleRefId: "r1" }),
+    ).rejects.toBeInstanceOf(McpInvalidError);
+  });
+
+  it("create routes to runAddTimeEntry with userId and stripped args (passes confirmed through)", async () => {
     vi.mocked(runAddTimeEntry).mockResolvedValue({ ok: true, id: "te1" } as any);
     await MANAGE_TIME_ENTRY_TOOL.run(ctx, {
-      action: "add",
+      action: "create",
       date: "2026-08-01",
       hours: 2,
       assignmentType: "Project",
@@ -239,10 +265,10 @@ describe("manage_time_entry", () => {
     expect(runDeleteTimeEntry).toHaveBeenCalledWith("user-1", { id: "te1" });
   });
 
-  it("add missing required fields throws McpInvalidError", async () => {
+  it("create missing required fields throws McpInvalidError", async () => {
     // Missing hours, assignmentType, roleRefId
     await expect(
-      MANAGE_TIME_ENTRY_TOOL.run(ctx, { action: "add", date: "2026-08-01" }),
+      MANAGE_TIME_ENTRY_TOOL.run(ctx, { action: "create", date: "2026-08-01" }),
     ).rejects.toBeInstanceOf(McpInvalidError);
   });
 

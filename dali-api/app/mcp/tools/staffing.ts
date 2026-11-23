@@ -1,5 +1,4 @@
-// MCP staffing tools — read the staffing board for a cycle, propose and clear
-// assignments, and set domain eligibility.
+// MCP staffing tools — read the staffing board for a cycle, and the assignment and eligibility writes behind manage_staffing.
 //
 // All of it is gated on canManageStaffing, the same check the board's own API
 // routes use, so an ordinary member's agent can't reshuffle staffing.
@@ -21,7 +20,7 @@ import type { Level } from "~/generated/prisma/client";
 import type { McpCtx } from "../registry";
 import { assignStaffing, setDomainEligibility, StaffingWriteError } from "~/projects/lib/staffing-assign.server";
 
-const LEVELS = ["P1", "P2", "P3"] as const;
+export const LEVELS = ["P1", "P2", "P3"] as const;
 
 export class StaffingForbiddenError extends Error {
   status = 403;
@@ -198,48 +197,6 @@ export async function runGetStaffingBoard(
   };
 }
 
-// ─── set_staffing_assignment ─────────────────────────────────────────────────
-
-export const SET_STAFFING_ASSIGNMENT_TOOL = {
-  name: "set_staffing_assignment",
-  description:
-    "Propose a member's staffing on a project for a cycle. A member can be staffed on multiple projects at once, so this only replaces their Proposed rows ON THAT project — other projects are untouched. Pass projectId: null with fromProjectId to remove them from just that project, or projectId: null with no fromProjectId to clear all their Proposed rows (full unassign). Confirmed/Declined rows are left as the audit trail (removing from a finalized project Declines its Confirmed rows). Staffing managers only.",
-  inputSchema: {
-    type: "object" as const,
-    properties: {
-      cycleId: { type: "string", minLength: 1, description: "StaffingCycle.id." },
-      userId: { type: "string", minLength: 1, description: "The member being staffed." },
-      projectId: {
-        type: ["string", "null"],
-        description:
-          "Project to staff them on (additive — keeps their other projects), or null to remove/unassign.",
-      },
-      fromProjectId: {
-        type: "string",
-        description:
-          "When moving between projects, the source project to also clear. With projectId: null, the single project to remove them from.",
-      },
-      domains: {
-        type: "array",
-        description:
-          "One entry per domain they'll work in on this project. Required unless projectId is null.",
-        items: {
-          type: "object",
-          properties: {
-            domainId: { type: "string" },
-            level: { type: "string", enum: [...LEVELS] },
-          },
-          required: ["domainId", "level"],
-          additionalProperties: false,
-        },
-      },
-    },
-    required: ["cycleId", "userId", "projectId"],
-    additionalProperties: false,
-  },
-  requiredScope: "mcp:write" as const,
-};
-
 type AssignInput = {
   cycleId: string;
   userId: string;
@@ -277,29 +234,6 @@ export async function runSetStaffingAssignment(
     return asMcpError(err);
   }
 }
-
-// ─── set_domain_eligibility ──────────────────────────────────────────────────
-
-export const SET_DOMAIN_ELIGIBILITY_TOOL = {
-  name: "set_domain_eligibility",
-  description:
-    "Set a member's eligibility level in a domain — the ceiling on what they can be staffed at. Staffing managers only.",
-  inputSchema: {
-    type: "object" as const,
-    properties: {
-      userId: { type: "string", minLength: 1 },
-      domainId: { type: "string", minLength: 1 },
-      level: {
-        type: "string",
-        enum: [...LEVELS],
-        description: "P1 learner, P2 doer, P3 mentor.",
-      },
-    },
-    required: ["userId", "domainId", "level"],
-    additionalProperties: false,
-  },
-  requiredScope: "mcp:write" as const,
-};
 
 export async function runSetDomainEligibility(
   callerId: string,

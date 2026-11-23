@@ -2,7 +2,7 @@
 // inbox/tasks. Mirrors `api.notifications.$id.read.ts` (single) and the bulk
 // POST on `api.notifications.ts` (all=true). Meeting-invite notifications stay
 // as todos until the recipient RSVPs; form todos stay open until their form is
-// submitted (but can be force-dismissed with intent="dismiss"). Requires
+// submitted (but can be force-dismissed with action="dismiss"). Requires
 // `mcp:write`.
 
 import { prisma } from "~/lib/db.server";
@@ -17,8 +17,8 @@ export const MARK_NOTIFICATION_READ_TOOL = {
     "Pass `all: true` to bulk-clear the entire inbox (same as the web \"mark all read\" button). " +
     "For a single notification, `notificationId` is required. " +
     "Meeting invites are not cleared — use `rsvp_to_notification` for those. " +
-    "Form todos only clear when their form is submitted, unless you pass `intent: \"dismiss\"` to force-clear. " +
-    "Pass `intent: \"unread\"` to re-open a previously cleared notification.",
+    "Form todos only clear when their form is submitted, unless you pass `action: \"dismiss\"` to force-clear. " +
+    "Pass `action: \"unread\"` to re-open a previously cleared notification.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -31,9 +31,9 @@ export const MARK_NOTIFICATION_READ_TOOL = {
       all: {
         type: "boolean",
         description:
-          "If true, mark ALL eligible notifications read (bulk clear). Ignores `notificationId` and `intent`.",
+          "If true, mark ALL eligible notifications read (bulk clear). Ignores `notificationId` and `action`.",
       },
-      intent: {
+      action: {
         type: "string",
         enum: ["read", "unread", "dismiss"],
         description:
@@ -48,7 +48,7 @@ export const MARK_NOTIFICATION_READ_TOOL = {
 type Input = {
   notificationId?: string;
   all?: boolean;
-  intent?: "read" | "unread" | "dismiss";
+  action?: "read" | "unread" | "dismiss";
 };
 
 export class NotificationNotFoundError extends Error {
@@ -121,11 +121,11 @@ export async function runMarkNotificationRead(
     existing.kind === "MeetingInvite" && !!existing.scheduledMeetingId;
   const isOnboardingTodo = existing.eventType === ONBOARDING_EVENT_TYPE;
   const isFormTodo = isSelfClearingFormTodo(existing);
-  const intent = input.intent ?? "read";
+  const action = input.action ?? "read";
 
   // ── unread intent: re-open a cleared notification ──────────────────────────
   // Self-clearing rows own their clear state — re-opening them is a no-op.
-  if (intent === "unread") {
+  if (action === "unread") {
     if (isMeetingInvite) return { ok: true, skipped: "meeting-invite" };
     if (isOnboardingTodo) return { ok: true, skipped: "onboarding" };
     if (isFormTodo) return { ok: true, skipped: "form-todo" };
@@ -148,7 +148,7 @@ export async function runMarkNotificationRead(
 
   // Form todos only clear on form submission unless the caller explicitly
   // sends intent="dismiss" (confirmed "I won't fill this" in the UI).
-  if (isFormTodo && intent !== "dismiss") {
+  if (isFormTodo && action !== "dismiss") {
     return { ok: true, skipped: "form-todo" };
   }
 

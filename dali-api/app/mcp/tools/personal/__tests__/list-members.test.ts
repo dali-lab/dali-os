@@ -182,4 +182,49 @@ describe("list_members", () => {
     expect(out.members).toEqual([]);
     expect(out.page.total).toBe(0);
   });
+
+  it("matches each query word against names, email, netId, domains and role titles", async () => {
+    mockUser.user.findMany.mockResolvedValue([]);
+    mockUser.user.count.mockResolvedValue(0);
+    await runListMembers({ q: "Ada Design" });
+    const search = mockUser.user.findMany.mock.calls[0][0].where.AND[1];
+    expect(search.AND).toHaveLength(2);
+    expect(search.AND[0].OR).toContainEqual({ netId: { contains: "ada", mode: "insensitive" } });
+    expect(search.AND[1].OR).toContainEqual({
+      coreAssignments: { some: { leadTitle: { contains: "design", mode: "insensitive" } } },
+    });
+    expect(search.AND[1].OR).toContainEqual({
+      domainEligibilities: {
+        some: {
+          domain: {
+            OR: [
+              { displayName: { contains: "design", mode: "insensitive" } },
+              { code: { contains: "design", mode: "insensitive" } },
+            ],
+          },
+        },
+      },
+    });
+  });
+
+  it("scopes a query to current-term members unless includeInactive is set", async () => {
+    mockUser.user.findMany.mockResolvedValue([]);
+    mockUser.user.count.mockResolvedValue(0);
+    await runListMembers({ q: "x" });
+    expect(mockUser.user.findMany.mock.calls[0][0].where.AND[0].OR).toBeDefined();
+    await runListMembers({ q: "x", includeInactive: true });
+    expect(mockUser.user.findMany.mock.calls[1][0].where.AND[0]).toEqual({ daliMember: { isNot: null } });
+  });
+
+  it("does not select or return netId", async () => {
+    mockUser.user.findMany.mockResolvedValue([ALICE]);
+    mockUser.user.count.mockResolvedValue(1);
+    const out = await runListMembers({ q: "alice" });
+    expect(out.members[0]).not.toHaveProperty("netId");
+    expect(mockUser.user.findMany.mock.calls[0][0].select).not.toHaveProperty("netId");
+  });
+
+  it("rejects a query over 100 characters at the schema layer", () => {
+    expect(LIST_MEMBERS_DEF.inputSchema.properties.q.maxLength).toBe(100);
+  });
 });

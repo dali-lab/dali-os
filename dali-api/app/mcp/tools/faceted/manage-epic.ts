@@ -5,6 +5,7 @@ import type { McpTool, McpCtx } from "../../registry";
 import { McpInvalidError, requireForAction } from "../../errors";
 import { CREATE_EPIC_PROPERTIES, CREATE_EPIC_REQUIRED, runCreateEpic } from "../create-epic";
 import { UPDATE_EPIC_PROPERTIES, UPDATE_EPIC_REQUIRED, runUpdateEpic } from "../update-epic";
+import { runProvisionEpicDescriptionDoc } from "../projects-extra/provision-epic-description-doc";
 import { DELETE_EPIC_PROPERTIES, DELETE_EPIC_REQUIRED, runDeleteEpic } from "../delete-epic";
 
 const MANAGE_EPIC_DEF = {
@@ -12,13 +13,14 @@ const MANAGE_EPIC_DEF = {
   description: `Manage project epics. Pass \`action\` to select the operation:
 - \`create\`: create an epic. Requires: projectId, title.
 - \`update\`: edit an epic's fields (title, description, status, dates, target term). Requires: epicId.
-- \`delete\`: delete an epic; sprints and tasks have their epicId nulled. Requires: epicId.`,
+- \`delete\`: delete an epic; sprints and tasks have their epicId nulled. Requires: epicId.
+- \`provision_description_doc\`: get (creating if needed) the collab doc ID for the epic's rich description, seeded from its plain-text description when empty. Returns { descriptionDocId }. Requires: epicId.`,
   inputSchema: {
     type: "object" as const,
     properties: {
       action: {
         type: "string",
-        enum: ["create", "update", "delete"],
+        enum: ["create", "update", "delete", "provision_description_doc"],
         description: "Operation to perform.",
       },
       // create fields
@@ -38,6 +40,7 @@ const ACTION_REQUIRED: Record<string, string[]> = {
   create: CREATE_EPIC_REQUIRED,
   update: UPDATE_EPIC_REQUIRED,
   delete: DELETE_EPIC_REQUIRED,
+  provision_description_doc: ["epicId"],
 };
 
 async function run(ctx: McpCtx, args: Record<string, unknown>) {
@@ -53,6 +56,8 @@ async function run(ctx: McpCtx, args: Record<string, unknown>) {
       return runUpdateEpic(ctx.user.id, rest as any);
     case "delete":
       return runDeleteEpic(ctx.user.id, rest as any);
+    case "provision_description_doc":
+      return runProvisionEpicDescriptionDoc(ctx.user.id, rest as any);
     default:
       throw new McpInvalidError(`Unknown action '${action}'`);
   }

@@ -57,18 +57,18 @@ describe("manage_calendar_link", () => {
     expect(MANAGE_CALENDAR_LINK_DEF.requiredScope).toBe("mcp:write");
   });
 
-  describe("remove-calendar-link", () => {
+  describe("remove", () => {
     it("throws McpNotFoundError when link doesn't exist", async () => {
       mockPrisma.userCalendarLink.findUnique.mockResolvedValue(null);
       await expect(
-        runManageCalendarLink("u1", { intent: "remove-calendar-link", linkId: "lnk1" }),
+        runManageCalendarLink("u1", { action: "remove", linkId: "lnk1" }),
       ).rejects.toMatchObject({ name: "McpNotFoundError" });
     });
 
     it("throws McpNotFoundError when link belongs to different user", async () => {
       mockPrisma.userCalendarLink.findUnique.mockResolvedValue({ id: "lnk1", userId: "u-other", subCalendarIds: [] });
       await expect(
-        runManageCalendarLink("u1", { intent: "remove-calendar-link", linkId: "lnk1" }),
+        runManageCalendarLink("u1", { action: "remove", linkId: "lnk1" }),
       ).rejects.toMatchObject({ name: "McpNotFoundError" });
     });
 
@@ -76,18 +76,18 @@ describe("manage_calendar_link", () => {
       mockPrisma.userCalendarLink.findUnique.mockResolvedValue({ id: "lnk1", userId: "u1", subCalendarIds: [] });
       mockPrisma.userCalendarLink.delete.mockResolvedValue({});
 
-      const out = await runManageCalendarLink("u1", { intent: "remove-calendar-link", linkId: "lnk1" });
+      const out = await runManageCalendarLink("u1", { action: "remove", linkId: "lnk1" });
       expect(out).toEqual({ ok: true });
       expect(mockPrisma.userCalendarLink.delete).toHaveBeenCalledWith({ where: { id: "lnk1" } });
     });
   });
 
-  describe("toggle-sub-calendar", () => {
+  describe("toggle_sub_calendar", () => {
     it("throws McpNotFoundError when link doesn't exist", async () => {
       mockPrisma.userCalendarLink.findUnique.mockResolvedValue(null);
       await expect(
         runManageCalendarLink("u1", {
-          intent: "toggle-sub-calendar",
+          action: "toggle_sub_calendar",
           linkId: "lnk1",
           calendarId: "cal1",
           enabled: true,
@@ -104,7 +104,7 @@ describe("manage_calendar_link", () => {
       mockPrisma.userCalendarLink.update.mockResolvedValue({});
 
       const out = await runManageCalendarLink("u1", {
-        intent: "toggle-sub-calendar",
+        action: "toggle_sub_calendar",
         linkId: "lnk1",
         calendarId: "cal2",
         enabled: true,
@@ -122,7 +122,7 @@ describe("manage_calendar_link", () => {
       mockPrisma.userCalendarLink.update.mockResolvedValue({});
 
       await runManageCalendarLink("u1", {
-        intent: "toggle-sub-calendar",
+        action: "toggle_sub_calendar",
         linkId: "lnk1",
         calendarId: "cal1",
         enabled: false,

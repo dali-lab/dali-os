@@ -62,19 +62,18 @@ export async function runListNotificationPreferences(callerId: string) {
 export const SET_NOTIFICATION_PREFERENCE_TOOL = {
   name: "set_notification_preference",
   description:
-    "Set the authenticated member's notification channels for one event type. Omitted fields keep their current effective value. Locked in-app events can't be muted; externally-emailed events accept no email setting.",
+    "Set your notification channels for one event type. Omitted fields keep their current value. Locked in-app events can't be muted; externally-emailed events take no email setting.",
   inputSchema: {
     type: "object" as const,
     properties: {
       eventType: {
         type: "string",
-        enum: SETTABLE_EVENT_TYPES as string[],
-        description: "Event type key, as returned by `list_notification_preferences`.",
+        description: "Event type key from `list_notification_preferences`.",
       },
       inApp: { type: "boolean", description: "Show in the in-app notification bell." },
       desktop: {
         type: "boolean",
-        description: "Raise a native banner in the DALI OS desktop app (applies when in-app is on).",
+        description: "Native banner in the desktop app (needs in-app on).",
       },
       slackDm: { type: "boolean", description: "Send a Slack DM." },
       email: {

@@ -208,4 +208,41 @@ describe("update_profile", () => {
     expect(out.ok).toBe(true);
     expect(out.updated.birthday).toBeNull();
   });
+
+  // ── hideActivity (formerly set_activity_visibility) ─────────────────────
+
+  it("sets only hideActivity without touching other profile fields", async () => {
+    mockPrisma.user.update.mockResolvedValue({});
+    const out = await runUpdateProfile("u-alice", { hideActivity: true });
+    expect(out).toEqual({ ok: true, updated: { hideActivity: true } });
+    expect(mockPrisma.user.update).toHaveBeenCalledTimes(1);
+    expect(mockPrisma.user.update).toHaveBeenCalledWith({
+      where: { id: "u-alice" },
+      data: { hideActivity: true },
+    });
+  });
+
+  it("shows activity again when hideActivity is false", async () => {
+    mockPrisma.user.update.mockResolvedValue({});
+    const out = await runUpdateProfile("u-alice", { hideActivity: false });
+    expect(out.updated).toEqual({ hideActivity: false });
+  });
+
+  it("updates profile fields and hideActivity together", async () => {
+    mockPrisma.user.update.mockResolvedValue({});
+    const out = await runUpdateProfile("u1", { hometown: "Hanover", hideActivity: true });
+    expect(out.updated).toMatchObject({ hometown: "Hanover", hideActivity: true });
+    expect(mockPrisma.user.update).toHaveBeenCalledWith({ where: { id: "u1" }, data: { hideActivity: true } });
+  });
+
+  it("rejects a bad profile field before changing hideActivity", async () => {
+    await expect(
+      runUpdateProfile("u1", { firstName: "Alice", lastName: "", hideActivity: true }),
+    ).rejects.toMatchObject({ name: "McpInvalidError" });
+    expect(mockPrisma.user.update).not.toHaveBeenCalledWith({ where: { id: "u1" }, data: { hideActivity: true } });
+  });
+
+  it("exposes hideActivity as a boolean property", () => {
+    expect(UPDATE_PROFILE_DEF.inputSchema.properties.hideActivity).toMatchObject({ type: "boolean" });
+  });
 });

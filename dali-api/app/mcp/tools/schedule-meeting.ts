@@ -12,7 +12,7 @@ import { assertMeetingRoomsFree } from "~/rooms/lib/rooms.server";
 export const SCHEDULE_MEETING_TOOL = {
   name: "schedule_meeting",
   description:
-    "Create a meeting. Supports inviting a DALI Group or an explicit user list. Optionally schedule it for a specific start time; otherwise the meeting is created in 'Searching' state. Sends in-app MeetingInvite notifications to participants, and pushes to Google Calendar when the organizer has a linked calendar.",
+    "Create a meeting for a Group or an explicit user list. Without startTime it stays in 'Searching' state. Notifies participants in app and pushes to Google Calendar when the organizer has a linked calendar.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -20,85 +20,76 @@ export const SCHEDULE_MEETING_TOOL = {
         type: "string",
         minLength: 1,
         maxLength: 200,
-        description: "Meeting title (1–200 chars).",
+        description: "Meeting title.",
       },
       durationMinutes: {
         type: "integer",
         minimum: 5,
         maximum: 480,
-        description: "Duration in minutes (5–480).",
+        description: "Duration in minutes.",
       },
       scopeType: {
         type: "string",
         enum: ["UserList", "Group", "None"],
-        description:
-          "How to resolve participants. 'UserList' (default) uses participantUserIds; 'Group' resolves a GroupDefinition; 'None' creates the meeting with no participants (org-wide).",
+        description: "UserList (default) uses participantUserIds, Group uses groupId, None invites no one (org-wide).",
       },
       participantUserIds: {
         type: "array",
         items: { type: "string", minLength: 1 },
         minItems: 1,
-        description:
-          "DALI member User IDs to invite — required when scopeType is 'UserList'. Use `search_directory` to look up IDs by name.",
+        description: "User IDs to invite. Required for UserList. Find IDs with `list_members`.",
       },
       groupId: {
         type: "string",
         minLength: 1,
-        description:
-          "GroupDefinition.id — required when scopeType is 'Group'. Use `list_groups` to find available groups.",
+        description: "GroupDefinition.id. Required for Group. See `list_groups`.",
       },
       startTime: {
         type: "string",
         format: "date-time",
-        description:
-          "Optional ISO 8601 start time. If omitted, the meeting is created in 'Searching' state with no confirmed time.",
+        description: "ISO 8601 start. Omit to leave the meeting unscheduled.",
       },
       recurrenceRule: {
         type: "string",
         maxLength: 500,
-        description: "Optional RFC 5545 RRULE for recurring meetings.",
+        description: "RFC 5545 RRULE.",
       },
       roomIds: {
         type: "array",
         items: { type: "string", minLength: 1 },
         maxItems: 10,
-        description:
-          "DALI rooms the meeting occupies, from `list_rooms`. Requires startTime. Every room must be free for every occurrence, or the meeting isn't created.",
+        description: "Room ids from `list_rooms`. Requires startTime. Every room must be free for every occurrence.",
       },
       organizerCalendarLinkId: {
         type: "string",
         minLength: 1,
-        description:
-          "Optional UserCalendarLink ID. When provided (and enabled), the meeting is pushed to that external calendar and Gmail invites are sent. Use `list_my_calendar_links` to discover available IDs.",
+        description: "UserCalendarLink.id from `list_my_calendar_links`. Pushes the meeting to that calendar and sends Gmail invites.",
       },
       organizerCalendarId: {
         type: "string",
         minLength: 1,
         maxLength: 320,
-        description:
-          "Optional calendar ID within the linked account. Omitted = the account's primary calendar.",
+        description: "Calendar within the linked account. Default: its primary calendar.",
       },
       meetingType: {
         type: "string",
         enum: ["Team", "Partner", "Other"],
-        description:
-          "'Team' or 'Partner' require projectId and create a meeting note in that project. 'Other' creates a general meeting note (no project). Omit for meetings without notes.",
+        description: "Team and Partner need projectId and file a note in that project. Other files a general note. Omit for no note.",
       },
       meetingTypeLabel: {
         type: "string",
         minLength: 1,
         maxLength: 80,
-        description: "Display label for the meeting type — required when meetingType is 'Other'.",
+        description: "Label for the type. Required for Other.",
       },
       projectId: {
         type: "string",
         minLength: 1,
-        description: "Project.id — required for 'Team' and 'Partner' meeting types.",
+        description: "Project.id. Required for Team and Partner.",
       },
       notebook: {
         type: "object",
-        description:
-          "The notebook the meeting's note files into: { existingId } for a notebook you can edit, or { title, templatePageId? } to create one at the meeting's space. Omit for the default.",
+        description: "Where the note files: { existingId } or { title, templatePageId? } to create one. Default if omitted.",
         properties: {
           existingId: { type: "string", minLength: 1 },
           title: { type: "string", minLength: 1, maxLength: 200 },
@@ -109,24 +100,20 @@ export const SCHEDULE_MEETING_TOOL = {
       attendanceMode: {
         type: "string",
         enum: ["Roster", "SelfCheckIn"],
-        description:
-          "'Roster' (default): organizer/Core mark attendees. 'SelfCheckIn': attendees self-check-in via QR — Core/Instructor only.",
+        description: "Roster (default): organizer or Core marks attendees. SelfCheckIn: attendees check in by QR; Core or Instructor only.",
       },
       isCoreMeeting: {
         type: "boolean",
-        description:
-          "Legacy. Core is decided by where the meeting's notebook is filed; this only files a project-less note in Core's Meetings folder. Only takes effect when the caller is Core. Defaults to false.",
+        description: "Legacy. Files a project-less note in Core's Meetings folder. Only applies to Core callers.",
       },
       addMeet: {
         type: "boolean",
-        description:
-          "Attach a Google Meet link. Requires an organizerCalendarLinkId (the link is minted on that calendar); ignored otherwise.",
+        description: "Attach a Google Meet link. Needs organizerCalendarLinkId; ignored otherwise.",
       },
       guestEmails: {
         type: "array",
         items: { type: "string" },
-        description:
-          "People with no DALI profile, invited by address (e.g. an outside partner). They reach the meeting only through the Google event invite, which requires organizerCalendarLinkId and a startTime.",
+        description: "Email addresses of people with no DALI profile. Invited through the Google event, so needs organizerCalendarLinkId and startTime.",
       },
     },
     required: ["title", "durationMinutes"],

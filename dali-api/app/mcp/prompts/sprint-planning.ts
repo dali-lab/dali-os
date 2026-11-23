@@ -11,7 +11,7 @@ export const SPRINT_PLANNING_PROMPT: PromptDefinition = {
   arguments: [
     {
       name: "projectId",
-      description: "Project.id (as returned by list_my_projects).",
+      description: "Project.id (as returned by list_projects).",
       required: true,
     },
     {
@@ -34,7 +34,7 @@ export const SPRINT_PLANNING_PROMPT: PromptDefinition = {
             `1. Read resource \`dali://projects/${projectId}/board\` for current sprint state.`,
             `2. Read resource \`dali://projects/${projectId}/backlog\` for unscheduled work.`,
             `3. Call \`list_epics\` with projectId="${projectId}" to ground the plan in roadmap priorities.`,
-            `4. Call \`get_project_overview\` for the current-term roster.`,
+            `4. Call \`get_project\` for the current-term roster.`,
             "",
             "Then draft a sprint plan with:",
             "",

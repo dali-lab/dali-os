@@ -11,22 +11,12 @@ import {
   GET_MEETING_ATTENDANCE_DEF,
   runGetMeetingAttendance,
 } from "./get-meeting-attendance";
-import {
-  GET_GROUP_AVAILABILITY_DEF,
-  runGetGroupAvailability,
-} from "./get-group-availability";
+import { FIND_FREE_TIMES_DEF, runFindFreeTimes } from "./find-free-times";
+import { CHECK_IN_DEF, runCheckIn } from "./check-in";
 import {
   OPTIMIZE_GROUP_MEETINGS_DEF,
   runOptimizeGroupMeetings,
 } from "./optimize-group-meetings";
-import {
-  GET_GOOGLE_CALENDAR_BUSY_DEF,
-  runGetGoogleCalendarBusy,
-} from "./get-google-calendar-busy";
-import {
-  CHECK_IN_TO_MEETING_DEF,
-  runCheckInToMeeting,
-} from "./check-in-to-meeting";
 import {
   UPDATE_PROFILE_DEF,
   runUpdateProfile,
@@ -60,10 +50,6 @@ import {
   runSearchTimetableCourses,
 } from "./search-timetable-courses";
 import {
-  SCAN_ATTENDEE_DEF,
-  runScanAttendee,
-} from "./scan-attendee";
-import {
   MANAGE_CALENDAR_LINK_DEF,
   runManageCalendarLink,
 } from "./manage-calendar-link";
@@ -90,9 +76,8 @@ export const CALENDAR_TOOLS: McpTool[] = [
       runGetMeetingAttendance(ctx.user.id, args as { meetingId: string }),
   },
   {
-    def: GET_GROUP_AVAILABILITY_DEF,
-    run: (_ctx, args) =>
-      runGetGroupAvailability(args as { userIds: string[]; weekStartIso: string; weekEndIso: string; durationMinutes: number; timezone: string }),
+    def: FIND_FREE_TIMES_DEF,
+    run: (ctx, args) => runFindFreeTimes(ctx.user.id, args as Parameters<typeof runFindFreeTimes>[1]),
   },
   {
     def: OPTIMIZE_GROUP_MEETINGS_DEF,
@@ -100,24 +85,18 @@ export const CALENDAR_TOOLS: McpTool[] = [
       runOptimizeGroupMeetings(args as Parameters<typeof runOptimizeGroupMeetings>[0]),
   },
   {
-    def: GET_GOOGLE_CALENDAR_BUSY_DEF,
-    run: (ctx, args) =>
-      runGetGoogleCalendarBusy(ctx.user.id, args as { start: string; end: string }),
-  },
-  {
-    def: CHECK_IN_TO_MEETING_DEF,
-    run: (ctx, args) =>
-      runCheckInToMeeting(ctx.user.id, args as { meetingId: string }),
+    def: CHECK_IN_DEF,
+    run: (ctx, args) => runCheckIn(ctx, args as Parameters<typeof runCheckIn>[1]),
   },
   {
     def: UPDATE_PROFILE_DEF,
     run: (ctx, args) =>
-      runUpdateProfile(ctx.user.id, args as { firstName?: string; lastName?: string; pronouns?: string; handle?: string; timezone?: string; photoUrl?: string }),
+      runUpdateProfile(ctx.user.id, args as Parameters<typeof runUpdateProfile>[1]),
   },
   {
     def: MARK_MEETING_ATTENDANCE_DEF,
     run: (ctx, args) =>
-      runMarkMeetingAttendance(ctx.user.id, args as { meetingId: string; userId: string; present: boolean }),
+      runMarkMeetingAttendance(ctx.user.id, args as Parameters<typeof runMarkMeetingAttendance>[1]),
   },
   {
     def: GET_MEETING_DEF,
@@ -147,11 +126,6 @@ export const CALENDAR_TOOLS: McpTool[] = [
     def: SEARCH_TIMETABLE_COURSES_DEF,
     run: (ctx, args) =>
       runSearchTimetableCourses(ctx.user.id, args as Parameters<typeof runSearchTimetableCourses>[1]),
-  },
-  {
-    def: SCAN_ATTENDEE_DEF,
-    run: (ctx, args) =>
-      runScanAttendee(ctx.user.id, args as { meetingId: string; memberToken: string }),
   },
   {
     def: MANAGE_CALENDAR_LINK_DEF,

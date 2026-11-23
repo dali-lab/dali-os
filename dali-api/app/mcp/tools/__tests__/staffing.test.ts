@@ -12,8 +12,8 @@ import { logAuditEvent } from "~/lib/audit";
 import { publishCycleChange } from "~/projects/lib/staffing-events.server";
 import { addOrUpdateEligibility } from "~/admin/lib/eligibility.server";
 import { validateInput } from "~/lib/mcp-input";
+import { MANAGE_STAFFING_TOOL } from "~/mcp/tools/projects-extra/manage-staffing";
 import {
-  SET_STAFFING_ASSIGNMENT_TOOL,
   runGetStaffingBoard,
   runSetStaffingAssignment,
   runSetDomainEligibility,
@@ -138,8 +138,8 @@ describe("get_staffing_board", () => {
 
 describe("set_staffing_assignment", () => {
   it("accepts a project id or null for projectId at the input gate", () => {
-    const schema = SET_STAFFING_ASSIGNMENT_TOOL.inputSchema;
-    const base = { cycleId: "cyc-1", userId: "u" };
+    const schema = MANAGE_STAFFING_TOOL.inputSchema;
+    const base = { action: "assign", cycleId: "cyc-1", userId: "u" };
     expect(validateInput({ ...base, projectId: "p1" }, schema).ok).toBe(true);
     expect(validateInput({ ...base, projectId: null }, schema).ok).toBe(true);
     expect(validateInput({ ...base, projectId: 1 }, schema).ok).toBe(false);

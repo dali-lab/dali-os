@@ -1,8 +1,7 @@
 // MCP `optimize_group_meetings` — plan a batch of meetings, one per group, over
 // a window so that TOTAL attendance across all of them is maximized.
 //
-// Why this exists: `find_mutual_freebusy` / `get_group_availability` return raw
-// overlap for a single set of people. When you want a meeting with EACH project
+// Why this exists: `find_free_times` returns raw overlap for a single set of people. When you want a meeting with EACH project
 // group plus staff in the same week, people who sit on more than one group can't
 // be in two meetings at once — picking each group's best slot independently
 // double-books them. This tool jointly assigns all the slots (see
@@ -33,7 +32,7 @@ import { McpInvalidError } from "../../errors";
 export const OPTIMIZE_GROUP_MEETINGS_DEF = {
   name: "optimize_group_meetings",
   description:
-    "Plan multiple meetings — one per group — over a time window so total attendance is maximized across all of them. Unlike find_mutual_freebusy (single-group overlap), this jointly places every meeting so people who belong to more than one group aren't double-booked, and reports the recommended slot, attendees, double-bookings, and who has no linked calendar. Read-only: create the chosen meetings with schedule_meeting.",
+    "Plan one meeting per group over a window so total attendance is maximized. Unlike find_free_times (one group's overlap), it places every meeting jointly so people in several groups aren't double-booked, and reports each recommended slot, attendees, double-bookings and who has no linked calendar. Read-only: create the chosen meetings with schedule_meeting.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -41,8 +40,7 @@ export const OPTIMIZE_GROUP_MEETINGS_DEF = {
         type: "array",
         minItems: 1,
         maxItems: 15,
-        description:
-          "One entry per meeting to schedule. Give each a groupId, an explicit memberUserIds list, or both.",
+        description: "One entry per meeting. Give each a groupId, memberUserIds, or both.",
         items: {
           type: "object",
           properties: {
@@ -50,35 +48,33 @@ export const OPTIMIZE_GROUP_MEETINGS_DEF = {
               type: "string",
               minLength: 1,
               maxLength: 64,
-              description:
-                "Stable identifier for this meeting, echoed in the result and used to name double-booking conflicts. Auto-assigned (m1, m2, …) if omitted.",
+              description: "Identifier echoed in the result and in conflicts. Default m1, m2, ….",
             },
             label: {
               type: "string",
               maxLength: 200,
-              description: "Human label. Defaults to the group name or the key.",
+              description: "Label. Default: the group name or key.",
             },
             groupId: {
               type: "string",
               minLength: 1,
-              description: "Existing group; members are resolved automatically.",
+              description: "Group whose members attend.",
             },
             memberUserIds: {
               type: "array",
               items: { type: "string", minLength: 1 },
-              description: "Ad-hoc member userIds. Merged with groupId members if both are given.",
+              description: "Extra attendee user ids, merged with the group's members.",
             },
             requiredUserIds: {
               type: "array",
               items: { type: "string", minLength: 1 },
-              description:
-                "Members who MUST be able to attend — slots where any of them is busy are discarded. Added to the member set if not already present.",
+              description: "Users who must attend: slots where any is busy are dropped. Added to the members if missing.",
             },
             durationMinutes: {
               type: "integer",
               minimum: 5,
               maximum: 480,
-              description: "Overrides the top-level durationMinutes for this meeting.",
+              description: "Overrides the top-level duration for this meeting.",
             },
           },
           additionalProperties: false,
@@ -87,50 +83,50 @@ export const OPTIMIZE_GROUP_MEETINGS_DEF = {
       windowStart: {
         type: "string",
         minLength: 1,
-        description: "ISO 8601 start of the scheduling window (inclusive).",
+        description: "ISO 8601 window start (inclusive).",
       },
       windowEnd: {
         type: "string",
         minLength: 1,
-        description: "ISO 8601 end of the scheduling window (exclusive). Span must be ≤ 14 days.",
+        description: "ISO 8601 window end (exclusive). At most 14 days after windowStart.",
       },
       durationMinutes: {
         type: "integer",
         minimum: 5,
         maximum: 480,
-        description: "Default meeting length in minutes (per-meeting durationMinutes overrides it).",
+        description: "Default meeting length in minutes.",
       },
       slotMinutes: {
         type: "integer",
         enum: [15, 30, 60],
-        description: "Granularity of candidate start times (default 30).",
+        description: "Candidate start granularity in minutes. Default 30.",
       },
       timezone: {
         type: "string",
         minLength: 1,
-        description: "IANA timezone the working-hours band and slot times are expressed in (e.g. America/New_York).",
+        description: "IANA timezone for the working-hours band and slot times.",
       },
       dayStartHour: {
         type: "integer",
         minimum: 0,
         maximum: 23,
-        description: "Earliest local hour a meeting may start (default 9).",
+        description: "Earliest local start hour. Default 9.",
       },
       dayEndHour: {
         type: "integer",
         minimum: 1,
         maximum: 24,
-        description: "Latest local hour a meeting may end (default 18).",
+        description: "Latest local end hour. Default 18.",
       },
       includeWeekends: {
         type: "boolean",
-        description: "Allow Saturday/Sunday slots (default false).",
+        description: "Allow weekend slots. Default false.",
       },
       alternativesPerMeeting: {
         type: "integer",
         minimum: 0,
         maximum: 5,
-        description: "How many runner-up slots to return per meeting (default 3).",
+        description: "Runner-up slots per meeting. Default 3.",
       },
     },
     required: ["meetings", "windowStart", "windowEnd", "durationMinutes", "timezone"],

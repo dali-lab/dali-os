@@ -1,7 +1,7 @@
 // MCP prompt `project-status` — draft a project status update using
-// `get_project_overview` + `list_my_tasks` (scoped to the project). The caller
+// `get_project` + `list_my_tasks` (scoped to the project). The caller
 // can either pass a `projectId` directly or hint at the project by name and
-// the model resolves it via `list_my_projects`.
+// the model resolves it via `list_projects` with `mine: true`.
 
 import type { PromptDefinition } from "./types";
 
@@ -13,7 +13,7 @@ export const PROJECT_STATUS_PROMPT: PromptDefinition = {
     {
       name: "projectHint",
       description:
-        "Either a Project.id or a fragment of the project name. The model resolves it against `list_my_projects` if not an id.",
+        "Either a Project.id or a fragment of the project name. The model resolves it against `list_projects` with `mine: true` if not an id.",
       required: true,
     },
     {
@@ -42,8 +42,8 @@ export const PROJECT_STATUS_PROMPT: PromptDefinition = {
             "",
             "Steps (use the dalios MCP tools):",
             "",
-            "1. If the hint looks like an id (cuid-shaped), use it directly. Otherwise call `list_my_projects` and pick the best name match. Confirm with the user if ambiguous.",
-            "2. Call `get_project_overview` with the resolved projectId.",
+            "1. If the hint looks like an id (cuid-shaped), use it directly. Otherwise call `list_projects` with `mine: true` and pick the best name match. Confirm with the user if ambiguous.",
+            "2. Call `get_project` with the resolved projectId.",
             "3. Call `list_my_tasks` with that projectId AND `status: ['Todo','InProgress','InReview','Done']` to see recently-finished work alongside open work.",
             "",
             "Then write the update as markdown with these sections:",

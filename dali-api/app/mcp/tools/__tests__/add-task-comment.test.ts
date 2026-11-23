@@ -9,10 +9,7 @@ vi.mock("~/projects/lib/task-notifications.server", () => ({
 import { prisma } from "~/lib/db.server";
 import { canEditProject } from "~/mcp/tools/access";
 import { notifyTaskComment } from "~/projects/lib/task-notifications.server";
-import {
-  runAddTaskComment,
-  ADD_TASK_COMMENT_TOOL,
-} from "~/mcp/tools/add-task-comment";
+import { runAddTaskComment } from "~/mcp/tools/add-task-comment";
 
 const mockPrisma = prisma as unknown as {
   $transaction: ReturnType<typeof vi.fn>;
@@ -27,10 +24,6 @@ beforeEach(() => {
 });
 
 describe("add_task_comment", () => {
-  it("requires mcp:write", () => {
-    expect(ADD_TASK_COMMENT_TOOL.requiredScope).toBe("mcp:write");
-  });
-
   it("allows an assignee without checking project edit access", async () => {
     mockPrisma.task.findUnique.mockResolvedValue({
       id: "t1",

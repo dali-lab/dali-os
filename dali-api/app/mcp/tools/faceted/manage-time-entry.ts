@@ -1,4 +1,4 @@
-// MCP `manage_time_entry` — faceted router over add/update/delete.
+// MCP `manage_time_entry` — faceted router over create/update/delete.
 // Thin router only: all business logic (including the two-step confirmed gate)
 // lives in the underlying run* functions. Args are passed through unchanged so
 // the gate still works.
@@ -17,22 +17,19 @@ import {
 const MANAGE_TIME_ENTRY_DEF = {
   name: "manage_time_entry",
   description: `Manage the authenticated member's time entries (Manual and Meeting). Pass \`action\` to select the operation:
-- \`add\`: log a manual time entry. Requires: date, hours, assignmentType, roleRefId, startTime, endTime (ISO with offset). Two-step: call without \`confirmed\` first to see a preview, then re-call with \`confirmed: true\`.
-- \`update\`: change an entry's date, hours, role, note, or time range, including a Meeting entry's role and note. Requires: id. Same two-step confirmation as add.
+- \`create\`: log a manual time entry. Requires: date, hours, assignmentType, roleRefId, startTime, endTime (ISO with offset). Two-step: call without \`confirmed\` first to see a preview, then re-call with \`confirmed: true\`.
+- \`update\`: change an entry's date, hours, role, note, or time range, including a Meeting entry's role and note. Requires: id. Same two-step confirmation as create.
 - \`delete\`: delete a time entry. Requires: id. No confirmation gate.`,
   inputSchema: {
     type: "object" as const,
     properties: {
       action: {
         type: "string",
-        enum: ["add", "update", "delete"],
+        enum: ["create", "update", "delete"],
         description: "Operation to perform.",
       },
-      // add fields
       ...ADD_TIME_ENTRY_PROPERTIES,
-      // update fields
       ...UPDATE_TIME_ENTRY_PROPERTIES,
-      // delete fields
       ...DELETE_TIME_ENTRY_PROPERTIES,
     },
     required: ["action"],
@@ -42,7 +39,7 @@ const MANAGE_TIME_ENTRY_DEF = {
 };
 
 const ACTION_REQUIRED: Record<string, string[]> = {
-  add: ADD_TIME_ENTRY_REQUIRED,
+  create: ADD_TIME_ENTRY_REQUIRED,
   update: UPDATE_TIME_ENTRY_REQUIRED,
   delete: DELETE_TIME_ENTRY_REQUIRED,
 };
@@ -54,7 +51,7 @@ async function run(ctx: McpCtx, args: Record<string, unknown>) {
   const { action: _action, ...rest } = args;
 
   switch (action) {
-    case "add":
+    case "create":
       return runAddTimeEntry(ctx.user.id, rest as any);
     case "update":
       return runUpdateTimeEntry(ctx.user.id, rest as any);

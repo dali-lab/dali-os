@@ -5,8 +5,6 @@ import type { McpCtx, McpTool } from "../registry";
 import { WHOAMI_TOOL, runWhoami } from "./whoami";
 import { LIST_MY_NOTIFICATIONS_TOOL, runListMyNotifications } from "./list-my-notifications";
 import { LIST_MY_UPCOMING_MEETINGS_TOOL, runListMyUpcomingMeetings } from "./list-my-upcoming-meetings";
-import { FIND_MUTUAL_FREEBUSY_TOOL, runFindMutualFreebusy } from "./find-mutual-freebusy";
-import { SEARCH_DIRECTORY_TOOL, runSearchDirectory } from "./search-directory";
 import { GET_MEMBER_PROFILE_TOOL, runGetMemberProfile } from "./get-member-profile";
 import { SCHEDULE_MEETING_TOOL, runScheduleMeeting } from "./schedule-meeting";
 import { LIST_MY_CALENDAR_LINKS_TOOL, runListMyCalendarLinks } from "./list-my-calendar-links";
@@ -20,14 +18,12 @@ import {
 } from "./notification-preferences";
 import { CANCEL_MEETING_TOOL, runCancelMeeting } from "./cancel-meeting";
 import { LIST_GROUPS_TOOL, runListGroups } from "./list-groups";
-import { LIST_MY_PROJECTS_TOOL, runListMyProjects } from "./list-my-projects";
 import { LIST_PROJECTS_TOOL, runListProjects } from "./list-projects";
+import { GET_PROJECT_TOOL, runGetProject } from "./get-project";
 import { LIST_TERMS_TOOL, runListTerms } from "./list-terms";
-import { GET_PROJECT_OVERVIEW_TOOL, runGetProjectOverview } from "./get-project-overview";
 import { LIST_MY_TASKS_TOOL, runListMyTasks } from "./list-my-tasks";
 import { GET_TASK_TOOL, runGetTask } from "./get-task";
 import { CREATE_PROJECT_TOOL, runCreateProject } from "./create-project";
-import { ADD_TASK_COMMENT_TOOL, runAddTaskComment } from "./add-task-comment";
 import { LIST_SPRINTS_TOOL, runListSprints } from "./list-sprints";
 import { LIST_EPICS_TOOL, runListEpics } from "./list-epics";
 import { LIST_PROJECT_PAGES_TOOL, runListProjectPages } from "./list-project-pages";
@@ -37,25 +33,16 @@ import { SET_PAGE_CONTENT_TOOL, runSetPageContent } from "./set-page-content";
 import { LIST_PROJECT_FILES_TOOL, runListProjectFiles } from "./list-project-files";
 import { UPLOAD_PROJECT_FILE_TOOL, runUploadProjectFile } from "./upload-project-file";
 import {
-  LIST_MY_ROLES_TOOL,
-  runListMyRoles,
   LIST_MY_TIME_ENTRIES_TOOL,
   runListMyTimeEntries,
 } from "./time-entries";
-import { GET_PROJECT_SETTINGS_TOOL, runGetProjectSettings } from "./project-settings";
 import {
-  GET_PROJECT_SHOWCASE_TOOL,
-  runGetProjectShowcase,
   UPDATE_PROJECT_SHOWCASE_TOOL,
   runUpdateProjectShowcase,
 } from "./project-showcase";
 import {
   GET_STAFFING_BOARD_TOOL,
   runGetStaffingBoard,
-  SET_STAFFING_ASSIGNMENT_TOOL,
-  runSetStaffingAssignment,
-  SET_DOMAIN_ELIGIBILITY_TOOL,
-  runSetDomainEligibility,
 } from "./staffing";
 import { LIST_DOCUMENT_SHARING_TOOL, runListDocumentSharing } from "./document-curation";
 import { LIST_FILE_SHARES_TOOL, runListFileShares } from "./file-sharing";
@@ -68,14 +55,9 @@ function asCaller(def: McpTool["def"], run: CallerTool): McpTool {
 }
 
 export const BASE_TOOLS: McpTool[] = [
-  { def: WHOAMI_TOOL, run: (ctx) => runWhoami(ctx.user) },
+  { def: WHOAMI_TOOL, run: (ctx, args) => runWhoami(ctx.user, args) },
   { def: LIST_MY_NOTIFICATIONS_TOOL, run: (ctx, args) => runListMyNotifications(ctx.user.id, args) },
   { def: LIST_MY_UPCOMING_MEETINGS_TOOL, run: (ctx, args) => runListMyUpcomingMeetings(ctx.user.id, args) },
-  asCaller(FIND_MUTUAL_FREEBUSY_TOOL, runFindMutualFreebusy),
-  {
-    def: SEARCH_DIRECTORY_TOOL,
-    run: (_ctx, args) => runSearchDirectory(args as Parameters<typeof runSearchDirectory>[0]),
-  },
   asCaller(GET_MEMBER_PROFILE_TOOL, runGetMemberProfile),
   {
     def: SCHEDULE_MEETING_TOOL,
@@ -91,17 +73,12 @@ export const BASE_TOOLS: McpTool[] = [
   asCaller(SET_NOTIFICATION_PREFERENCE_TOOL, runSetNotificationPreference),
   asCaller(CANCEL_MEETING_TOOL, runCancelMeeting),
   asCaller(LIST_GROUPS_TOOL, runListGroups),
-  asCaller(LIST_MY_PROJECTS_TOOL, runListMyProjects),
   asCaller(LIST_PROJECTS_TOOL, runListProjects),
+  asCaller(GET_PROJECT_TOOL, runGetProject),
   { def: LIST_TERMS_TOOL, run: () => runListTerms() },
-  {
-    def: GET_PROJECT_OVERVIEW_TOOL,
-    run: (_ctx, args) => runGetProjectOverview(args as Parameters<typeof runGetProjectOverview>[0]),
-  },
   asCaller(LIST_MY_TASKS_TOOL, runListMyTasks),
   asCaller(GET_TASK_TOOL, runGetTask),
   asCaller(CREATE_PROJECT_TOOL, runCreateProject),
-  asCaller(ADD_TASK_COMMENT_TOOL, runAddTaskComment),
   asCaller(LIST_SPRINTS_TOOL, runListSprints),
   asCaller(LIST_EPICS_TOOL, runListEpics),
   asCaller(LIST_PROJECT_PAGES_TOOL, runListProjectPages),
@@ -110,14 +87,9 @@ export const BASE_TOOLS: McpTool[] = [
   asCaller(SET_PAGE_CONTENT_TOOL, runSetPageContent),
   asCaller(LIST_PROJECT_FILES_TOOL, runListProjectFiles),
   asCaller(UPLOAD_PROJECT_FILE_TOOL, runUploadProjectFile),
-  asCaller(LIST_MY_ROLES_TOOL, runListMyRoles),
   asCaller(LIST_MY_TIME_ENTRIES_TOOL, runListMyTimeEntries),
-  asCaller(GET_PROJECT_SETTINGS_TOOL, runGetProjectSettings),
-  asCaller(GET_PROJECT_SHOWCASE_TOOL, runGetProjectShowcase),
   asCaller(UPDATE_PROJECT_SHOWCASE_TOOL, runUpdateProjectShowcase),
   asCaller(GET_STAFFING_BOARD_TOOL, runGetStaffingBoard),
-  asCaller(SET_STAFFING_ASSIGNMENT_TOOL, runSetStaffingAssignment),
-  asCaller(SET_DOMAIN_ELIGIBILITY_TOOL, runSetDomainEligibility),
   asCaller(LIST_DOCUMENT_SHARING_TOOL, runListDocumentSharing),
   asCaller(LIST_FILE_SHARES_TOOL, runListFileShares),
   asCaller(LIST_PAGE_SHARES_TOOL, runListPageShares),

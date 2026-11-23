@@ -4,7 +4,7 @@ import { notePageId } from "~/lib/mobile-notes";
 import type { SearchResult, SearchResultType } from "~/lib/search";
 import type { AskSourceInput, AskSourceKind } from "./sources";
 import type { runMcpSearch } from "~/mcp/tools/docs/search";
-import type { runSearchDirectory } from "~/mcp/tools/search-directory";
+import type { runListMembers } from "~/mcp/tools/personal/list-members";
 import type { runGetMemberProfile } from "~/mcp/tools/get-member-profile";
 import type { runReadPage } from "~/mcp/tools/read-page";
 import type { runListProjectPages } from "~/mcp/tools/list-project-pages";
@@ -14,9 +14,9 @@ import type { runSearchCalendar } from "~/mcp/tools/calendar-extra/search-calend
 import type { runListMyUpcomingMeetings } from "~/mcp/tools/list-my-upcoming-meetings";
 import type { runListMyTasks } from "~/mcp/tools/list-my-tasks";
 import type { runGetTask } from "~/mcp/tools/get-task";
-import type { runListMyProjects } from "~/mcp/tools/list-my-projects";
+import type { runListProjects } from "~/mcp/tools/list-projects";
 import type { runReadHelp } from "~/mcp/tools/read-help";
-import type { runGetProjectOverview } from "~/mcp/tools/get-project-overview";
+import type { runGetProject } from "~/mcp/tools/get-project";
 
 type Args = Record<string, unknown>;
 
@@ -113,9 +113,9 @@ const TOOLS = {
           : [],
       ),
   }),
-  search_directory: defineAskTool<typeof runSearchDirectory>({
+  list_members: defineAskTool<typeof runListMembers>({
     status: (args) => `Looking up people${quoted(args)}`,
-    sources: (_args, p) => p.results.flatMap(person),
+    sources: (_args, p) => p.members.flatMap(person),
   }),
   get_member_profile: defineAskTool<typeof runGetMemberProfile>({
     status: () => "Reading a profile",
@@ -190,9 +190,9 @@ const TOOLS = {
     status: () => "Reading a task",
     sources: (_args, t) => task(t, str(t.project.id)),
   }),
-  list_my_projects: defineAskTool<typeof runListMyProjects>({
-    status: () => "Checking your projects",
-    sources: (_args, p) => p.projects.flatMap(project),
+  list_projects: defineAskTool<typeof runListProjects>({
+    status: (args) => (args.mine ? "Checking your projects" : "Listing projects"),
+    sources: (_args, p) => (p.projects as { id: string; name: string }[]).flatMap(project),
   }),
   read_help: defineAskTool<typeof runReadHelp>({
     status: (args) => (typeof args.slug === "string" && args.slug ? "Reading the help" : "Checking the help"),
@@ -201,9 +201,13 @@ const TOOLS = {
       return [{ kind: "helpArticle", title: str(a.title) ?? "Help", url: a.url }, ...articleLinks(a.body)];
     },
   }),
-  get_project_overview: defineAskTool<typeof runGetProjectOverview>({
+  get_project: defineAskTool<typeof runGetProject>({
     status: () => "Reading a project",
-    sources: (_args, p) => project(p),
+    sources: (_args, p) => {
+      const part = p.overview ?? p.settings;
+      if (part) return project(part);
+      return p.showcase ? project({ id: p.showcase.projectId, name: p.showcase.projectName }) : [];
+    },
   }),
 };
 

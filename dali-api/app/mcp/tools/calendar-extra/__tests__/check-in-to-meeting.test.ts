@@ -25,10 +25,7 @@ vi.mock("~/calendar/lib/meeting-roster.server", () => ({ markMeetingAttendance: 
 
 import { prisma } from "~/lib/db.server";
 import { markMeetingAttendance } from "~/calendar/lib/meeting-roster.server";
-import {
-  runCheckInToMeeting,
-  CHECK_IN_TO_MEETING_DEF,
-} from "~/mcp/tools/calendar-extra/check-in-to-meeting";
+import { runCheckInToMeeting } from "~/mcp/tools/calendar-extra/check-in-to-meeting";
 
 const mockPrisma = prisma as unknown as {
   scheduledMeeting: { findUnique: ReturnType<typeof vi.fn> };
@@ -39,10 +36,6 @@ beforeEach(() => {
 });
 
 describe("check_in_to_meeting", () => {
-  it("requires the mcp:write scope", () => {
-    expect(CHECK_IN_TO_MEETING_DEF.requiredScope).toBe("mcp:write");
-  });
-
   it("throws McpNotFoundError when meeting is missing", async () => {
     mockPrisma.scheduledMeeting.findUnique.mockResolvedValue(null);
     await expect(

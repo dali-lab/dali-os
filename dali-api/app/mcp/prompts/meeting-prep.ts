@@ -30,7 +30,7 @@ export const MEETING_PREP_PROMPT: PromptDefinition = {
             "",
             "1. Call `list_my_upcoming_meetings` with `daysAhead: 14`. Find the meeting that best matches the user's description. If you can't pick a single one, ask the user to clarify before continuing.",
             "2. For each participantUserId on that meeting, call `get_member_profile` to pull their role/domains. Skip the caller themselves.",
-            "3. If the meeting title hints at a project (e.g. a project name), call `list_my_projects` to find a matching id, then `get_project_overview` for that project so you have current sprint/epic context.",
+            "3. If the meeting title hints at a project (e.g. a project name), call `list_projects` with `mine: true` to find a matching id, then `get_project` for that project so you have current sprint/epic context.",
             "",
             "Then write the briefing as markdown with these sections:",
             "",

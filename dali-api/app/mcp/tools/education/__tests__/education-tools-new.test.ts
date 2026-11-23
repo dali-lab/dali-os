@@ -125,7 +125,7 @@ import { saveEducationEmail } from "~/education/lib/education-emails.server";
 import { prisma } from "~/lib/db.server";
 
 import { SUBMIT_ASSIGNMENT_TOOL, runSubmitAssignment } from "../submit-assignment";
-import { CHECK_IN_TO_SESSION_TOOL, runCheckInToSession } from "../check-in-to-session";
+import { runCheckInToSession } from "../check-in-to-session";
 import { GRADE_SUBMISSION_TOOL, runGradeSubmission } from "../grade-submission";
 import { GET_CERTIFICATE_TOOL, runGetCertificate } from "../get-certificate";
 import {
@@ -203,9 +203,6 @@ beforeEach(() => {
 describe("scopes", () => {
   it("submit_assignment requires mcp:write", () => {
     expect(SUBMIT_ASSIGNMENT_TOOL.requiredScope).toBe("mcp:write");
-  });
-  it("check_in_to_session requires mcp:write", () => {
-    expect(CHECK_IN_TO_SESSION_TOOL.requiredScope).toBe("mcp:write");
   });
   it("grade_submission requires mcp:write", () => {
     expect(GRADE_SUBMISSION_TOOL.requiredScope).toBe("mcp:write");

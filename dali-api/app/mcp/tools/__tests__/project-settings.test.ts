@@ -7,7 +7,6 @@ vi.mock("~/lib/photo", () => ({ resolvePhotoUrl }));
 import { prisma } from "~/lib/db.server";
 import {
   runGetProjectSettings,
-  GET_PROJECT_SETTINGS_TOOL,
   ProjectSettingsNotFoundError,
 } from "~/mcp/tools/project-settings";
 
@@ -49,11 +48,7 @@ beforeEach(() => {
   resolvePhotoUrl.mockResolvedValue("https://cdn.example/photo.jpg");
 });
 
-describe("get_project_settings", () => {
-  it("scope is read", () => {
-    expect(GET_PROJECT_SETTINGS_TOOL.requiredScope).toBe("mcp:read");
-  });
-
+describe("project settings", () => {
   it("throws a 404 error for a missing project", async () => {
     mockPrisma.project.findUnique.mockResolvedValue(null);
     const err = await runGetProjectSettings("u1", { projectId: "nope" }).catch((e) => e);

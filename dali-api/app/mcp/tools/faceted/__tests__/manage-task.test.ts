@@ -7,6 +7,8 @@ vi.mock("../../update-task-status", async (orig) => ({ ...(await orig<object>())
 vi.mock("../../delete-task", async (orig) => ({ ...(await orig<object>()), runDeleteTask: vi.fn() }));
 vi.mock("../../set-task-checklist", async (orig) => ({ ...(await orig<object>()), runSetTaskChecklist: vi.fn() }));
 vi.mock("../../link-task-to-github", async (orig) => ({ ...(await orig<object>()), runLinkTaskToGithub: vi.fn() }));
+vi.mock("../../add-task-comment", async (orig) => ({ ...(await orig<object>()), runAddTaskComment: vi.fn() }));
+vi.mock("../../projects-extra/manage-task-files", async (orig) => ({ ...(await orig<object>()), runManageTaskFiles: vi.fn() }));
 vi.mock("../../unlink-task-from-github", async (orig) => ({ ...(await orig<object>()), runUnlinkTaskFromGithub: vi.fn() }));
 
 import { MANAGE_TASK_TOOL } from "../manage-task";
@@ -17,6 +19,8 @@ import { runDeleteTask } from "../../delete-task";
 import { runSetTaskChecklist } from "../../set-task-checklist";
 import { runLinkTaskToGithub } from "../../link-task-to-github";
 import { runUnlinkTaskFromGithub } from "../../unlink-task-from-github";
+import { runAddTaskComment } from "../../add-task-comment";
+import { runManageTaskFiles } from "../../projects-extra/manage-task-files";
 import { McpInvalidError } from "../../../errors";
 
 const ctx = { user: { id: "u1" }, scopes: ["mcp:write"], request: new Request("http://x") } as never;
@@ -29,12 +33,12 @@ describe("manage_task", () => {
   it("is one write tool with every task action", () => {
     expect(MANAGE_TASK_TOOL.def.name).toBe("manage_task");
     expect(MANAGE_TASK_TOOL.def.requiredScope).toBe("mcp:write");
-    expect(props.action.enum).toEqual(["create", "update", "set_status", "set_checklist", "delete", "link_github", "unlink_github"]);
+    expect(props.action.enum).toEqual(["create", "update", "set_status", "set_checklist", "delete", "link_github", "unlink_github", "comment", "link_file", "unlink_file"]);
     expect(MANAGE_TASK_TOOL.def.inputSchema.required).toEqual(["action"]);
   });
 
   it("carries the fields every action needs", () => {
-    for (const field of ["projectId", "core", "title", "taskId", "status", "priority", "assigneeUserIds", "mirrorToGithubRepo", "items", "repo"]) {
+    for (const field of ["projectId", "core", "title", "taskId", "status", "priority", "assigneeUserIds", "mirrorToGithubRepo", "items", "repo", "body", "fileId"]) {
       expect(props).toHaveProperty(field);
     }
     expect(props.status.enum).toContain("Done");
@@ -48,10 +52,20 @@ describe("manage_task", () => {
     ["delete", { taskId: "t1" }, runDeleteTask, { taskId: "t1" }],
     ["link_github", { taskId: "t1", repo: "o/r" }, runLinkTaskToGithub, { taskId: "t1", repo: "o/r" }],
     ["unlink_github", { taskId: "t1" }, runUnlinkTaskFromGithub, { taskId: "t1" }],
+    ["comment", { taskId: "t1", body: "hi", title: "ignored" }, runAddTaskComment, { taskId: "t1", body: "hi" }],
   ] as const)("%s calls its runner as the caller and returns its result", async (action, args, runner, expected) => {
     vi.mocked(runner).mockResolvedValue({ from: action } as never);
     await expect(run({ action, ...args })).resolves.toEqual({ from: action });
     expect(runner).toHaveBeenCalledWith("u1", expected, ...(action === "delete" ? [ctx] : []));
+  });
+
+  it.each([
+    ["link_file", "link"],
+    ["unlink_file", "unlink"],
+  ] as const)("%s routes to the task file runner as %s", async (action, mapped) => {
+    vi.mocked(runManageTaskFiles).mockResolvedValue({ ok: true });
+    await expect(run({ action, taskId: "t1", fileId: "f1" })).resolves.toEqual({ ok: true });
+    expect(runManageTaskFiles).toHaveBeenCalledWith("u1", { action: mapped, taskId: "t1", fileId: "f1" });
   });
 
   it("passes each runner only its own fields", async () => {
@@ -71,9 +85,13 @@ describe("manage_task", () => {
     ["delete", {}],
     ["link_github", { taskId: "t1" }],
     ["unlink_github", {}],
+    ["comment", { taskId: "t1" }],
+    ["comment", { body: "hi" }],
+    ["link_file", { taskId: "t1" }],
+    ["unlink_file", { fileId: "f1" }],
   ])("%s rejects missing required fields without calling a runner", async (action, args) => {
     await expect(run({ action, ...args })).rejects.toBeInstanceOf(McpInvalidError);
-    for (const r of [runCreateTask, runUpdateTask, runUpdateTaskStatus, runSetTaskChecklist, runDeleteTask, runLinkTaskToGithub, runUnlinkTaskFromGithub]) {
+    for (const r of [runCreateTask, runUpdateTask, runUpdateTaskStatus, runSetTaskChecklist, runDeleteTask, runLinkTaskToGithub, runUnlinkTaskFromGithub, runAddTaskComment, runManageTaskFiles]) {
       expect(r).not.toHaveBeenCalled();
     }
   });

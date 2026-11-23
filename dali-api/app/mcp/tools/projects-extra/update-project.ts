@@ -16,7 +16,7 @@ export class UpdateProjectError extends Error {
 export const UPDATE_PROJECT_TOOL = {
   name: "update_project",
   description:
-    "Edit a project's settings. Writable fields: name, status (Active/Paused/Archived), iconEmoji, description, imageUrl, isPrivate, calendarEmail, repoUrls, deploymentUrl, termCount, githubTeamSlug, slackChannelName. Requires Core or project-member access; status and isPrivate are Core only. Pairs with `get_project_settings` which reads these same fields.",
+    "Edit a project's settings. Writable fields: name, status (Active/Paused/Archived), iconEmoji, description, imageUrl, isPrivate, calendarEmail, repoUrls, deploymentUrl, termCount, githubTeamSlug, slackChannelName. Requires Core or project-member access; status and isPrivate are Core only. Pairs with `get_project (include settings)` which reads these same fields.",
   inputSchema: {
     type: "object" as const,
     properties: {
