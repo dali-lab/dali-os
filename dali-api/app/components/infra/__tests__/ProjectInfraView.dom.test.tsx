@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { ProjectInfraView } from "../ProjectInfraView";
@@ -62,7 +62,13 @@ function render(project = fleet()) {
 afterEach(() => {
   act(() => root?.unmount());
   container.remove();
+  vi.useRealTimers();
 });
+
+const pinToday = (day: string) => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date(`${day}T12:00:00Z`));
+};
 
 const hrefs = () => Array.from(container.querySelectorAll("a")).map((a) => a.getAttribute("href"));
 
@@ -146,6 +152,7 @@ describe("ProjectInfraView", () => {
   });
 
   it("shows the Fly traffic chart once daily Fly usage exists", () => {
+    pinToday("2026-10-25");
     render(
       fleet({
         flyDaily: [{ day: "2026-10-24", app: "web", requests: 1200, errors_5xx: 3, p95_ms: 420, memory_peak_bytes: 5e8 }],
@@ -156,6 +163,7 @@ describe("ProjectInfraView", () => {
   });
 
   it("doesn't say there are no samples when only a chart has data", () => {
+    pinToday("2026-10-25");
     render(
       fleet({
         flyDaily: [{ day: "2026-10-24", app: "web", requests: 1, errors_5xx: 0, p95_ms: null, memory_peak_bytes: null }],
