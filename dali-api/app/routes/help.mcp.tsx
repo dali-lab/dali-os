@@ -6,7 +6,7 @@ import type { Route } from "./+types/help.mcp";
 import { getApiBaseUrl } from "~/lib/app-env";
 
 // This page intentionally describes the MCP surface by CATEGORY rather than
-// enumerating every tool: the catalog is large (~140 tools) and changes often,
+// enumerating every tool: the catalog is large and changes often,
 // and importing the live tool defs here would pull the server tool graph
 // (prisma, collab auth, notifications) into the client bundle. The client's own
 // tools/list is the always-current, authoritative catalog.
@@ -27,7 +27,7 @@ const TOOL_CATEGORIES: { area: string; scope: string; blurb: string }[] = [
   { area: "Hiring", scope: "read only", blurb: "cycles, applications + full context, reviews, decisions, interviews, waitlist — read-only by design" },
   { area: "Education", scope: "read / write", blurb: "offerings, assignments, CE standing; apply/withdraw; instructors manage offerings, sessions, attendance, decisions" },
   { area: "Mentorship", scope: "read / write", blurb: "mentor notes + pairs (mentors & Core only; never visible to mentees)" },
-  { area: "Signing & forms", scope: "read / write", blurb: "documents to sign + sign them; submit forms; Core manages agreements & the form library" },
+  { area: "Signing & forms", scope: "read / write", blurb: "documents to sign + sign them; submit forms; build and edit forms you can edit; Core manages agreements" },
   { area: "Partners", scope: "read / write / admin", blurb: "partner orgs, applications pipeline, membership; promote an application to a project (admin)" },
   { area: "Lab admin", scope: "admin", blurb: "announcements, groups, domain leads, audit logs, background jobs, staffing finalize — Core/Admin only" },
 ];
@@ -114,13 +114,12 @@ export default function McpHelpPage({ loaderData }: Route.ComponentProps) {
       <section className="mt-6">
         <h2 className="text-lg font-semibold">What can an assistant do?</h2>
         <p className="mt-2 text-sm text-muted-foreground">
-          DALI OS exposes a large MCP catalog (~140 tools) across the areas
-          below. Two things always hold: reads only ever return what you're
-          already allowed to see, and <code className="font-mono">mcp:admin</code>{" "}
-          actions additionally require you to personally hold the relevant lab
-          role (Core/Admin) — the scope alone isn't enough. Your client's{" "}
-          <em>tools/list</em> shows the full, current catalog with per-tool
-          descriptions.
+          DALI OS offers MCP tools across the areas below. Reads only return
+          what you can already see, and every tool checks your lab role each
+          time it runs, so a scope alone isn't enough. Your client's{" "}
+          <em>tools/list</em> shows the tools you can use, with a description
+          of each. Tools only Core or Admin can use aren't listed for other
+          members.
         </p>
         <div className="mt-3 overflow-x-auto">
           <table className="w-full text-sm">

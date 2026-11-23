@@ -2,6 +2,7 @@ import { validateInput, type JsonSchema } from "~/lib/mcp-input";
 import { logMcpToolCall, type McpToolOrigin } from "./audit.server";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { getUserRoles } from "~/lib/roles";
+import { audienceAllows } from "./tool-policy";
 import {
   findRegistryTool,
   mapToolError,
@@ -24,11 +25,13 @@ export type DispatchResult =
 export async function visibleToolDefs(
   caller: Pick<McpCtx, "user" | "scopes" | "request">,
 ): Promise<McpToolDef[]> {
-  const inScope = registryToolDefs().filter((d) => caller.scopes.includes(d.requiredScope));
+  const roles = await getUserRoles(caller.user.id, caller.request);
+  const inScope = registryToolDefs().filter(
+    (d) => caller.scopes.includes(d.requiredScope) && audienceAllows(d.name, roles),
+  );
   const flagFor = (d: McpToolDef) => findRegistryTool(d.name)?.featureFlag;
   const flags = [...new Set(inScope.map(flagFor).filter((f) => f !== undefined))];
   if (flags.length === 0) return inScope;
-  const roles = await getUserRoles(caller.user.id, caller.request);
   const enabled = new Map(
     await Promise.all(
       flags.map(
