@@ -10,6 +10,7 @@ import { logAuditEvent } from "~/lib/audit";
 import { enterAgentContext } from "~/collab/agent-presence.server";
 import { safeJson } from "~/lib/safe-json";
 import { dispatchTool, visibleToolDefs } from "~/mcp/dispatch.server";
+import { toolAnnotations } from "~/mcp/tool-policy";
 import { MemberNotFoundError } from "~/mcp/tools/get-member-profile";
 import { ME_RESOURCE, readMeResource } from "~/mcp/resources/me";
 import {
@@ -169,6 +170,7 @@ export async function action({ request }: Route.ActionArgs) {
           name: d.name,
           description: d.description,
           inputSchema: d.inputSchema,
+          annotations: toolAnnotations(d),
         })),
       });
 

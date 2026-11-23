@@ -120,8 +120,8 @@ describe("scopes", () => {
   it("submit_form requires mcp:write", () => {
     expect(SUBMIT_FORM_TOOL.requiredScope).toBe("mcp:write");
   });
-  it("manage_form requires mcp:admin", () => {
-    expect(MANAGE_FORM_TOOL.requiredScope).toBe("mcp:admin");
+  it("manage_form requires mcp:write, leaving access to the form's own edit check", () => {
+    expect(MANAGE_FORM_TOOL.requiredScope).toBe("mcp:write");
   });
   it("the form read tools require mcp:read", () => {
     expect(GET_FORM_TOOL.requiredScope).toBe("mcp:read");

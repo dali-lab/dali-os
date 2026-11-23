@@ -1,7 +1,3 @@
-// MCP tool: manage_form — create, version, publish, configure, or delete a form.
-// All mutations go through runFormsAction, which owns validation and business logic.
-// Scope: mcp:admin; edit access on the form (create: on the folder).
-
 import { runFormsAction } from "~/forms/lib/forms-data";
 import { canBuildForm, canCreateForm } from "~/forms/lib/form-access.server";
 import { deleteFormResponse } from "~/forms/lib/form-response.server";
@@ -125,7 +121,7 @@ export const MANAGE_FORM_TOOL = {
     required: ["action"],
     additionalProperties: false,
   },
-  requiredScope: "mcp:admin" as const,
+  requiredScope: "mcp:write" as const,
 };
 
 const ACTION_REQUIRED: Record<string, string[]> = {

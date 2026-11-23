@@ -226,12 +226,19 @@ describe("tools/list", () => {
     expect(result.tools.map((t: { name: string }) => t.name)).toContain("flagged_tool");
   });
 
-  it("lists registry tools with only name, description and schema", async () => {
+  it("lists registry tools with name, description, schema and annotations", async () => {
     const { result } = await (await rpc("tools/list")).json();
     expect(result.tools.map((t: { name: string }) => t.name)).toEqual(["reg_tool", "read_tool"]);
     for (const t of result.tools) {
-      expect(Object.keys(t).sort()).toEqual(["description", "inputSchema", "name"]);
+      expect(Object.keys(t).sort()).toEqual(["annotations", "description", "inputSchema", "name"]);
     }
+  });
+
+  it("marks read tools read-only and write tools destructive by default", async () => {
+    const { result } = await (await rpc("tools/list")).json();
+    const byName = Object.fromEntries(result.tools.map((t: { name: string; annotations: unknown }) => [t.name, t.annotations]));
+    expect(byName.read_tool).toEqual({ readOnlyHint: true });
+    expect(byName.reg_tool).toEqual({ readOnlyHint: false, destructiveHint: true, openWorldHint: false });
   });
 
   it("lists only the tools a read-only caller can call", async () => {

@@ -33,6 +33,10 @@ vi.mock("~/mcp/registry", async () => {
       run: h.writeRun,
     },
   };
+  tools.list_partner_orgs = {
+    def: { name: "list_partner_orgs", description: "c", requiredScope: "mcp:read", inputSchema: schema },
+    run: vi.fn(),
+  };
   tools.flagged_tool = {
     def: { name: "flagged_tool", description: "f", requiredScope: "mcp:read", inputSchema: schema },
     run: h.flaggedRun,
@@ -223,9 +227,9 @@ describe("feature-flagged tools", () => {
   it("omits flag-off tools from the visible list and keeps scope filtering", async () => {
     h.isFeatureEnabled.mockResolvedValue(false);
     const names = (await visibleToolDefs(MCP)).map((d) => d.name);
-    expect(names).toEqual(["read_page", "set_page_content"]);
+    expect(names).toEqual(["read_page", "set_page_content", "list_partner_orgs"]);
     const readOnly = (await visibleToolDefs({ ...MCP, scopes: ["mcp:read"] })).map((d) => d.name);
-    expect(readOnly).toEqual(["read_page"]);
+    expect(readOnly).toEqual(["read_page", "list_partner_orgs"]);
   });
 
   it("lists a flag-on tool and evaluates each flag once", async () => {
@@ -233,5 +237,26 @@ describe("feature-flagged tools", () => {
     const names = (await visibleToolDefs(MCP)).map((d) => d.name);
     expect(names).toContain("flagged_tool");
     expect(h.isFeatureEnabled).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("role-limited tools", () => {
+  it("hides a Core-only tool from a member who isn't Core", async () => {
+    h.getUserRoles.mockResolvedValue({ isCore: false });
+    const names = (await visibleToolDefs(MCP)).map((d) => d.name);
+    expect(names).toEqual(["read_page", "set_page_content"]);
+    expect(h.getUserRoles).toHaveBeenCalledWith("u1", request);
+  });
+
+  it("lists a Core-only tool for Core", async () => {
+    h.getUserRoles.mockResolvedValue({ isCore: true });
+    expect((await visibleToolDefs(MCP)).map((d) => d.name)).toContain("list_partner_orgs");
+  });
+
+  it("still lets a hidden tool run, leaving the decision to the tool's own check", async () => {
+    h.getUserRoles.mockResolvedValue({ isCore: false });
+    const run = (await import("~/mcp/registry")).findRegistryTool("list_partner_orgs")!.run as ReturnType<typeof vi.fn>;
+    run.mockRejectedValue(new McpForbiddenError("Core only"));
+    expect(await dispatchTool("list_partner_orgs", PAGE, MCP)).toEqual({ ok: false, code: -32003, message: "Core only" });
   });
 });

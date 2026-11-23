@@ -7481,7 +7481,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
     ],
     "additionalProperties": false
   },
-  "requiredScope": "mcp:admin"
+  "requiredScope": "mcp:write"
 }
 {
   "name": "create_payroll_csv_upload",

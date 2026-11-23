@@ -6,6 +6,7 @@ import { REGISTRY_TOOLS, findRegistryTool, registryToolDefs } from "../registry"
 import { FEATURE_FLAGS } from "~/lib/feature-flags";
 import { validateInput } from "~/lib/mcp-input";
 import { ASK_TOOL_NAMES } from "~/ask/tools.server";
+import { ADDITIVE_TOOLS, OPEN_WORLD_TOOLS, TOOL_AUDIENCE } from "../tool-policy";
 
 const VALIDATOR_KEYS = new Set([
   "type", "properties", "required", "additionalProperties", "items", "enum",
@@ -74,7 +75,7 @@ describe("MCP registry invariants", () => {
   it("keeps the known scope exceptions pinned", () => {
     const scope = (n: string) => REGISTRY_TOOLS.find((t) => t.def.name === n)?.def.requiredScope;
     expect({ manage_form: scope("manage_form"), manage_page: scope("manage_page") }).toEqual({
-      manage_form: "mcp:admin",
+      manage_form: "mcp:write",
       manage_page: "mcp:write",
     });
   });
@@ -115,6 +116,17 @@ describe("MCP registry invariants", () => {
     }
     expect(findRegistryTool("backfill_hiring_cycle")).toBeDefined();
     expect(findRegistryTool("get_backfill_state")).toBeDefined();
+  });
+
+  it("names only registered tools in the tool policy", () => {
+    const names = new Set(REGISTRY_TOOLS.map((t) => t.def.name));
+    const listed = [...Object.keys(TOOL_AUDIENCE), ...ADDITIVE_TOOLS, ...OPEN_WORLD_TOOLS];
+    expect(listed.filter((n) => !names.has(n))).toEqual([]);
+  });
+
+  it("lists only write and admin tools as additive or open-world", () => {
+    const scope = new Map(REGISTRY_TOOLS.map((t) => [t.def.name, t.def.requiredScope]));
+    expect([...ADDITIVE_TOOLS, ...OPEN_WORLD_TOOLS].filter((n) => scope.get(n) === "mcp:read")).toEqual([]);
   });
 
   it("advertises every registry tool", () => {
