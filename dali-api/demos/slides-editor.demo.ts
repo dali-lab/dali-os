@@ -2,7 +2,6 @@ import { expect, setFeatureFlag, test } from './lib/demo';
 
 test('Edit a slide deck together', async ({ page, stage, loginAs }) => {
   await setFeatureFlag('drive-slides', true);
-  await setFeatureFlag('slides-collab', true);
   await loginAs({ daliEmail: 'admin@dali.dartmouth.edu' });
 
   const created = await page.request.post('/api/lab-documents', { data: { title: 'Demo day deck', kind: 'Slides' } });

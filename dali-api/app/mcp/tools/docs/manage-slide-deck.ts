@@ -1,21 +1,13 @@
+import type * as Y from "yjs";
 import { McpError, requireForAction } from "../../errors";
-import { getUserRoles } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { prisma } from "~/lib/db.server";
 import { announceAgent, pagePresenceRoom } from "~/collab/agent-presence.server";
-import { deckAccess, deckStorage, editDeck, loadDeck, migrateDeckOnOpen, readDeckModel, type DeckResult } from "~/lib/slide-decks.server";
-import { parseSlides } from "~/components/slides/slide-schema";
-import { applySlides } from "~/collab/deck-write.server";
+import { deckAccess, readDeckModel, type DeckResult } from "~/lib/slide-decks.server";
 import { transactDeck } from "~/collab/deck-live.server";
-import {
-  SLIDE_INPUT_SCHEMA,
-  applySlideInput,
-  slideToOutput,
-  type SlideInput,
-  type SlideOutput,
-} from "~/components/slides/slide-markdown.server";
-import { moveItem } from "~/components/slides/slide-edit";
-import { setLayout, setThemeId } from "~/components/slides/deck/deck-ops";
+import { slidesRoomName } from "~/collab/roomName";
+import type { DeckRead, DeckReadSlide } from "~/collab/read-deck.server";
+import { richDocToMarkdown } from "~/components/slides/slide-markdown.server";
+import { setThemeId, deleteSlide, moveSlide } from "~/components/slides/deck/deck-ops";
 import { isDeleted, slidesMap, tombstoneSlide } from "~/components/slides/deck/model";
 import {
   DECK_ACTIONS,
@@ -23,21 +15,28 @@ import {
   HTML_NOTE,
   LAYOUT_IDS,
   THEME_IDS,
-  deckModelView,
   exportLinks,
+  liveSlide,
   slideView,
   runDeckAction,
   type DeckAction,
   type DeckArgs,
 } from "./slide-deck-elements";
-import type { Slide } from "~/components/slides/types";
 import { pageArray, pageProps, type PageArgs } from "../../pagination";
-import { OUTLINE_SLIDE_SCHEMA, MAX_OUTLINE_SLIDES, prepareOutline, writeOutline, type OutlineSlide } from "./slide-outline";
+import {
+  OUTLINE_SLIDE_SCHEMA,
+  MAX_OUTLINE_SLIDES,
+  prepareOutline,
+  prepareSlideUpdate,
+  writeOutline,
+  writeSlideUpdate,
+  type OutlineSlide,
+} from "./slide-outline";
 import { runCreateLabDocument } from "./lab-documents";
 
 const PAGE_LIMITS = { defaultLimit: 50, maxLimit: 200 };
 
-const SLIDE_ACTIONS = ["create", "set_slides", "add_slide", "add_slides", "update_slide", "delete_slide", "move_slide", "duplicate_slide", "set_layout", "set_theme"] as const;
+const SLIDE_ACTIONS = ["create", "set_slides", "add_slides", "update_slide", "delete_slide", "move_slide", "duplicate_slide", "set_layout", "set_theme"] as const;
 const ELEMENT_ACTIONS = ["add_element", "update_element", "delete_elements", "duplicate_elements", "reorder_elements", "group_elements", "ungroup_elements", "align_elements", "distribute_elements", "snap_back"] as const;
 const ACTIONS = ["get", "export", ...SLIDE_ACTIONS, ...ELEMENT_ACTIONS] as const;
 type Action = (typeof ACTIONS)[number];
@@ -67,7 +66,7 @@ export const GET_SLIDE_DECK_TOOL_DEF = {
 export const MANAGE_SLIDE_DECK_TOOL_DEF = {
   name: "manage_slide_deck",
   description:
-    "Create or edit a Drive slide deck. Actions: create (a new lab deck from an outline in one step; returns pageId and every slide with its element ids; needs the live deck editor to be on for you) · set_slides (replace every slide) · add_slide (optional index, else at the end; layoutId for any layout) · add_slides (draft several slides at once from an outline: each has a layoutId, text per box in slots, notes and free elements) · update_slide (fields left out are kept) · delete_slide · move_slide (to toIndex) · duplicate_slide · set_layout · set_theme. Bodies are Markdown, including pipe tables and fenced code blocks. An outline slide with html makes a slide whose content is your own HTML, CSS and script. " + HTML_NOTE + " Read the deck with get_slide_deck; edit what's on a slide with manage_slide_elements. set_slides, add_slide, update_slide, delete_slide and move_slide return the whole deck; the others return what they changed.",
+    "Create or edit a Drive slide deck. Slides are written as outline slides: a layoutId, text per box in slots, notes and free elements. Actions: create (a new lab deck from an outline; returns pageId and every slide with its element ids) · set_slides (replace every slide with an outline) · add_slides (add outline slides at index, else at the end) · update_slide (change one slide from an outline slide; fields left out are kept, including its notes) · delete_slide · move_slide (to toIndex) · duplicate_slide · set_layout · set_theme. Bodies are Markdown, including pipe tables and fenced code blocks. An outline slide with html makes a slide whose content is your own HTML, CSS and script. " + HTML_NOTE + " Read the deck with get_slide_deck; edit what's on a slide with manage_slide_elements. set_slides, update_slide, delete_slide and move_slide return the whole deck; the others return what they changed.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -75,14 +74,13 @@ export const MANAGE_SLIDE_DECK_TOOL_DEF = {
       pageId: { ...pageIdProp, description: "The deck's page id. Every action except create." },
       title: { type: "string", minLength: 1, maxLength: 200, description: "create: the new deck's title." },
       parentPageId: { type: "string", description: "create: put the deck inside an existing top-level Lab folder. Omit for the top level." },
-      slides: { type: "array", items: SLIDE_INPUT_SCHEMA, maxItems: 300, description: "set_slides: the whole deck, in order." },
-      slide: { ...SLIDE_INPUT_SCHEMA, description: "add_slide and update_slide: the slide's fields." },
+      slide: { ...OUTLINE_SLIDE_SCHEMA, description: "update_slide: the changes to the slide. Fields left out are kept. Free elements are added to the slide; html is not taken." },
       slideId: { ...slideIdProp, description: "update_slide, delete_slide, move_slide, duplicate_slide and set_layout." },
-      index: { type: "number", minimum: 0, description: "add_slide and add_slides: where to insert, 0-based." },
+      index: { type: "number", minimum: 0, description: "add_slides: where to insert, 0-based." },
       toIndex: { type: "number", minimum: 0, description: "move_slide: the new 0-based position." },
-      outline: { type: "array", items: OUTLINE_SLIDE_SCHEMA, minItems: 1, maxItems: MAX_OUTLINE_SLIDES, description: "create: the deck's slides, in order. add_slides: the slides to add, in order, at index (the end when left out)." },
+      outline: { type: "array", items: OUTLINE_SLIDE_SCHEMA, minItems: 1, maxItems: MAX_OUTLINE_SLIDES, description: "create and set_slides: the deck's slides, in order. add_slides: the slides to add, in order, at index (the end when left out)." },
       themeId: { type: "string", enum: THEME_IDS, description: "create (defaults to the standard dark theme) and set_theme." },
-      layoutId: { type: "string", enum: LAYOUT_IDS, description: "set_layout, and add_slide for layouts beyond the four in slide.layout." },
+      layoutId: { type: "string", enum: LAYOUT_IDS, description: "set_layout." },
       ...pageProps(PAGE_LIMITS),
     },
     required: ["action"],
@@ -117,8 +115,7 @@ export const MANAGE_SLIDE_ELEMENTS_TOOL_DEF = {
 
 const DECK_ACTION_REQUIRED: Record<string, string[]> = {
   get: [],
-  set_slides: ["slides"],
-  add_slide: ["slide"],
+  set_slides: ["outline"],
   update_slide: ["slideId", "slide"],
   delete_slide: ["slideId"],
   move_slide: ["slideId", "toIndex"],
@@ -149,8 +146,7 @@ type Args = PageArgs & Omit<DeckArgs, "pageId"> & {
   pageId?: string;
   title?: string;
   parentPageId?: string;
-  slides?: SlideInput[];
-  slide?: SlideInput;
+  slide?: OutlineSlide;
   slideId?: string;
   outline?: OutlineSlide[];
   index?: number;
@@ -164,32 +160,36 @@ function unwrap<T extends object>(result: DeckResult<T>): T {
   return result;
 }
 
-function indexOfSlide(slides: Slide[], slideId: string): number {
-  const at = slides.findIndex((s) => s.id === slideId);
-  if (at < 0) throw new McpError("Slide not found.", 404);
-  return at;
+const slotsOf = async (slide: DeckReadSlide) => {
+  const slots: Record<string, string | { src: string; alt: string }> = {};
+  for (const el of slide.elements) {
+    if (el.slot === null) continue;
+    if (el.kind === "text") {
+      const markdown = await richDocToMarkdown(el.blocks as never);
+      if (markdown) slots[el.slot] = markdown;
+    } else if (el.kind === "image" && el.src) slots[el.slot] = { src: el.src, alt: el.alt ?? "" };
+  }
+  return slots;
+};
+
+async function slideSummary(slide: DeckReadSlide) {
+  return { id: slide.id, layoutId: slide.layoutId, slots: await slotsOf(slide), ...(slide.notes.text ? { notes: slide.notes.text } : {}) };
 }
 
-async function deckOutput(title: string, slides: Slide[], version: string) {
-  return { title, version, slides: await Promise.all(slides.map(slideToOutput)) };
+async function deckOutput(title: string, read: DeckRead) {
+  return { title, themeId: read.themeId, slides: await Promise.all(read.slides.map(slideSummary)) };
 }
 
-type SlideAction = "get" | "set_slides" | "add_slide" | "update_slide" | "delete_slide" | "move_slide";
-type SlideOutputDeck = { title: string; version: string; slides: SlideOutput[]; page?: ReturnType<typeof pageArray>["page"] };
+type SlideAction = "get" | "set_slides" | "update_slide" | "delete_slide" | "move_slide";
+type SlideOutputDeck = { title: string; themeId: string; slides: Awaited<ReturnType<typeof slideSummary>>[]; page?: ReturnType<typeof pageArray>["page"] };
 
 async function createDeck(userId: string, args: Args) {
   if (args.themeId !== undefined && !THEME_IDS.includes(args.themeId)) throw new McpError(`themeId must be one of: ${THEME_IDS.join(", ")}.`, 400);
   const prepared = await prepareOutline(args.outline!);
-  if (!(await isFeatureEnabled("slides-collab", userId, await getUserRoles(userId)))) {
-    throw new McpError("The live deck editor isn't on for you, so a deck can't be drafted from an outline.", 400);
-  }
   const { id } = await runCreateLabDocument(userId, { title: args.title!, kind: "Slides", parentPageId: args.parentPageId });
-  if ((await migrateDeckOnOpen(userId, id)) !== "yjs") throw new McpError("The new deck couldn't be opened for editing.", 500);
   let slideIds: string[] = [];
   await transactDeck(id, userId, (doc) => {
-    slidesMap(doc).forEach((slide) => {
-      if (!isDeleted(slide)) tombstoneSlide(slide);
-    });
+    clearSlides(doc);
     if (args.themeId) setThemeId(doc, args.themeId);
     slideIds = writeOutline(doc, prepared);
   });
@@ -197,6 +197,18 @@ async function createDeck(userId: string, args: Args) {
   const read = await readDeckModel(id);
   const created = slideIds.map((sid) => read.slides.find((s) => s.id === sid)!).filter(Boolean);
   return { pageId: id, title: args.title, themeId: read.themeId, slides: await Promise.all(created.map((s) => slideView(s))) };
+}
+
+function clearSlides(doc: Y.Doc): void {
+  slidesMap(doc).forEach((slide) => {
+    if (!isDeleted(slide)) tombstoneSlide(slide);
+  });
+}
+
+async function editDeck(userId: string, pageId: string, title: string, mutate: (doc: Y.Doc) => void) {
+  await transactDeck(pageId, userId, mutate);
+  await prisma.page.update({ where: { id: pageId }, data: { lastEditedById: userId } });
+  return deckOutput(title, await readDeckModel(pageId));
 }
 
 export function runManageSlideDeck(userId: string, args: Args & { action: "create" }): ReturnType<typeof createDeck>;
@@ -210,25 +222,20 @@ export async function runManageSlideDeck(userId: string, input: Args) {
   if (args.action === "get" || args.action === "export") void announceAgent({ action: "reading", presenceRoom: pagePresenceRoom(args.pageId) });
 
   if (args.action === "get") {
-    const deck = await loadDeck(args.pageId);
-    const { rows, page: pageInfo } = pageArray(deck.slides, args, PAGE_LIMITS);
-    const out = { ...(await deckOutput(page.title, rows, deck.version)), page: pageInfo };
+    const read = await readDeckModel(args.pageId);
+    const { rows, page: pageInfo } = pageArray(read.slides, args, PAGE_LIMITS);
+    const out = { ...(await deckOutput(page.title, { ...read, slides: rows })), page: pageInfo };
     if (!args.elements) return out;
-    const model = await deckModelView(args.pageId, rows.map((s) => s.id), { includeHtml: args.includeHtml === true });
-    return {
-      ...out,
-      themeId: model.themeId,
-      docName: model.docName,
-      slides: out.slides.map((s, i) => ({ ...s, ...(model.slides[i] ?? {}) })),
-    };
+    const views = await Promise.all(rows.map((s) => slideView(s, { includeHtml: args.includeHtml === true })));
+    return { ...out, docName: slidesRoomName(args.pageId), slides: out.slides.map((s, i) => ({ ...s, ...views[i] })) };
   }
 
+  if (args.action === "export") return { title: page.title, ...exportLinks(args.pageId, canEdit) };
+
+  if (!canEdit) throw new McpError("You can view this deck but not edit it.", 403);
+
   if (args.action === "add_slides") {
-    if (!canEdit) throw new McpError("You can view this deck but not edit it.", 403);
     const prepared = await prepareOutline(args.outline!);
-    if ((await migrateDeckOnOpen(userId, args.pageId)) !== "yjs") {
-      throw new McpError("This deck still uses the older slides editor, which can't do that. Ask an admin to turn on the live deck editor.", 400);
-    }
     let slideIds: string[] = [];
     await transactDeck(args.pageId, userId, (doc) => {
       slideIds = writeOutline(doc, prepared, args.index);
@@ -239,68 +246,40 @@ export async function runManageSlideDeck(userId: string, input: Args) {
     return { title: page.title, slideIds, slides: await Promise.all(added.map((s) => slideView(s))) };
   }
 
-  if (args.action === "export") return { title: page.title, ...exportLinks(args.pageId, canEdit) };
-
   if ((DECK_ACTIONS as readonly string[]).includes(args.action)) {
-    if (!canEdit) throw new McpError("You can view this deck but not edit it.", 403);
     return { title: page.title, ...(await runDeckAction(userId, args.action as DeckAction, args)) };
   }
 
-  if (args.action === "add_slide" && args.layoutId !== undefined) {
-    if (!LAYOUT_IDS.includes(args.layoutId)) throw new McpError(`layoutId must be one of: ${LAYOUT_IDS.join(", ")}.`, 400);
-    if (!canEdit) throw new McpError("You can view this deck but not edit it.", 403);
-    if ((await migrateDeckOnOpen(userId, args.pageId)) !== "yjs") {
-      throw new McpError("This deck still uses the older slides editor, which only has the four layouts in slide.layout.", 400);
+  switch (args.action) {
+    case "set_slides": {
+      const prepared = await prepareOutline(args.outline!);
+      return editDeck(userId, args.pageId, page.title, (doc) => {
+        clearSlides(doc);
+        writeOutline(doc, prepared);
+      });
     }
-  }
-  let addedId: string | null = null;
-
-  const edit = async (slides: Slide[]): Promise<Slide[]> => {
-    switch (args.action) {
-      case "set_slides":
-        return Promise.all(args.slides!.map((s) => applySlideInput(s)));
-      case "add_slide": {
-        const added = await applySlideInput(args.slide!);
-        addedId = added.id;
-        const at = Math.min(args.index ?? slides.length, slides.length);
-        return [...slides.slice(0, at), added, ...slides.slice(at)];
-      }
-      case "update_slide": {
-        const at = indexOfSlide(slides, args.slideId!);
-        const updated = await applySlideInput(args.slide!, slides[at]);
-        return slides.map((s, i) => (i === at ? updated : s));
-      }
-      case "delete_slide": {
-        indexOfSlide(slides, args.slideId!);
-        return slides.filter((s) => s.id !== args.slideId);
-      }
-      case "move_slide": {
-        const at = indexOfSlide(slides, args.slideId!);
-        const to = Math.min(Math.max(Math.trunc(args.toIndex!), 0), slides.length - 1);
-        return moveItem(slides, at, to - at);
-      }
-      default:
-        throw new McpError(`Unknown action '${args.action}'.`, 400);
+    case "update_slide": {
+      const current = (await readDeckModel(args.pageId)).slides.find((s) => s.id === args.slideId);
+      if (!current) throw new McpError("Slide not found.", 404);
+      const prepared = await prepareSlideUpdate(args.slide!, current.layoutId);
+      return editDeck(userId, args.pageId, page.title, (doc) => {
+        liveSlide(doc, args.slideId);
+        writeSlideUpdate(doc, args.slideId!, prepared);
+      });
     }
-  };
-
-  if ((await deckStorage(args.pageId)) === "yjs") {
-    if (!canEdit) throw new McpError("You can view this deck but not edit it.", 403);
-    const next = await edit((await loadDeck(args.pageId)).slides);
-    const valid = parseSlides(JSON.parse(JSON.stringify(next)));
-    if (!valid) throw new McpError("That isn't a valid deck.", 400);
-    await transactDeck(args.pageId, userId, (doc) => {
-      applySlides(doc, valid);
-      if (addedId && args.layoutId) setLayout(doc, addedId, args.layoutId);
-    });
-    await prisma.page.update({ where: { id: args.pageId }, data: { lastEditedById: userId } });
-    const saved = await loadDeck(args.pageId);
-    return deckOutput(page.title, saved.slides, saved.version);
+    case "delete_slide":
+      return editDeck(userId, args.pageId, page.title, (doc) => {
+        liveSlide(doc, args.slideId);
+        deleteSlide(doc, args.slideId!, userId);
+      });
+    case "move_slide":
+      return editDeck(userId, args.pageId, page.title, (doc) => {
+        liveSlide(doc, args.slideId);
+        moveSlide(doc, args.slideId!, Math.max(Math.trunc(args.toIndex!), 0));
+      });
+    default:
+      throw new McpError(`Unknown action '${args.action}'.`, 400);
   }
-
-  const saved = unwrap(await editDeck(userId, args.pageId, edit));
-  void announceAgent({ action: "editing", presenceRoom: pagePresenceRoom(args.pageId) });
-  return deckOutput(page.title, saved.slides, saved.version);
 }
 
 export function runGetSlideDeck(userId: string, args: PageArgs & { pageId: string; elements?: boolean; includeHtml?: boolean; exportLinks?: boolean }) {

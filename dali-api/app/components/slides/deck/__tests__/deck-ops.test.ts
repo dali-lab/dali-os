@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { blocksToFragment } from "~/collab/blocknote-server";
-import { projectLegacySlides, readDeck } from "~/collab/read-deck.server";
-import { seedDeckDoc } from "~/collab/deck-write.server";
+import { readDeck } from "~/collab/read-deck.server";
 import {
   addSlide,
   clearSlotImage,
@@ -173,14 +172,6 @@ describe("layouts and slots", () => {
     setThemeId(doc, "dali-light");
     expect(deckMap(doc).get("themeId")).toBe("dali-light");
   });
-
-  it("leaves the MCP projection of an edited deck in the legacy shape", () => {
-    const { doc, ids } = deck(2);
-    setLayout(doc, ids[0], "section");
-    setLayout(doc, ids[1], "bignumber");
-    const out = projectLegacySlides(readDeck(doc));
-    expect(out.map((s) => s.layout)).toEqual(["title", "title"]);
-  });
 });
 
 describe("slot elements exist from the moment a slide exists", () => {
@@ -189,16 +180,6 @@ describe("slot elements exist from the moment a slide exists", () => {
     elementsOf(slidesMap(doc).get(ids[0])!).get("body")!.set("deleted", true);
     const copy = duplicateSlide(doc, ids[0])!;
     expect(isDeleted(elementsOf(slidesMap(doc).get(copy)!).get("body")!)).toBe(false);
-  });
-
-  it("an MCP or conversion write creates every slot of every slide, empty ones included", () => {
-    const doc = new Y.Doc();
-    seedDeckDoc(doc, [{ id: "a", layout: "split", title: "" }, { id: "b", layout: "title", title: "T" }]);
-    for (const [id, slots] of [["a", ["body", "image", "title"]], ["b", ["subtitle", "title"]]] as const) {
-      const slide = slidesMap(doc).get(id)!;
-      expect(slots.every((k) => elementsOf(slide).get(k) && !isDeleted(elementsOf(slide).get(k)!))).toBe(true);
-    }
-    expect(slideFragment(doc, "a", "title")).not.toBeNull();
   });
 
   it("peers typing into a freshly added slide at the same time both keep their text", () => {

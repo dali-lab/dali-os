@@ -5,17 +5,15 @@ const m = vi.hoisted(() => ({
   isNonMember: vi.fn(),
   redirectPartnerToPortal: vi.fn(),
   deckAccess: vi.fn(),
-  migrate: vi.fn(),
   liveEnabled: vi.fn(),
-  readLiveDeck: vi.fn(),
+  readDeckModel: vi.fn(),
   token: vi.fn(),
 }));
 
 vi.mock("~/lib/auth", () => ({ requireAuth: m.requireAuth, isNonMember: m.isNonMember, redirectPartnerToPortal: m.redirectPartnerToPortal }));
 vi.mock("~/lib/login-next", () => ({ redirectToLogin: vi.fn(() => new Response(null, { status: 302, headers: { Location: "/login" } })) }));
-vi.mock("~/lib/slide-decks.server", () => ({ deckAccess: m.deckAccess, migrateDeckOnOpen: m.migrate }));
+vi.mock("~/lib/slide-decks.server", () => ({ deckAccess: m.deckAccess, readDeckModel: m.readDeckModel }));
 vi.mock("~/lib/slide-live.server", () => ({ slidesLiveEnabled: m.liveEnabled }));
-vi.mock("~/collab/deck-live.server", () => ({ readLiveDeck: m.readLiveDeck }));
 vi.mock("~/collab/read-deck.server", () => ({
   toRenderDeck: (read: { slides: unknown[] }) => ({ themeId: "dali-dark", slides: read.slides }),
   notesBySlide: () => ({ a: "speaker notes" }),
@@ -35,8 +33,7 @@ beforeEach(() => {
   m.redirectPartnerToPortal.mockResolvedValue(null);
   m.liveEnabled.mockResolvedValue(true);
   m.deckAccess.mockResolvedValue({ ok: true, canEdit: true, page: { id: "p1", title: "Deck" } });
-  m.migrate.mockResolvedValue("yjs");
-  m.readLiveDeck.mockResolvedValue({ read: { slides: [{ id: "a" }] } });
+  m.readDeckModel.mockResolvedValue({ slides: [{ id: "a" }] });
   m.token.mockResolvedValue("tok");
 });
 
@@ -58,9 +55,11 @@ describe.each(loaders)("%s route access", (_name, loader) => {
     await expect(run(loader)).rejects.toMatchObject({ status: 404 });
   });
 
-  it("sends a deck that hasn't moved to live editing back to its ordinary page", async () => {
-    m.migrate.mockResolvedValue("json");
-    await expect(run(loader)).rejects.toMatchObject({ status: 302, headers: expect.anything() });
+  it("opens a deck with no room as an empty live deck instead of sending it back to its page", async () => {
+    m.readDeckModel.mockResolvedValue({ slides: [] });
+    const out = await run(loader);
+    expect(out.deck.slides).toEqual([]);
+    expect(m.readDeckModel).toHaveBeenCalledWith("p1");
   });
 
   it("sends someone who isn't signed in to log in", async () => {

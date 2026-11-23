@@ -1,15 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 
-const db = vi.hoisted(() => ({ page: { findUnique: vi.fn() }, slideDeck: { findUnique: vi.fn(), upsert: vi.fn() } }));
+const db = vi.hoisted(() => ({ page: { findUnique: vi.fn() } }));
 const mocks = vi.hoisted(() => ({ getPageAccess: vi.fn(), readLiveDeck: vi.fn(), render: vi.fn() }));
 
 vi.mock("~/lib/db.server", () => ({ prisma: db, Prisma: {} }));
 vi.mock("~/lib/pageAccess.server", () => ({ PAGE_ACCESS_SELECT: {}, getPageAccess: mocks.getPageAccess }));
 vi.mock("~/collab/deck-live.server", () => ({ readLiveDeck: mocks.readLiveDeck }));
-vi.mock("~/collab/deck-convert.server", () => ({ convertDeckToYjs: vi.fn() }));
-vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
-vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn() }));
+vi.mock("~/lib/live-deck.server", () => ({ ensureLiveDeck: vi.fn() }));
 vi.mock("~/lib/pdf/render.server", () => ({ renderHtmlToPdf: mocks.render }));
 vi.mock("~/lib/pdf/print-html.server", () => ({ inlineUploadImages: async (html: string) => html }));
 
@@ -32,7 +30,6 @@ beforeEach(() => {
   vi.clearAllMocks();
   db.page.findUnique.mockResolvedValue({ id: "p1", kind: "Slides", archivedAt: null, title: "Deck", iconEmoji: null });
   mocks.getPageAccess.mockResolvedValue({ canView: true, canEdit: false, canComment: false });
-  db.slideDeck.findUnique.mockResolvedValue({ storage: "yjs" });
 });
 
 describe("PDF export with custom HTML", () => {

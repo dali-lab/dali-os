@@ -1,11 +1,10 @@
 import * as Y from "yjs";
 import { McpError } from "../../errors";
 import { prisma } from "~/lib/db.server";
-import { migrateDeckOnOpen, readDeckModel } from "~/lib/slide-decks.server";
+import { readDeckModel } from "~/lib/slide-decks.server";
 import { transactDeck } from "~/collab/deck-live.server";
 import { blocksToFragment, type DocBlock } from "~/collab/blocknote-server";
 import type { DeckRead, DeckReadSlide } from "~/collab/read-deck.server";
-import { slidesRoomName } from "~/collab/roomName";
 import { getFrontendUrl } from "~/lib/app-env";
 import { markdownToRichDoc, richDocToMarkdown } from "~/components/slides/slide-markdown.server";
 import { LAYOUTS } from "~/components/slides/deck/layouts";
@@ -236,14 +235,6 @@ export async function slideView(slide: DeckReadSlide, opts: ViewOptions = {}) {
   };
 }
 
-/** The live-model fields `get` adds when asked for elements. */
-export async function deckModelView(pageId: string, slideIds: string[], opts: ViewOptions = {}) {
-  const read = await readDeckModel(pageId);
-  const byId = new Map(read.slides.map((s) => [s.id, s]));
-  const slides = await Promise.all(slideIds.map(async (id) => (byId.has(id) ? slideView(byId.get(id)!, opts) : null)));
-  return { themeId: read.themeId, docName: slidesRoomName(pageId), slides };
-}
-
 export function exportLinks(pageId: string, canEdit: boolean) {
   const base = `${getFrontendUrl().replace(/\/+$/, "")}/slides/${encodeURIComponent(pageId)}`;
   return {
@@ -253,7 +244,7 @@ export function exportLinks(pageId: string, canEdit: boolean) {
   };
 }
 
-function liveSlide(doc: Y.Doc, slideId: string | undefined): SlideMap {
+export function liveSlide(doc: Y.Doc, slideId: string | undefined): SlideMap {
   const slide = slideId ? slidesMap(doc).get(slideId) : undefined;
   if (!slide || isDeleted(slide)) throw new McpError("Slide not found.", 404);
   return slide;
@@ -486,9 +477,6 @@ function apply(doc: Y.Doc, action: DeckAction, args: DeckArgs, blocks: DocBlock[
 
 /** Runs one live-model action on the deck through the collab room, so open editors see it at once. */
 export async function runDeckAction(userId: string, action: DeckAction, args: DeckArgs) {
-  if ((await migrateDeckOnOpen(userId, args.pageId)) !== "yjs") {
-    throw invalid("This deck still uses the older slides editor, which can't do that. Ask an admin to turn on the live deck editor.");
-  }
   const markdown = args.element?.markdown;
   const blocks = markdown === undefined ? null : ((await markdownToRichDoc(markdown)) as unknown as DocBlock[]);
   let outcome: Outcome = {};

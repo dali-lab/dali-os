@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { LAYOUTS, STAGE_H, STAGE_W, layoutById, layoutFromLegacy } from "../layouts";
+import { LAYOUTS, STAGE_H, STAGE_W, layoutById } from "../layouts";
 import { TEXT_STYLE_IDS, THEMES, themeById, themeVars } from "../themes";
 
 describe("themes", () => {
@@ -53,14 +53,7 @@ describe("layouts", () => {
     }
   });
 
-  it("only uses slot names the legacy projection reads", () => {
-    const names = new Set(LAYOUTS.flatMap((l) => l.slots.map((s) => s.slot)));
-    expect([...names].sort()).toEqual(["body", "image", "subtitle", "title"]);
-  });
-
-  it("keeps the four legacy layout ids and maps anything else to content", () => {
-    for (const id of ["title", "content", "split", "image"]) expect(layoutFromLegacy(id)).toBe(id);
-    expect(layoutFromLegacy("two-column")).toBe("content");
+  it("falls back to the content layout for an unknown id", () => {
     expect(layoutById("two-column").id).toBe("content");
   });
 });

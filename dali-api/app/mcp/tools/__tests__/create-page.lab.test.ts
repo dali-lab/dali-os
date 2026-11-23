@@ -9,6 +9,7 @@ vi.mock("~/drive/lib/page-copy.server", () => ({ duplicatePage: vi.fn() }));
 import { canEditProject } from "../access";
 import { runCreateLabDocument } from "../docs/lab-documents";
 import { CREATE_PAGE_TOOL, runCreatePage } from "../create-page";
+import { validateInput, type JsonSchema } from "~/lib/mcp-input";
 
 beforeEach(() => vi.resetAllMocks());
 
@@ -21,12 +22,6 @@ describe("create_page without a projectId", () => {
     expect(canEditProject).not.toHaveBeenCalled();
   });
 
-  it("creates a slide deck in the lab", async () => {
-    vi.mocked(runCreateLabDocument).mockResolvedValue({ id: "deck1" });
-    await runCreatePage("u1", { title: "Deck", kind: "Slides" });
-    expect(runCreateLabDocument).toHaveBeenCalledWith("u1", expect.objectContaining({ kind: "Slides" }));
-  });
-
   it("passes on the lab gate's refusal for a non-member", async () => {
     vi.mocked(runCreateLabDocument).mockRejectedValue(Object.assign(new Error("Forbidden"), { status: 403 }));
     await expect(runCreatePage("u1", { title: "Notes" })).rejects.toMatchObject({ status: 403 });
@@ -37,16 +32,20 @@ describe("create_page without a projectId", () => {
     expect(runCreateLabDocument).not.toHaveBeenCalled();
   });
 
-  it("keeps the project gate when a projectId is given, and keeps slide decks lab-only", async () => {
+  it("keeps the project gate when a projectId is given", async () => {
     vi.mocked(canEditProject).mockResolvedValue(false);
     await expect(runCreatePage("u1", { projectId: "p1", title: "Plan" })).rejects.toMatchObject({ status: 403 });
-    vi.mocked(canEditProject).mockResolvedValue(true);
-    await expect(runCreatePage("u1", { projectId: "p1", title: "Deck", kind: "Slides" })).rejects.toMatchObject({ status: 400 });
     expect(runCreateLabDocument).not.toHaveBeenCalled();
   });
 
   it("only needs a title", () => {
     expect(CREATE_PAGE_TOOL.inputSchema.required).toEqual(["title"]);
-    expect(CREATE_PAGE_TOOL.inputSchema.properties.kind.enum).toContain("Slides");
+  });
+
+  it("does not take kind Slides: decks are made with manage_slide_deck create", () => {
+    expect(CREATE_PAGE_TOOL.inputSchema.properties.kind.enum).toEqual(["FreeForm", "Folder"]);
+    expect(CREATE_PAGE_TOOL.description).not.toMatch(/slide/i);
+    const result = validateInput({ title: "Deck", kind: "Slides" }, CREATE_PAGE_TOOL.inputSchema as JsonSchema);
+    expect(result.ok).toBe(false);
   });
 });

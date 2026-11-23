@@ -1,15 +1,11 @@
-import { useState } from "react";
-import { data, redirect, useRevalidator } from "react-router";
+import { redirect } from "react-router";
 import { Presentation } from "lucide-react";
-import { z } from "zod";
 import type { Route } from "./+types/slides.$pageId";
 import { requireLabViewer } from "~/lib/lab-viewer.server";
-import { parseJson } from "~/lib/validate";
-import { cn } from "~/lib/cn";
 import { recordPageVisit } from "~/lib/user-pages.server";
-import { deckAccess, loadDeck, migrateDeckOnOpen, saveDeck } from "~/lib/slide-decks.server";
+import { deckAccess, readDeckModel } from "~/lib/slide-decks.server";
 import { slidesLiveEnabled } from "~/lib/slide-live.server";
-import { readLiveDeck, transactDeck } from "~/collab/deck-live.server";
+import { transactDeck } from "~/collab/deck-live.server";
 import { deckMissingSlots, toRenderDeck } from "~/collab/read-deck.server";
 import { repairDeckSlots } from "~/components/slides/deck/deck-ops";
 import { getCollabToken } from "~/lib/collab-token.server";
@@ -27,14 +23,6 @@ import { DeckDownloadItems } from "~/components/slides/pptx/DeckDownloadItems";
 import { drivePageTrail, type DrivePageAncestry } from "~/components/drive/drive-page-trail";
 import { loadDrivePageAncestry } from "~/drive/lib/drive-page-trail.server";
 import { prisma } from "~/lib/db.server";
-import { buttonClasses } from "~/components/ui/Button";
-import { Segmented } from "~/components/ui/Segmented";
-import { SlideViewer } from "~/components/slides/SlideViewer";
-import { SlideEditorWorkspace } from "~/components/slides/editor/SlideEditorWorkspace";
-import { slidesSchema, parseSlides } from "~/components/slides/slide-schema";
-import { slideIssues } from "~/components/slides/slide-edit";
-import { useDeckAutosave, type DeckSaveState } from "~/components/slides/useDeckAutosave";
-import type { Slide } from "~/components/slides/types";
 
 function DeckCrumbIcon({ iconEmoji }: { iconEmoji?: string | null }) {
   return (
@@ -77,15 +65,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const ancestry = await loadDrivePageAncestry(full, userId, request);
   recordPageVisit(userId, params.pageId, request);
 
-  const storage = await migrateDeckOnOpen(userId, params.pageId, request);
-  if (storage === "json") {
-    const deck = await loadDeck(params.pageId);
-    return { mode: "legacy" as const, pageId: params.pageId, canEdit: access.canEdit, ...ancestry, ...deck };
-  }
-
-  const live = await readLiveDeck(params.pageId);
-  const known = deckAccessMode(live.read.v) === "edit";
-  if (access.canEdit && known && deckMissingSlots(live.read)) await transactDeck(params.pageId, userId, repairDeckSlots);
+  const read = await readDeckModel(params.pageId);
+  const known = deckAccessMode(read.v) === "edit";
+  if (access.canEdit && known && deckMissingSlots(read)) await transactDeck(params.pageId, userId, repairDeckSlots);
   const canManageAccess = await canManageSharing(
     { id: params.pageId, workspaceType: full.workspaceType, workspaceId: full.workspaceId, createdById: full.createdById },
     userId,
@@ -102,7 +84,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const slidesLive = await slidesLiveEnabled(userId, request);
   return {
     ...ancestry,
-    mode: "live" as const,
     slidesLive,
     viewerId: userId,
     pageId: params.pageId,
@@ -114,163 +95,43 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     workspaceType: full.workspaceType,
     unknownVersion: !known,
     collab,
-    deck: collab && !slidesLive ? null : toRenderDeck(live.read),
+    deck: collab && !slidesLive ? null : toRenderDeck(read),
   };
-}
-
-// A deck carries whole slide bodies, so it can outgrow the 1 MB default.
-const MAX_BODY_BYTES = 4 * 1024 * 1024;
-const bodySchema = z.object({ intent: z.literal("save"), slides: slidesSchema, version: z.string() });
-
-export async function action({ request, params }: Route.ActionArgs) {
-  const { sub: userId } = await requireMember(request);
-  const body = await parseJson(request, bodySchema, MAX_BODY_BYTES);
-  if (body instanceof Response) return body;
-  const slides = parseSlides(body.slides);
-  if (!slides) return data({ ok: false as const, status: 400, error: "That deck couldn't be read." }, { status: 400 });
-  const result = await saveDeck(userId, params.pageId, slides, body.version, request);
-  return result.ok ? result : data(result, { status: result.status });
-}
-
-// Saves change nothing the page reads back, so skip reloading after them.
-export function shouldRevalidate({ formMethod, defaultShouldRevalidate }: { formMethod?: string; defaultShouldRevalidate: boolean }) {
-  return formMethod === "POST" ? false : defaultShouldRevalidate;
 }
 
 export default function SlideDeckPage({ loaderData }: Route.ComponentProps) {
-  if (loaderData.mode === "live") {
-    const { collab, deck, title, iconEmoji, pageId, canManageAccess, workspaceType, unknownVersion, slidesLive, viewerId, canEdit, canComment, canModerateComments, link } = loaderData;
-    const page = collab ? (
-      <SlidesEditor
-        pageId={pageId}
-        title={title}
-        iconEmoji={iconEmoji ?? null}
-        canEdit={canEdit}
-        canComment={canComment}
-        canModerateComments={canModerateComments}
-        canManageAccess={canManageAccess}
-        workspaceType={workspaceType}
-        collab={collab}
-        link={link}
-        actionsSlot={
-          slidesLive && canEdit ? ({ currentSlideId }) => <PresentMenu pageId={pageId} currentSlideId={currentSlideId} /> : undefined
-        }
+  const { collab, deck, title, iconEmoji, pageId, canManageAccess, workspaceType, unknownVersion, slidesLive, viewerId, canEdit, canComment, canModerateComments, link } = loaderData;
+  const page = collab ? (
+    <SlidesEditor
+      pageId={pageId}
+      title={title}
+      iconEmoji={iconEmoji ?? null}
+      canEdit={canEdit}
+      canComment={canComment}
+      canModerateComments={canModerateComments}
+      canManageAccess={canManageAccess}
+      workspaceType={workspaceType}
+      collab={collab}
+      link={link}
+      actionsSlot={
+        slidesLive && canEdit ? ({ currentSlideId }) => <PresentMenu pageId={pageId} currentSlideId={currentSlideId} /> : undefined
+      }
+    />
+  ) : (
+    <>
+      <PageBarTitle title={title} emoji={iconEmoji ?? null} />
+      <DeckDownloadItems pageId={pageId} />
+      <ReadOnlyDeck
+        slides={deck?.slides ?? []}
+        themeId={deck?.themeId ?? "dali-dark"}
+        notice={unknownVersion ? "This deck was made with a newer version of Slides, so you can view it but not edit it." : undefined}
       />
-    ) : (
-      <>
-        <PageBarTitle title={title} emoji={iconEmoji ?? null} />
-        <DeckDownloadItems pageId={pageId} />
-        <ReadOnlyDeck
-          slides={deck?.slides ?? []}
-          themeId={deck?.themeId ?? "dali-dark"}
-          notice={unknownVersion ? "This deck was made with a newer version of Slides, so you can view it but not edit it." : undefined}
-        />
-      </>
-    );
-    if (!slidesLive || !deck) return page;
-    return (
-      <DeckFollowLayer pageId={pageId} viewerId={viewerId} canEdit={canEdit} token={collab?.token ?? null} deck={{ ...deck, notes: {} }}>
-        {page}
-      </DeckFollowLayer>
-    );
-  }
-  const { title, canEdit, slides, version } = loaderData;
-  if (!canEdit) return <DeckViewer title={title} slides={slides} />;
-  // Keyed by version: Reload after a conflict brings a newer one, which
-  // restarts the working copy from what the other person saved.
-  return <DeckEditor key={version} title={title} initialSlides={slides} version={version} />;
-}
-
-function DeckViewer({ title, slides }: { title: string; slides: Slide[] }) {
-  const [index, setIndex] = useState(0);
-  return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4">
-      <h1 className="font-heading text-2xl font-semibold">{title}</h1>
-      <div className="min-h-0 flex-1">
-        {slides.length === 0 ? (
-          <p className="text-os-grey">This deck doesn't have any slides yet.</p>
-        ) : (
-          <SlideViewer slides={slides} index={index} onIndexChange={setIndex} finalAction={{ label: "Back to start", onClick: () => setIndex(0) }} />
-        )}
-      </div>
-    </div>
+    </>
   );
-}
-
-function SaveStatus({ state }: { state: DeckSaveState }) {
-  const label: Record<DeckSaveState, string> = {
-    saved: "Saved",
-    unsaved: "Saving",
-    saving: "Saving",
-    conflict: "Someone else changed this deck",
-    error: "Not saved",
-  };
-  const dot = state === "saved" ? "bg-os-green" : state === "conflict" || state === "error" ? "bg-destructive" : "bg-os-muted";
+  if (!slidesLive || !deck) return page;
   return (
-    <p className="flex items-center gap-2 text-sm text-os-grey" aria-live="polite">
-      <span className={cn("h-2 w-2 rounded-full", dot)} aria-hidden />
-      {label[state]}
-    </p>
-  );
-}
-
-type Mode = "edit" | "preview";
-
-function DeckEditor({ title, initialSlides, version }: { title: string; initialSlides: Slide[]; version: string }) {
-  const { revalidate } = useRevalidator();
-  const { slides, edit, state, error, retry } = useDeckAutosave(initialSlides, version);
-  const [mode, setMode] = useState<Mode>("edit");
-  const [previewIndex, setPreviewIndex] = useState(0);
-  const issues = slideIssues(slides);
-
-  return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4">
-      <header className="flex shrink-0 flex-wrap items-center justify-between gap-x-6 gap-y-3">
-        <h1 className="min-w-0 truncate font-heading text-2xl font-semibold">{title}</h1>
-        <div className="flex flex-wrap items-center gap-3">
-          <SaveStatus state={state} />
-          {state === "conflict" && (
-            <button type="button" onClick={() => revalidate()} className={buttonClasses("secondary", "sm")}>
-              Reload
-            </button>
-          )}
-          {state === "error" && (
-            <button type="button" onClick={retry} title={error ?? undefined} className={buttonClasses("secondary", "sm")}>
-              Try again
-            </button>
-          )}
-          <Segmented
-            ariaLabel="Mode"
-            value={mode}
-            onChange={setMode}
-            options={[
-              { value: "edit", label: "Edit" },
-              { value: "preview", label: "Preview" },
-            ]}
-          />
-        </div>
-      </header>
-      {issues.length > 0 && mode === "edit" && (
-        <p className="shrink-0 text-sm text-os-amber" title={issues.join("\n")}>
-          {issues.length === 1 ? issues[0] : `${issues.length} slides need a title or an image.`}
-        </p>
-      )}
-      <div className="min-h-0 flex-1 overflow-hidden rounded-os-card bg-os-card">
-        {mode === "edit" ? (
-          <div className="os-form h-full">
-            <SlideEditorWorkspace slides={slides} initialSlideId={null} onChangeSlides={edit} />
-          </div>
-        ) : slides.length === 0 ? (
-          <p className="p-6 text-os-grey">Add a slide to preview it.</p>
-        ) : (
-          <SlideViewer
-            slides={slides}
-            index={Math.min(previewIndex, slides.length - 1)}
-            onIndexChange={setPreviewIndex}
-            finalAction={{ label: "Back to editing", onClick: () => setMode("edit") }}
-          />
-        )}
-      </div>
-    </div>
+    <DeckFollowLayer pageId={pageId} viewerId={viewerId} canEdit={canEdit} token={collab?.token ?? null} deck={{ ...deck, notes: {} }}>
+      {page}
+    </DeckFollowLayer>
   );
 }

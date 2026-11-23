@@ -3,35 +3,32 @@ import * as Y from "yjs";
 
 const db = vi.hoisted(() => ({
   page: { findUnique: vi.fn() },
-  slideDeck: { findUnique: vi.fn(), upsert: vi.fn() },
 }));
 const mocks = vi.hoisted(() => ({ getPageAccess: vi.fn(), readLiveDeck: vi.fn(), render: vi.fn() }));
 
 vi.mock("~/lib/db.server", () => ({ prisma: db, Prisma: {} }));
 vi.mock("~/lib/pageAccess.server", () => ({ PAGE_ACCESS_SELECT: {}, getPageAccess: mocks.getPageAccess }));
 vi.mock("~/collab/deck-live.server", () => ({ readLiveDeck: mocks.readLiveDeck }));
-vi.mock("~/collab/deck-convert.server", () => ({ convertDeckToYjs: vi.fn() }));
-vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
-vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn() }));
+vi.mock("~/lib/live-deck.server", () => ({ ensureLiveDeck: vi.fn() }));
+import { ensureLiveDeck } from "~/lib/live-deck.server";
 vi.mock("~/lib/pdf/render.server", () => ({ renderHtmlToPdf: mocks.render }));
 vi.mock("~/lib/pdf/print-html.server", () => ({ inlineUploadImages: async (html: string) => html }));
 
 import { exportDeckPdf, pdfFilename } from "~/lib/slide-pdf.server";
 import { MAX_PDF_SLIDES } from "~/lib/pdf/slides-print-html.server";
-import { seedDeckDoc } from "~/collab/deck-write.server";
+import { seedDeck, type SeedSlide } from "~/collab/__tests__/seed-deck";
 import { readDeck } from "~/collab/read-deck.server";
 import { deleteSlide, moveSlide, setLayout, setSlideSkipped, setThemeId } from "~/components/slides/deck/deck-ops";
 import { addFreeImage, addShape, addTextBox, moveElements, setCrop, setPlacements } from "~/components/slides/deck/freeform-ops";
 import { slideFragment } from "~/components/slides/deck/deck-ops";
 import { blocksToFragment } from "~/collab/blocknote-server";
-import type { Slide } from "~/components/slides/types";
 
-const slide = (id: string, title: string, notes?: string): Slide => ({ id, layout: "title", title, ...(notes ? { notes } : {}) });
+const slide = (id: string, title: string, notes?: string): SeedSlide => ({ id, layout: "title", title, ...(notes ? { notes } : {}) });
 const deckPage = { id: "p1", kind: "Slides", archivedAt: null, title: "Q4 / Review: Plan", iconEmoji: null };
 
-function liveDeck(slides: Slide[], edit?: (doc: Y.Doc) => void) {
+function liveDeck(slides: SeedSlide[], edit?: (doc: Y.Doc) => void) {
   const doc = new Y.Doc();
-  seedDeckDoc(doc, slides);
+  seedDeck(doc, slides);
   edit?.(doc);
   return { read: readDeck(doc), updatedAt: null };
 }
@@ -43,7 +40,6 @@ beforeEach(() => {
   vi.clearAllMocks();
   db.page.findUnique.mockResolvedValue(deckPage);
   mocks.getPageAccess.mockResolvedValue({ canView: true, canEdit: false, canComment: false });
-  db.slideDeck.findUnique.mockResolvedValue({ storage: "yjs" });
   mocks.readLiveDeck.mockResolvedValue(liveDeck([slide("a", "Alpha"), slide("b", "Beta"), slide("c", "Gamma")]));
   mocks.render.mockResolvedValue(Buffer.from("%PDF"));
 });
@@ -157,13 +153,12 @@ describe("exportDeckPdf", () => {
     expect(mocks.render).not.toHaveBeenCalled();
   });
 
-  it("exports a deck still in JSON storage through the same model", async () => {
-    db.slideDeck.findUnique.mockResolvedValue({ storage: "json" });
-    db.slideDeck.upsert.mockResolvedValue({ slides: [slide("j1", "Json one"), slide("j2", "Json two")], updatedAt: new Date(), storage: "json" });
-    await exportDeckPdf("u1", "p1", { notes: false });
-    expect(mocks.readLiveDeck).not.toHaveBeenCalled();
-    expect(pages(html())).toEqual(["j1", "j2"]);
-    expect(html()).toContain("Json two");
+  it("makes sure the page is a live deck before reading it, so a deck with no room exports as empty", async () => {
+    mocks.readLiveDeck.mockResolvedValue(liveDeck([]));
+    const out = await exportDeckPdf("u1", "p1", { notes: false });
+    expect(out).toMatchObject({ ok: true });
+    expect(ensureLiveDeck).toHaveBeenCalledWith("p1");
+    expect(pages(html())).toEqual([]);
   });
 });
 

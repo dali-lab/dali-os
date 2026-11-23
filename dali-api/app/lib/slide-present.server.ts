@@ -1,9 +1,8 @@
 import { redirect } from "react-router";
 import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { deckAccess, migrateDeckOnOpen } from "~/lib/slide-decks.server";
+import { deckAccess, readDeckModel } from "~/lib/slide-decks.server";
 import { slidesLiveEnabled } from "~/lib/slide-live.server";
-import { readLiveDeck } from "~/collab/deck-live.server";
 import { notesBySlide, toRenderDeck } from "~/collab/read-deck.server";
 import { getCollabToken } from "~/lib/collab-token.server";
 import { deckUrl } from "~/components/slides/live/urls";
@@ -18,8 +17,7 @@ async function requireMember(request: Request) {
 }
 
 /**
- * What the present and presenter routes load. Both are behind slides-live, and a deck that
- * hasn't moved to live editing opens on its ordinary page. Only people who can edit get notes.
+ * What the present and presenter routes load. Both are behind slides-live. Only people who can edit get notes.
  * Everyone connects to the room for the live deck, with a copy read here to draw until it's ready.
  */
 export async function loadPresentPage(request: Request, pageId: string, opts: { driverOnly: boolean }) {
@@ -28,9 +26,8 @@ export async function loadPresentPage(request: Request, pageId: string, opts: { 
   const access = await deckAccess(user.sub, pageId, request);
   if (!access.ok) throw new Response("Not found", { status: 404 });
   if (opts.driverOnly && !access.canEdit) throw redirect(deckUrl(pageId));
-  if ((await migrateDeckOnOpen(user.sub, pageId, request)) === "json") throw redirect(deckUrl(pageId));
 
-  const { read } = await readLiveDeck(pageId);
+  const read = await readDeckModel(pageId);
   const canDrive = access.canEdit;
   const render = toRenderDeck(read);
   return {

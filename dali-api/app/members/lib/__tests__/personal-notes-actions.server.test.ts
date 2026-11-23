@@ -16,6 +16,7 @@ vi.mock("~/lib/db.server", () => ({
   },
 }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
+vi.mock("~/lib/live-deck.server", () => ({ ensureLiveDeck: vi.fn() }));
 vi.mock("~/lib/page-sharing.server", () => ({
   addPageShare: vi.fn(),
   listPageShares: vi.fn(),
@@ -37,6 +38,7 @@ vi.mock("~/collab/roomName", () => ({ pageDocName: (id: string) => `page:${id}` 
 
 import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
+import { ensureLiveDeck } from "~/lib/live-deck.server";
 import { addPageShare, listPageShares, removePageShare, SharePrincipalError } from "~/lib/page-sharing.server";
 import { NoteForbiddenError, NoteNotFoundError, requireNoteOwner } from "~/members/lib/personal-notes.server";
 import { assertUniqueName } from "~/drive/lib/page-names.server";
@@ -110,6 +112,16 @@ describe("createNote", () => {
       position: 0,
       createdById: OWNER,
     });
+  });
+
+  it("makes a new slide deck a live deck, and leaves other kinds alone", async () => {
+    m.page.create.mockResolvedValue({ id: "deck1" });
+    await createNote(OWNER, { title: "Deck", kind: "Slides" });
+    expect(ensureLiveDeck).toHaveBeenCalledWith("deck1", OWNER);
+    vi.mocked(ensureLiveDeck).mockClear();
+    await createNote(OWNER, { title: "Board", kind: "Whiteboard" });
+    await createNote(OWNER, { title: "Ideas" });
+    expect(ensureLiveDeck).not.toHaveBeenCalled();
   });
 
   it("appends after the last sibling", async () => {

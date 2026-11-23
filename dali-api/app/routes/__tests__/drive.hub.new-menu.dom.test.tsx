@@ -417,9 +417,7 @@ describe("New menu: New deck from PowerPoint", () => {
 
   it.each([
     [[], false],
-    [["drive-slides"], false],
-    [["slides-collab"], false],
-    [["drive-slides", "slides-collab"], true],
+    [["drive-slides"], true],
   ] as const)("flags %j: offered is %s", async (on, offered) => {
     for (const f of on) flags.on.add(f);
     await mountMenu(scope({ id: "lab" }));
@@ -427,7 +425,7 @@ describe("New menu: New deck from PowerPoint", () => {
   });
 
   it("creates a deck named after the file and hands it the prepared slides", async () => {
-    flags.on.add("drive-slides").add("slides-collab");
+    flags.on.add("drive-slides");
     const createSlides = vi.fn().mockResolvedValue("deck1");
     await mountMenu(scope({ id: "lab" }), null, { createSlides });
     await pick(pptxFile());
@@ -437,7 +435,7 @@ describe("New menu: New deck from PowerPoint", () => {
   });
 
   it("rejects a file that isn't a .pptx before reading it", async () => {
-    flags.on.add("drive-slides").add("slides-collab");
+    flags.on.add("drive-slides");
     const createSlides = vi.fn();
     await mountMenu(scope({ id: "lab" }), null, { createSlides });
     await pick(pptxFile("notes.pdf"));
@@ -448,7 +446,7 @@ describe("New menu: New deck from PowerPoint", () => {
   });
 
   it("creates no deck when the file can't be read", async () => {
-    flags.on.add("drive-slides").add("slides-collab");
+    flags.on.add("drive-slides");
     pptx.parsePptxFile.mockRejectedValue(new Error("That file couldn't be read."));
     const createSlides = vi.fn();
     await mountMenu(scope({ id: "lab" }), null, { createSlides });
@@ -459,7 +457,7 @@ describe("New menu: New deck from PowerPoint", () => {
   });
 
   it("opens the empty deck and says so when the slides can't be carried over", async () => {
-    flags.on.add("drive-slides").add("slides-collab");
+    flags.on.add("drive-slides");
     pptx.stashImport.mockReturnValue(false);
     await mountMenu(scope({ id: "lab" }), null, { createSlides: vi.fn().mockResolvedValue("deck2") });
     await pick(pptxFile());
@@ -468,7 +466,7 @@ describe("New menu: New deck from PowerPoint", () => {
   });
 
   it("stops when the deck can't be created", async () => {
-    flags.on.add("drive-slides").add("slides-collab");
+    flags.on.add("drive-slides");
     await mountMenu(scope({ id: "lab" }), null, { createSlides: vi.fn().mockResolvedValue(null) });
     await pick(pptxFile());
     expect(pptx.stashImport).not.toHaveBeenCalled();

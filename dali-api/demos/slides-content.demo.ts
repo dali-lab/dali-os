@@ -2,7 +2,6 @@ import { expect, setFeatureFlag, test } from './lib/demo';
 
 test('Add charts, tables, icons and video to a slide, then find and replace', async ({ page, stage, loginAs }) => {
   await setFeatureFlag('drive-slides', true);
-  await setFeatureFlag('slides-collab', true);
   await loginAs({ daliEmail: 'admin@dali.dartmouth.edu' });
 
   const created = await page.request.post('/api/lab-documents', { data: { title: 'Content deck', kind: 'Slides' } });

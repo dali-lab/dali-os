@@ -3,6 +3,7 @@ import {
   FEATURE_FLAGS,
   evaluateFlag,
   evaluateVariant,
+  isFeatureFlagKey,
   type FeatureFlagDef,
 } from "../feature-flags";
 import type { UserRoles } from "../roles";
@@ -100,11 +101,14 @@ describe("refer-a-partner flag", () => {
 });
 
 describe("slides-collab", () => {
-  it("is registered and ships off", () => {
-    const flag = FEATURE_FLAGS.find((f) => f.key === "slides-collab") as FeatureFlagDef | undefined;
-    expect(flag).toBeDefined();
-    expect(flag!.defaultEnabled).toBeUndefined();
-    expect(flag!.defaultEveryone).toBeUndefined();
+  it("is no longer a flag: live editing is on for everyone", () => {
+    expect(FEATURE_FLAGS.some((f) => (f.key as string) === "slides-collab")).toBe(false);
+    expect(isFeatureFlagKey("slides-collab")).toBe(false);
+  });
+
+  it("leaves drive-slides and slides-live in place", () => {
+    expect(FEATURE_FLAGS.some((f) => f.key === "drive-slides")).toBe(true);
+    expect(FEATURE_FLAGS.some((f) => f.key === "slides-live")).toBe(true);
   });
 });
 

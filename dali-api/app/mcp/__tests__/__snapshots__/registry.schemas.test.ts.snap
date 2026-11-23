@@ -772,7 +772,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
 }
 {
   "name": "create_page",
-  "description": "Create a page: a FreeForm document (optionally with Markdown content), a Folder, or in the lab a slide deck. With projectId the page goes in that project's workspace (needs Core or being staffed on the project); without it the page goes in the lab (any lab member at the top level, edit access to the folder inside one). Documents and folders nest inside any folder, up to 6 levels deep, as in the Drive. Fill a new slide deck with manage_slide_deck.",
+  "description": "Create a page: a FreeForm document (optionally with Markdown content) or a Folder. With projectId the page goes in that project's workspace (needs Core or being staffed on the project); without it the page goes in the lab (any lab member at the top level, edit access to the folder inside one). Documents and folders nest inside any folder, up to 6 levels deep, as in the Drive.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -790,10 +790,9 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
         "type": "string",
         "enum": [
           "FreeForm",
-          "Folder",
-          "Slides"
+          "Folder"
         ],
-        "description": "Default 'FreeForm' (a document). 'Folder' creates a container page. 'Slides' creates an empty slide deck (lab only)."
+        "description": "Default 'FreeForm' (a document). 'Folder' creates a container page."
       },
       "parentPageId": {
         "type": "string",
@@ -3585,7 +3584,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
 }
 {
   "name": "manage_slide_deck",
-  "description": "Create or edit a Drive slide deck. Actions: create (a new lab deck from an outline in one step; returns pageId and every slide with its element ids; needs the live deck editor to be on for you) · set_slides (replace every slide) · add_slide (optional index, else at the end; layoutId for any layout) · add_slides (draft several slides at once from an outline: each has a layoutId, text per box in slots, notes and free elements) · update_slide (fields left out are kept) · delete_slide · move_slide (to toIndex) · duplicate_slide · set_layout · set_theme. Bodies are Markdown, including pipe tables and fenced code blocks. An outline slide with html makes a slide whose content is your own HTML, CSS and script. Custom HTML (kind 'html'): html is the page's markup, CSS and script as one string, up to 200000 characters. It runs in a sandboxed frame laid out at the element's w by h in stage units, so 1px of your CSS is one stage unit; a full slide is 1920 by 1080. Set htmlFill: true to cover the whole slide (x, y, w, h are then ignored). Theme CSS variables are set on :root: --slide-accent, --slide-fg, --slide-muted, --slide-surface, --slide-ground, --slide-rule, --slide-font-display, --slide-font-body; html and body have no margin and are 100% tall. Network requests (fetch, XHR, WebSocket, forms) are blocked. Scripts run inline or from cdnjs.cloudflare.com, cdn.jsdelivr.net and unpkg.com only; images load over https or data:. It is not shared live between screens. PDF export prints what the frame shows after it loads; PowerPoint export turns it into a picture. Read the deck with get_slide_deck; edit what's on a slide with manage_slide_elements. set_slides, add_slide, update_slide, delete_slide and move_slide return the whole deck; the others return what they changed.",
+  "description": "Create or edit a Drive slide deck. Slides are written as outline slides: a layoutId, text per box in slots, notes and free elements. Actions: create (a new lab deck from an outline; returns pageId and every slide with its element ids) · set_slides (replace every slide with an outline) · add_slides (add outline slides at index, else at the end) · update_slide (change one slide from an outline slide; fields left out are kept, including its notes) · delete_slide · move_slide (to toIndex) · duplicate_slide · set_layout · set_theme. Bodies are Markdown, including pipe tables and fenced code blocks. An outline slide with html makes a slide whose content is your own HTML, CSS and script. Custom HTML (kind 'html'): html is the page's markup, CSS and script as one string, up to 200000 characters. It runs in a sandboxed frame laid out at the element's w by h in stage units, so 1px of your CSS is one stage unit; a full slide is 1920 by 1080. Set htmlFill: true to cover the whole slide (x, y, w, h are then ignored). Theme CSS variables are set on :root: --slide-accent, --slide-fg, --slide-muted, --slide-surface, --slide-ground, --slide-rule, --slide-font-display, --slide-font-body; html and body have no margin and are 100% tall. Network requests (fetch, XHR, WebSocket, forms) are blocked. Scripts run inline or from cdnjs.cloudflare.com, cdn.jsdelivr.net and unpkg.com only; images load over https or data:. It is not shared live between screens. PDF export prints what the frame shows after it loads; PowerPoint export turns it into a picture. Read the deck with get_slide_deck; edit what's on a slide with manage_slide_elements. set_slides, update_slide, delete_slide and move_slide return the whole deck; the others return what they changed.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -3594,7 +3593,6 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
         "enum": [
           "create",
           "set_slides",
-          "add_slide",
           "add_slides",
           "update_slide",
           "delete_slide",
@@ -3619,101 +3617,264 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
         "type": "string",
         "description": "create: put the deck inside an existing top-level Lab folder. Omit for the top level."
       },
-      "slides": {
-        "type": "array",
-        "items": {
-          "type": "object",
-          "properties": {
-            "layout": {
-              "type": "string",
-              "enum": [
-                "title",
-                "content",
-                "split",
-                "image"
-              ],
-              "description": "title: big heading + subtitle. content: heading + body. split: heading + body + image. image: full-bleed image with an optional caption (the title)."
-            },
-            "title": {
-              "type": "string",
-              "maxLength": 300,
-              "description": "Heading, or the caption on image slides."
-            },
-            "subtitle": {
-              "type": "string",
-              "maxLength": 300,
-              "description": "Title layout only."
-            },
-            "bodyMarkdown": {
-              "type": "string",
-              "maxLength": 20000,
-              "description": "Content and split layouts. Keep it to a few short points."
-            },
-            "imageUrl": {
-              "type": "string",
-              "maxLength": 2000,
-              "description": "Split and image layouts."
-            },
-            "imageAlt": {
-              "type": "string",
-              "maxLength": 300
-            },
-            "notes": {
-              "type": "string",
-              "maxLength": 20000,
-              "description": "Speaker notes shown under the slide."
-            }
-          },
-          "additionalProperties": false
-        },
-        "maxItems": 300,
-        "description": "set_slides: the whole deck, in order."
-      },
       "slide": {
         "type": "object",
         "properties": {
-          "layout": {
+          "layoutId": {
             "type": "string",
             "enum": [
               "title",
               "content",
               "split",
-              "image"
+              "image",
+              "section",
+              "bignumber",
+              "blank"
             ],
-            "description": "title: big heading + subtitle. content: heading + body. split: heading + body + image. image: full-bleed image with an optional caption (the title)."
+            "description": "Defaults to 'content'. update_slide keeps the slide's layout when this is left out."
           },
-          "title": {
-            "type": "string",
-            "maxLength": 300,
-            "description": "Heading, or the caption on image slides."
+          "slots": {
+            "type": "object",
+            "description": "Text for the layout's boxes, by slot name (title, subtitle, body and so on). Text is Markdown. An image box takes an object { src, alt } instead of text.",
+            "additionalProperties": true
           },
-          "subtitle": {
+          "html": {
             "type": "string",
-            "maxLength": 300,
-            "description": "Title layout only."
-          },
-          "bodyMarkdown": {
-            "type": "string",
-            "maxLength": 20000,
-            "description": "Content and split layouts. Keep it to a few short points."
-          },
-          "imageUrl": {
-            "type": "string",
-            "maxLength": 2000,
-            "description": "Split and image layouts."
-          },
-          "imageAlt": {
-            "type": "string",
-            "maxLength": 300
+            "maxLength": 200000,
+            "description": "A custom slide: this HTML fills a Blank-layout slide. layoutId and slots are not used with it. Custom HTML (kind 'html'): html is the page's markup, CSS and script as one string, up to 200000 characters. It runs in a sandboxed frame laid out at the element's w by h in stage units, so 1px of your CSS is one stage unit; a full slide is 1920 by 1080. Set htmlFill: true to cover the whole slide (x, y, w, h are then ignored). Theme CSS variables are set on :root: --slide-accent, --slide-fg, --slide-muted, --slide-surface, --slide-ground, --slide-rule, --slide-font-display, --slide-font-body; html and body have no margin and are 100% tall. Network requests (fetch, XHR, WebSocket, forms) are blocked. Scripts run inline or from cdnjs.cloudflare.com, cdn.jsdelivr.net and unpkg.com only; images load over https or data:. It is not shared live between screens. PDF export prints what the frame shows after it loads; PowerPoint export turns it into a picture."
           },
           "notes": {
             "type": "string",
             "maxLength": 20000,
-            "description": "Speaker notes shown under the slide."
+            "description": "Speaker notes."
+          },
+          "elements": {
+            "type": "array",
+            "maxItems": 30,
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "text",
+                    "image",
+                    "shape",
+                    "chart",
+                    "icon",
+                    "video",
+                    "poll",
+                    "html"
+                  ],
+                  "description": "add_element only. Tables and code go in a text element's markdown (a pipe table or a fenced block)."
+                },
+                "shape": {
+                  "type": "string",
+                  "enum": [
+                    "rect",
+                    "rounded",
+                    "ellipse",
+                    "line",
+                    "arrow"
+                  ],
+                  "description": "Shapes: required when adding one."
+                },
+                "fill": {
+                  "type": "string",
+                  "enum": [
+                    "accent",
+                    "fg",
+                    "muted",
+                    "surface",
+                    "rule"
+                  ],
+                  "description": "Shapes: a theme color."
+                },
+                "markdown": {
+                  "type": "string",
+                  "maxLength": 20000,
+                  "description": "Text: the whole text, replacing what is there."
+                },
+                "textStyle": {
+                  "type": "string",
+                  "enum": [
+                    "title",
+                    "heading",
+                    "body",
+                    "kicker",
+                    "default"
+                  ],
+                  "description": "Text: a theme text style. 'default' goes back to the layout's style."
+                },
+                "src": {
+                  "type": "string",
+                  "maxLength": 2000,
+                  "description": "Images: an http(s) URL or a path on this site. Required when adding one."
+                },
+                "alt": {
+                  "type": "string",
+                  "maxLength": 300
+                },
+                "chart": {
+                  "type": "object",
+                  "description": "Charts: required when adding one; on update it replaces the chart. Every series needs one value per label.",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "bar",
+                        "line",
+                        "pie"
+                      ]
+                    },
+                    "labels": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "maxLength": 60
+                      },
+                      "minItems": 1,
+                      "maxItems": 24
+                    },
+                    "series": {
+                      "type": "array",
+                      "minItems": 1,
+                      "maxItems": 6,
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string",
+                            "maxLength": 60
+                          },
+                          "values": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "maxItems": 24
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "values"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "labels",
+                    "series"
+                  ],
+                  "additionalProperties": false
+                },
+                "icon": {
+                  "type": "string",
+                  "maxLength": 60,
+                  "description": "Icons: a lucide icon name such as 'rocket' or 'bar-chart-3'. Required when adding one."
+                },
+                "videoUrl": {
+                  "type": "string",
+                  "maxLength": 2048,
+                  "description": "Videos: a YouTube link. Required when adding one."
+                },
+                "poll": {
+                  "type": "object",
+                  "description": "Polls: required when adding one. Followers vote while you present.",
+                  "properties": {
+                    "question": {
+                      "type": "string",
+                      "maxLength": 200
+                    },
+                    "options": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "maxLength": 80
+                      },
+                      "minItems": 2,
+                      "maxItems": 6
+                    },
+                    "multi": {
+                      "type": "boolean",
+                      "description": "Allow several answers."
+                    }
+                  },
+                  "required": [
+                    "question",
+                    "options"
+                  ],
+                  "additionalProperties": false
+                },
+                "html": {
+                  "type": "string",
+                  "maxLength": 200000,
+                  "description": "Custom HTML: the source, replacing what is there. Required when adding one. Custom HTML (kind 'html'): html is the page's markup, CSS and script as one string, up to 200000 characters. It runs in a sandboxed frame laid out at the element's w by h in stage units, so 1px of your CSS is one stage unit; a full slide is 1920 by 1080. Set htmlFill: true to cover the whole slide (x, y, w, h are then ignored). Theme CSS variables are set on :root: --slide-accent, --slide-fg, --slide-muted, --slide-surface, --slide-ground, --slide-rule, --slide-font-display, --slide-font-body; html and body have no margin and are 100% tall. Network requests (fetch, XHR, WebSocket, forms) are blocked. Scripts run inline or from cdnjs.cloudflare.com, cdn.jsdelivr.net and unpkg.com only; images load over https or data:. It is not shared live between screens. PDF export prints what the frame shows after it loads; PowerPoint export turns it into a picture."
+                },
+                "htmlFill": {
+                  "type": "boolean",
+                  "description": "Custom HTML: cover the whole slide."
+                },
+                "x": {
+                  "type": "number",
+                  "description": "Left edge on the 1920 by 1080 stage."
+                },
+                "y": {
+                  "type": "number",
+                  "description": "Top edge on the stage."
+                },
+                "w": {
+                  "type": "number",
+                  "description": "Width on the stage."
+                },
+                "h": {
+                  "type": "number",
+                  "description": "Height on the stage."
+                },
+                "rot": {
+                  "type": "number",
+                  "description": "Rotation in degrees."
+                },
+                "build": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 50,
+                  "description": "The presenting step it appears at. 0 shows it from the start."
+                },
+                "buildBullets": {
+                  "type": "boolean",
+                  "description": "Text: show its top-level blocks one per step, the first together with the box."
+                },
+                "buildEffect": {
+                  "type": "string",
+                  "enum": [
+                    "appear",
+                    "fade",
+                    "rise",
+                    "scale"
+                  ],
+                  "description": "How it enters while presenting. Fade when left out."
+                },
+                "buildAfter": {
+                  "type": "boolean",
+                  "description": "Its step plays by itself after the previous step instead of waiting for a key press."
+                },
+                "buildDelay": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 5000,
+                  "description": "Milliseconds to wait before an automatic step."
+                }
+              },
+              "additionalProperties": false
+            },
+            "description": "Free elements to add to the slide, each as in manage_slide_elements add_element."
           }
         },
         "additionalProperties": false,
-        "description": "add_slide and update_slide: the slide's fields."
+        "description": "update_slide: the changes to the slide. Fields left out are kept. Free elements are added to the slide; html is not taken."
       },
       "slideId": {
         "type": "string",
@@ -3722,7 +3883,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
       "index": {
         "type": "number",
         "minimum": 0,
-        "description": "add_slide and add_slides: where to insert, 0-based."
+        "description": "add_slides: where to insert, 0-based."
       },
       "toIndex": {
         "type": "number",
@@ -3745,7 +3906,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
                 "bignumber",
                 "blank"
               ],
-              "description": "Defaults to 'content'."
+              "description": "Defaults to 'content'. update_slide keeps the slide's layout when this is left out."
             },
             "slots": {
               "type": "object",
@@ -3991,7 +4152,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
         },
         "minItems": 1,
         "maxItems": 60,
-        "description": "create: the deck's slides, in order. add_slides: the slides to add, in order, at index (the end when left out)."
+        "description": "create and set_slides: the deck's slides, in order. add_slides: the slides to add, in order, at index (the end when left out)."
       },
       "themeId": {
         "type": "string",
@@ -4012,7 +4173,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
           "bignumber",
           "blank"
         ],
-        "description": "set_layout, and add_slide for layouts beyond the four in slide.layout."
+        "description": "set_layout."
       },
       "limit": {
         "type": "integer",

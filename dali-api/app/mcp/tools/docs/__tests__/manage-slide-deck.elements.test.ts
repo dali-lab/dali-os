@@ -1,14 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
-import type { Slide } from "~/components/slides/types";
 
 const env = vi.hoisted(() => ({ doc: null as unknown as Y.Doc, pageUpdate: vi.fn(), transact: vi.fn() }));
 const decks = vi.hoisted(() => ({
   deckAccess: vi.fn(),
-  loadDeck: vi.fn(),
-  editDeck: vi.fn(),
-  deckStorage: vi.fn(),
-  migrateDeckOnOpen: vi.fn(),
   readDeckModel: vi.fn(),
 }));
 
@@ -20,12 +15,12 @@ vi.mock("~/collab/deck-live.server", () => ({
 vi.mock("~/collab/blocknote-server", async (importOriginal) => importOriginal());
 
 import { runManageSlideDeck } from "../manage-slide-deck";
-import { seedDeckDoc } from "~/collab/deck-write.server";
-import { projectLegacySlides, readDeck } from "~/collab/read-deck.server";
+import { seedDeck, type SeedSlide } from "~/collab/__tests__/seed-deck";
+import { readDeck } from "~/collab/read-deck.server";
 import { deckMap, elementsOf, isDeleted, slidesMap } from "~/components/slides/deck/model";
 import { addShape, addTextBox, groupElements } from "~/components/slides/deck/freeform-ops";
 
-const LEGACY: Slide[] = [
+const LEGACY: SeedSlide[] = [
   { id: "a", layout: "title", title: "Alpha", subtitle: "Sub" },
   { id: "b", layout: "content", title: "Beta" },
 ];
@@ -40,26 +35,23 @@ beforeEach(() => {
   vi.clearAllMocks();
   process.env.FRONTEND_URL = "https://os.example.edu";
   env.doc = new Y.Doc();
-  seedDeckDoc(env.doc, LEGACY);
-  decks.deckStorage.mockResolvedValue("yjs");
-  decks.migrateDeckOnOpen.mockResolvedValue("yjs");
+  seedDeck(env.doc, LEGACY);
   decks.deckAccess.mockResolvedValue({ ok: true, page: PAGE, canEdit: true });
-  decks.loadDeck.mockImplementation(async () => ({ slides: projectLegacySlides(read()), version: "v1", storage: "yjs" }));
   decks.readDeckModel.mockImplementation(async () => read());
 });
 
 describe("get with elements", () => {
   it("adds the theme, room name, layout and elements to the usual output", async () => {
     const out = await run({ action: "get", elements: true });
-    expect(out).toMatchObject({ title: "Deck", version: "v1", themeId: "dali-dark", docName: "slides:p1:deck" });
-    expect(out.slides[0]).toMatchObject({ id: "a", layout: "title", title: "Alpha", layoutId: "title" });
+    expect(out).toMatchObject({ title: "Deck", themeId: "dali-dark", docName: "slides:p1:deck" });
+    expect(out.slides[0]).toMatchObject({ id: "a", layoutId: "title", slots: { title: "Alpha" } });
     const title = out.slides[0].elements.find((e: { id: string }) => e.id === "title");
     expect(title).toEqual({ id: "title", kind: "text", slot: "title", z: 1, markdown: "Alpha", x: 160, y: 300, w: 1600, h: 300, rot: 0 });
   });
 
-  it("leaves the default get exactly as it was", async () => {
+  it("leaves out the room name and elements unless asked", async () => {
     const out = await run({ action: "get" });
-    expect(out).not.toHaveProperty("themeId");
+    expect(out).not.toHaveProperty("docName");
     expect(out.slides[0]).not.toHaveProperty("elements");
   });
 
@@ -105,22 +97,9 @@ describe("deck and slide actions", () => {
     expect(out.slide.elements.find((e: { id: string }) => e.id === "title").markdown).toBe("Alpha");
   });
 
-  it("add_slide takes a layoutId beyond the legacy four", async () => {
-    await run({ action: "add_slide", slide: { title: "Part two" }, layoutId: "section" });
-    const added = read().slides[2];
-    expect(added.layoutId).toBe("section");
-    expect(added.elements.find((e) => e.slot === "title")?.text).toBe("Part two");
-    expect(added.elements.some((e) => e.slot === "subtitle")).toBe(true);
-  });
-
-  it("add_slide rejects an unknown layoutId before writing", async () => {
-    await expect(run({ action: "add_slide", slide: { title: "X" }, layoutId: "poster" })).rejects.toMatchObject({ status: 400 });
-    expect(env.transact).not.toHaveBeenCalled();
-  });
-
-  it("update_slide keeps free elements a legacy edit knows nothing about", async () => {
+  it("update_slide keeps free elements it isn't given", async () => {
     const box = addTextBox(env.doc, "b")!;
-    await run({ action: "update_slide", slideId: "b", slide: { title: "Beta 2" } });
+    await run({ action: "update_slide", slideId: "b", slide: { slots: { title: "Beta 2" } } });
     expect(el("b", box)).toBeDefined();
     expect(el("b", "title")?.text).toBe("Beta 2");
   });
@@ -329,27 +308,17 @@ describe("element actions", () => {
   });
 });
 
-describe("access and storage", () => {
+describe("access", () => {
   it("refuses every live-model edit from a viewer", async () => {
     decks.deckAccess.mockResolvedValue({ ok: true, page: PAGE, canEdit: false });
     await expect(run({ action: "set_theme", themeId: "dali-light" })).rejects.toMatchObject({ status: 403 });
     await expect(run({ action: "add_element", slideId: "b", element: { kind: "text" } })).rejects.toMatchObject({ status: 403 });
-    await expect(run({ action: "add_slide", slide: { title: "X" }, layoutId: "blank" })).rejects.toMatchObject({ status: 403 });
+    await expect(run({ action: "update_slide", slideId: "b", slide: { slots: { title: "X" } } })).rejects.toMatchObject({ status: 403 });
     expect(env.transact).not.toHaveBeenCalled();
-    expect(decks.migrateDeckOnOpen).not.toHaveBeenCalled();
   });
 
   it("a viewer can read elements", async () => {
     decks.deckAccess.mockResolvedValue({ ok: true, page: PAGE, canEdit: false });
     await expect(run({ action: "get", elements: true })).resolves.toMatchObject({ themeId: "dali-dark" });
-  });
-
-  it("moves a JSON deck to live storage first, and refuses when that isn't on for the caller", async () => {
-    await run({ action: "set_theme", themeId: "dali-light" });
-    expect(decks.migrateDeckOnOpen).toHaveBeenCalledWith("u1", "p1");
-    decks.migrateDeckOnOpen.mockResolvedValue("json");
-    await expect(run({ action: "set_theme", themeId: "dali-dark" })).rejects.toMatchObject({ status: 400 });
-    await expect(run({ action: "add_slide", slide: { title: "X" }, layoutId: "blank" })).rejects.toMatchObject({ status: 400 });
-    expect(env.transact).toHaveBeenCalledTimes(1);
   });
 });

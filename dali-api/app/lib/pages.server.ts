@@ -2,6 +2,7 @@ import { prisma } from "~/lib/db.server";
 import type { PageKind, Prisma } from "~/generated/prisma/client";
 import { assertUniqueName } from "~/drive/lib/page-names.server";
 import { syncMeetingShares } from "~/calendar/lib/meeting-shares.server";
+import { ensureLiveDeck } from "~/lib/live-deck.server";
 
 // Creates a Page in a project's workspace (the same Page model the project
 // Overview/PRD/Documents-block use). Appends after the current max position
@@ -22,6 +23,12 @@ function inSiblingScope<T>(
   });
 }
 
+async function withLiveDeck<T extends { id: string }>(kind: PageKind | undefined, authorId: string, created: Promise<T>): Promise<T> {
+  const page = await created;
+  if (kind === "Slides") await ensureLiveDeck(page.id, authorId);
+  return page;
+}
+
 export async function createProjectPage(input: {
   projectId: string;
   title: string;
@@ -34,7 +41,7 @@ export async function createProjectPage(input: {
   kind?: PageKind;
 }): Promise<{ id: string }> {
   const parentPageId = input.parentPageId ?? null;
-  return inSiblingScope("Project", input.projectId, parentPageId, async (tx) => {
+  return withLiveDeck(input.kind, input.createdById, inSiblingScope("Project", input.projectId, parentPageId, async (tx) => {
     if (!input.meetingNoteId && !input.meetingWhiteboardId && !input.notebookKey) {
       await assertUniqueName({
         workspaceType: "Project",
@@ -67,7 +74,7 @@ export async function createProjectPage(input: {
       },
       select: { id: true },
     });
-  });
+  }));
 }
 
 // Creates a top-level Page in the Lab workspace (workspaceId null — see
@@ -100,7 +107,7 @@ export async function createLabMeetingPage(input: {
   });
   const position = last ? last.position + 1 : 0;
 
-  return prisma.page.create({
+  return withLiveDeck(input.kind, input.createdById, prisma.page.create({
     data: {
       workspaceType: "Lab",
       workspaceId: null,
@@ -118,7 +125,7 @@ export async function createLabMeetingPage(input: {
       linkPermission: input.restricted ? "View" : "Edit",
     },
     select: { id: true },
-  });
+  }));
 }
 
 // ─── Meeting notebooks ───────────────────────────────────────────────────────
@@ -369,7 +376,7 @@ export async function createLabPage(input: {
   restricted?: boolean;
 }): Promise<{ id: string }> {
   const parentPageId = input.parentPageId ?? null;
-  return inSiblingScope("Lab", null, parentPageId, async (tx) => {
+  return withLiveDeck(input.kind, input.createdById, inSiblingScope("Lab", null, parentPageId, async (tx) => {
     await assertUniqueName({
       workspaceType: "Lab",
       workspaceId: null,
@@ -400,7 +407,7 @@ export async function createLabPage(input: {
       },
       select: { id: true },
     });
-  });
+  }));
 }
 
 /** Idempotently ensure the "Forms" folder inside an EducationOffering's

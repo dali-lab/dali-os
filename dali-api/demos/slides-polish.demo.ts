@@ -2,7 +2,6 @@ import { expect, setFeatureFlag, test } from './lib/demo';
 
 test('Pick layouts from a gallery, set a background, add sections and a transition', async ({ page, stage, loginAs }) => {
   await setFeatureFlag('drive-slides', true);
-  await setFeatureFlag('slides-collab', true);
   await loginAs({ daliEmail: 'admin@dali.dartmouth.edu' });
 
   const created = await page.request.post('/api/lab-documents', { data: { title: 'Polish deck', kind: 'Slides' } });
