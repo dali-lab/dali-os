@@ -105,6 +105,7 @@ vi.mock("~/lib/roles", async (orig) => {
 
 vi.mock("~/signing/lib/state.server", () => ({
   listMySignedDocuments: vi.fn(),
+  listOutstandingBindings: vi.fn(),
   getBindingStateForUser: vi.fn(),
   getSignerCohortsForBinding: vi.fn(),
 }));
@@ -167,6 +168,7 @@ import { isCore } from "~/lib/roles";
 import { prisma } from "~/lib/db.server";
 import {
   listMySignedDocuments,
+  listOutstandingBindings,
   getBindingStateForUser,
   getSignerCohortsForBinding,
 } from "~/signing/lib/state.server";
@@ -175,13 +177,17 @@ import { previewTermIssue, issueTermAgreements } from "~/signing/lib/issue.serve
 import { notifySignRequest } from "~/signing/lib/notify.server";
 
 import {
-  GET_BINDING_TO_SIGN_TOOL,
-  runGetBindingToSign,
-} from "../get-binding-to-sign";
+  GET_MY_AGREEMENT_TOOL,
+  runGetMyAgreement,
+} from "../get-my-agreement";
 import {
-  LIST_MY_SIGNED_DOCUMENTS_TOOL,
-  runListMySignedDocuments,
-} from "../list-my-signed-documents";
+  LIST_MY_AGREEMENTS_TOOL,
+  runListMyAgreements,
+} from "../list-my-agreements";
+import {
+  REMIND_AGREEMENT_SIGNERS_TOOL,
+  runRemindAgreementSigners,
+} from "../remind-agreement-signers";
 import {
   LIST_AGREEMENTS_TOOL,
   runListAgreements,
@@ -244,11 +250,11 @@ beforeEach(() => {
 // ─── Scopes ───────────────────────────────────────────────────────────────────
 
 describe("scopes", () => {
-  it("get_binding_to_sign requires mcp:read", () => {
-    expect(GET_BINDING_TO_SIGN_TOOL.requiredScope).toBe("mcp:read");
+  it("get_my_agreement requires mcp:read", () => {
+    expect(GET_MY_AGREEMENT_TOOL.requiredScope).toBe("mcp:read");
   });
-  it("list_my_signed_documents requires mcp:read", () => {
-    expect(LIST_MY_SIGNED_DOCUMENTS_TOOL.requiredScope).toBe("mcp:read");
+  it("list_my_agreements requires mcp:read", () => {
+    expect(LIST_MY_AGREEMENTS_TOOL.requiredScope).toBe("mcp:read");
   });
   it("list_agreements requires mcp:admin", () => {
     expect(LIST_AGREEMENTS_TOOL.requiredScope).toBe("mcp:admin");
@@ -262,15 +268,18 @@ describe("scopes", () => {
   it("manage_agreement requires mcp:admin", () => {
     expect(MANAGE_AGREEMENT_TOOL.requiredScope).toBe("mcp:admin");
   });
+  it("remind_agreement_signers requires mcp:admin", () => {
+    expect(REMIND_AGREEMENT_SIGNERS_TOOL.requiredScope).toBe("mcp:admin");
+  });
 });
 
 // ─── get_binding_to_sign ──────────────────────────────────────────────────────
 
-describe("get_binding_to_sign", () => {
+describe("get_my_agreement / to_sign", () => {
   it("throws not-found when binding does not exist", async () => {
     mockPrisma.signingBinding.findUnique.mockResolvedValue(null);
     await expect(
-      runGetBindingToSign(ctx(), { bindingId: "b-missing" }),
+      runGetMyAgreement(ctx(), { bindingId: "b-missing" }),
     ).rejects.toMatchObject({ name: "McpNotFoundError" });
   });
 
@@ -294,7 +303,7 @@ describe("get_binding_to_sign", () => {
     });
     // Mentors resolver returns false (non-mentor).
     await expect(
-      runGetBindingToSign(ctx(), { bindingId: "b1" }),
+      runGetMyAgreement(ctx(), { bindingId: "b1" }),
     ).rejects.toMatchObject({ name: "McpForbiddenError" });
   });
 
@@ -317,7 +326,7 @@ describe("get_binding_to_sign", () => {
       isActiveThisTerm: true,
     });
 
-    const result = await runGetBindingToSign(ctx(), { bindingId: "b1" });
+    const result = await runGetMyAgreement(ctx(), { bindingId: "b1" });
     expect(result.bindingId).toBe("b1");
     expect(result.documentName).toBe("Member Agreement");
     expect(result.status).toBe("unsigned");
@@ -346,7 +355,7 @@ describe("get_binding_to_sign", () => {
     });
 
     // Even though Manual.includes returns false, the signed state bypasses the gate.
-    const result = await runGetBindingToSign(ctx(), { bindingId: "b2" });
+    const result = await runGetMyAgreement(ctx(), { bindingId: "b2" });
     expect(result.status).toBe("signed");
   });
 
@@ -370,19 +379,19 @@ describe("get_binding_to_sign", () => {
       isActiveThisTerm: true,
     });
 
-    const result = await runGetBindingToSign(ctx(), { bindingId: "b3" });
+    const result = await runGetMyAgreement(ctx(), { bindingId: "b3" });
     expect(result.bodyWasLegacy).toBe(true);
   });
 });
 
 // ─── list_my_signed_documents ─────────────────────────────────────────────────
 
-describe("list_my_signed_documents", () => {
+describe("list_my_agreements / signed", () => {
   it("returns empty array when no signed documents", async () => {
     vi.mocked(listMySignedDocuments).mockResolvedValue([]);
-    const result = await runListMySignedDocuments(ctx());
+    const result = await runListMyAgreements(ctx(), { status: "signed" });
     expect(listMySignedDocuments).toHaveBeenCalledWith("u1");
-    expect(result.documents).toEqual([]);
+    expect(result.signed).toEqual([]);
   });
 
   it("returns signed documents with ISO dates", async () => {
@@ -396,9 +405,9 @@ describe("list_my_signed_documents", () => {
         signedAt,
       },
     ]);
-    const result = await runListMySignedDocuments(ctx());
-    expect(result.documents).toHaveLength(1);
-    expect(result.documents[0]).toMatchObject({
+    const result = await runListMyAgreements(ctx(), { status: "signed" });
+    expect(result.signed).toHaveLength(1);
+    expect(result.signed?.[0]).toMatchObject({
       signatureId: "sig1",
       bindingId: "b1",
       documentName: "Member Agreement",
@@ -849,11 +858,11 @@ describe("manage_agreement — archive", () => {
   });
 });
 
-describe("manage_agreement — remind", () => {
+describe("remind_agreement_signers", () => {
   it("throws forbidden when caller is not Core", async () => {
     vi.mocked(isCore).mockResolvedValue(false);
     await expect(
-      runManageAgreement(ctx(), { action: "remind", bindingId: "b1" }),
+      runRemindAgreementSigners(ctx(), { bindingId: "b1" }),
     ).rejects.toMatchObject({ name: "McpForbiddenError" });
   });
 
@@ -861,7 +870,7 @@ describe("manage_agreement — remind", () => {
     vi.mocked(isCore).mockResolvedValue(true);
     mockPrisma.signingBinding.findUnique.mockResolvedValue(null);
     await expect(
-      runManageAgreement(ctx(), { action: "remind", bindingId: "b-gone" }),
+      runRemindAgreementSigners(ctx(), { bindingId: "b-gone" }),
     ).rejects.toMatchObject({ name: "McpNotFoundError" });
   });
 
@@ -874,7 +883,7 @@ describe("manage_agreement — remind", () => {
       document: { archivedAt: new Date("2026-07-01") },
     });
     await expect(
-      runManageAgreement(ctx(), { action: "remind", bindingId: "b1" }),
+      runRemindAgreementSigners(ctx(), { bindingId: "b1" }),
     ).rejects.toMatchObject({ name: "McpNotFoundError" });
   });
 
@@ -887,7 +896,7 @@ describe("manage_agreement — remind", () => {
       document: { archivedAt: null },
     });
     await expect(
-      runManageAgreement(ctx(), { action: "remind", bindingId: "b1" }),
+      runRemindAgreementSigners(ctx(), { bindingId: "b1" }),
     ).rejects.toMatchObject({ name: "McpInvalidError" });
   });
 
@@ -901,8 +910,7 @@ describe("manage_agreement — remind", () => {
     });
     mockPrisma.signingBinding.update.mockResolvedValue({ id: "b1" });
 
-    const result = await runManageAgreement(ctx(), {
-      action: "remind",
+    const result = await runRemindAgreementSigners(ctx(), {
       bindingId: "b1",
     });
     expect(notifySignRequest).toHaveBeenCalledWith("b1", { force: true });
@@ -925,12 +933,47 @@ describe("manage_agreement — remind", () => {
     });
     mockPrisma.signingBinding.update.mockResolvedValue({ id: "b1" });
 
-    const result = await runManageAgreement(ctx(), {
-      action: "remind",
+    const result = await runRemindAgreementSigners(ctx(), {
       bindingId: "b1",
       force: true,
     });
     expect(notifySignRequest).toHaveBeenCalledWith("b1", { force: true });
     expect(result).toEqual({ ok: true });
+  });
+});
+
+describe("agreement tool consolidation", () => {
+  it("list_my_agreements returns both lists by default and only the one asked for", async () => {
+    vi.mocked(listOutstandingBindings).mockResolvedValue([]);
+    vi.mocked(listMySignedDocuments).mockResolvedValue([]);
+    expect(await runListMyAgreements(ctx(), {})).toEqual({ toSign: [], signed: [] });
+    expect(await runListMyAgreements(ctx(), { status: "to_sign" })).toEqual({ toSign: [] });
+    expect(await runListMyAgreements(ctx(), { status: "signed" })).toEqual({ signed: [] });
+  });
+
+  it("get_my_agreement reads the caller's signature for the signed view", async () => {
+    mockPrisma.signingBinding.findUnique.mockClear();
+    mockPrisma.signingSignature.findUnique.mockResolvedValue(null);
+    await expect(
+      runGetMyAgreement(ctx(), { bindingId: "b1", view: "signed" }),
+    ).rejects.toMatchObject({ name: "McpNotFoundError" });
+    expect(mockPrisma.signingSignature.findUnique).toHaveBeenCalled();
+    expect(mockPrisma.signingBinding.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("manage_agreement no longer takes remind or its properties", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    await expect(
+      runManageAgreement(ctx(), { action: "remind", bindingId: "b1" } as never),
+    ).rejects.toMatchObject({ name: "McpInvalidError" });
+    expect(MANAGE_AGREEMENT_TOOL.inputSchema.properties).not.toHaveProperty("bindingId");
+    expect(MANAGE_AGREEMENT_TOOL.inputSchema.properties).not.toHaveProperty("force");
+  });
+
+  it("remind_agreement_signers needs a binding id", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    await expect(runRemindAgreementSigners(ctx(), {} as never)).rejects.toMatchObject({
+      name: "McpInvalidError",
+    });
   });
 });
