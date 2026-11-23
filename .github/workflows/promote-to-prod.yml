@@ -5,6 +5,10 @@ name: Promote to prod
 # actual promotion happens here, not via the GitHub merge button (which is
 # blocked by branch-protection push restrictions on `prod`).
 #
+# The staging head must have green required checks (test-api, integration-api,
+# e2e-api, Build API; a job skipped by the changed-paths filter counts as
+# passing). An admin can bypass with `/push --force`; the bypass is logged on the PR.
+#
 # Setup: PROMOTE_APP_ID + PROMOTE_APP_PRIVATE_KEY secrets, App installed on
 # this repo, App listed as bypass actor on the `prod` ruleset.
 
@@ -21,6 +25,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+      checks: read
     outputs:
       head_sha: ${{ steps.context.outputs.head_sha }}
     steps:
@@ -56,6 +61,7 @@ jobs:
           fi
 
       - name: Verify commenter has write access
+        id: perm
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OWNER: ${{ github.repository_owner }}
@@ -72,6 +78,44 @@ jobs:
               exit 1
               ;;
           esac
+          echo "perm=$PERM" >>"$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/scripts
+          sparse-checkout-cone-mode: false
+
+      - name: Require green checks on the staging head
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          REPO: ${{ github.event.repository.name }}
+          PR: ${{ github.event.issue.number }}
+          USER: ${{ github.event.comment.user.login }}
+          PERM: ${{ steps.perm.outputs.perm }}
+          COMMENT: ${{ github.event.comment.body }}
+          HEAD_SHA: ${{ steps.context.outputs.head_sha }}
+        run: |
+          set -uo pipefail
+          gh api --paginate "repos/$OWNER/$REPO/commits/$HEAD_SHA/check-runs?per_page=100" --jq '.check_runs[]' >"$RUNNER_TEMP/check-runs.ndjson"
+          if node .github/scripts/require-green.mjs "$HEAD_SHA" "$RUNNER_TEMP/check-runs.ndjson" >"$RUNNER_TEMP/report.md"; then
+            cat "$RUNNER_TEMP/report.md"
+            exit 0
+          fi
+          FORCE=false
+          if [ "$(awk '{print $2}' <<<"$COMMENT" | head -n1)" = "--force" ]; then FORCE=true; fi
+          if [ "$FORCE" = true ] && [ "$PERM" = "admin" ]; then
+            MSG=$(printf '⚠️ @%s (admin) forced `/push` past failing checks.\n\n%s' "$USER" "$(cat "$RUNNER_TEMP/report.md")")
+            echo "$MSG" >>"$GITHUB_STEP_SUMMARY"
+            gh pr comment "$PR" --repo "$OWNER/$REPO" --body "$MSG"
+            exit 0
+          fi
+          HINT="Fix or re-run the failing checks, then comment \`/push\` again. An admin can override with \`/push --force\`."
+          if [ "$FORCE" = true ]; then HINT="\`--force\` needs admin permission (got: \`$PERM\`)."; fi
+          MSG=$(printf '❌ Not promoting. %s\n\n%s' "$(cat "$RUNNER_TEMP/report.md")" "$HINT")
+          echo "$MSG" >>"$GITHUB_STEP_SUMMARY"
+          gh pr comment "$PR" --repo "$OWNER/$REPO" --body "$MSG"
+          exit 1
 
   promote:
     needs: check
