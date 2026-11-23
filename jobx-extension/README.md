@@ -20,6 +20,11 @@ timesheet — nothing reaches payroll until you submit the period in JobX.
 - The panel opens on the pay period of the JobX page you're on (marked
   *This page*), so the common case is one click. Entries whose day isn't on
   the open JobX page are shown but skipped.
+- Entries JobX already has are skipped and marked *Already in JobX*. A match
+  is the same day, start and end time, read from JobX's saved rows
+  (`tr.QuickDisplayRow`); the note doesn't count. The check runs again before
+  each save, so restarting a fill that was stopped partway doesn't save
+  anything twice.
 - The server is always production DALI OS (`https://os.dali.dartmouth.edu`),
   hardcoded in `background.js`. There's no server picker — members shouldn't
   have to think about it. To test against staging or local dev, change `BASE`
