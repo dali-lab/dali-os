@@ -1,9 +1,3 @@
-// MCP tool: manage_education_session — add, update, delete, bulk-generate, or
-// toggle the self-check-in window for sessions on an education offering. All
-// mutations route through runOfferingAction or session-checkin.server.ts
-// (same paths as the HTTP routes).
-// Access: instructor or Core (isOfferingManager). Scope: mcp:write.
-
 import { runOfferingAction } from "~/education/lib/offerings.server";
 import { setSessionCheckInOpen } from "~/education/lib/session-checkin.server";
 import { isOfferingManager } from "~/education/lib/access.server";
@@ -19,13 +13,13 @@ import {
 export const MANAGE_EDUCATION_SESSION_TOOL = {
   name: "manage_education_session",
   description:
-    "Add, update, delete, bulk-generate, or toggle the self-check-in QR window for sessions on an education offering. Actions: add · update · delete · generate_series · set_check_in_open. generate_series has two modes: weekday mode (weekdays + startDate + startTime [+ endTime] + weeks) fills every matching class day in date order, or interval mode (startDatetime + count [+ intervalDays]). Sessions are always renumbered chronologically. Instructor or Core only.",
+    "Create, update, delete or bulk-generate sessions for an education offering, or open and close the self-check-in QR window. Actions: create · update · delete · generate_series · set_check_in_open. generate_series runs in weekday mode or interval mode; sessions are always renumbered chronologically. Instructor or Core only.",
   inputSchema: {
     type: "object" as const,
     properties: {
       action: {
         type: "string",
-        enum: ["add", "update", "delete", "generate_series", "set_check_in_open"],
+        enum: ["create", "update", "delete", "generate_series", "set_check_in_open"],
       },
       offeringId: { type: "string", minLength: 1 },
       sessionId: {
@@ -34,11 +28,11 @@ export const MANAGE_EDUCATION_SESSION_TOOL = {
       },
       datetime: {
         type: "string",
-        description: "ISO datetime start. Required for add and update.",
+        description: "ISO datetime start. Required for create and update.",
       },
       endsAt: {
         type: "string",
-        description: "Optional ISO datetime end (add and update). Must be after datetime.",
+        description: "Optional ISO datetime end (create and update). Must be after datetime.",
       },
       title: { type: "string", description: "Optional session title." },
       location: { type: "string", description: "Optional location." },
@@ -116,10 +110,9 @@ type Args = {
 
 export async function runManageEducationSession(ctx: McpCtx, args: Args) {
   requireForAction(args.action, args, {
-    add: ["datetime"],
+    create: ["datetime"],
     update: ["sessionId", "datetime"],
     delete: ["sessionId"],
-    // generate_series validates its two modes server-side (weekday vs interval).
     generate_series: [],
     set_check_in_open: ["sessionId"],
   });
@@ -128,8 +121,6 @@ export async function runManageEducationSession(ctx: McpCtx, args: Args) {
     throw new McpForbiddenError();
   }
 
-  // set_check_in_open bypasses runOfferingAction and calls the checkin server fn
-  // directly (the set-session-check-in intent in the manage route does the same).
   if (args.action === "set_check_in_open") {
     const result = await setSessionCheckInOpen({
       offeringId: args.offeringId,
@@ -145,7 +136,7 @@ export async function runManageEducationSession(ctx: McpCtx, args: Args) {
   }
 
   const intentMap: Record<string, string> = {
-    add: "add-session",
+    create: "add-session",
     update: "update-session",
     delete: "delete-session",
     generate_series: "generate-sessions",

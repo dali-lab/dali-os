@@ -1,7 +1,7 @@
 // MCP tool: get_signed_document_admin — mcp:admin (Core). Read another member's
 // full signed copy: the frozen archival body (field values baked in), plus
 // signing metadata (IP, user-agent, typed name, version). Mirrors the
-// core.agreements.$id.signature.$sigId.tsx loader. The existing get_signed_document
+// core.agreements.$id.signature.$sigId.tsx loader. The caller-scoped get_my_agreement
 // is member-self only; this extends access to Core reviewers.
 
 import { prisma } from "~/lib/db.server";
@@ -31,7 +31,7 @@ import {
 export const GET_SIGNED_DOCUMENT_ADMIN_TOOL = {
   name: "get_signed_document_admin",
   description:
-    "Core-only. Read another member's full signed copy of an agreement: frozen archival body (with field values baked in), signing metadata (IP, user agent, typed name, role, version number), and whether the body was pre-migration legacy ProseMirror JSON. The existing get_signed_document only returns the caller's own copy; this tool is for Core reviewers auditing compliance.",
+    "Core-only. Read another member's full signed copy of an agreement: frozen archival body (with field values baked in), signing metadata (IP, user agent, typed name, role, version number), and whether the body was pre-migration legacy ProseMirror JSON. The caller-scoped get_my_agreement only returns the caller's own copy; this tool is for Core reviewers auditing compliance.",
   inputSchema: {
     type: "object" as const,
     properties: {

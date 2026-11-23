@@ -986,32 +986,6 @@ describe("manage_education_offering / new actions", () => {
     expect(result).toMatchObject({ ok: true, id: "o2" });
   });
 
-  it("rejects non-Core for invite_external_instructor", async () => {
-    vi.mocked(isCore).mockResolvedValue(false);
-    await expect(
-      runManageEducationOffering(ctx(), {
-        action: "invite_external_instructor",
-        offeringId: "o1",
-        netId: "abc123",
-        firstName: "Jane",
-        lastName: "Doe",
-      }),
-    ).rejects.toMatchObject({ name: "McpForbiddenError" });
-  });
-
-  it("invites external instructor via runOfferingAction", async () => {
-    vi.mocked(isCore).mockResolvedValue(true);
-    vi.mocked(runOfferingAction).mockResolvedValue({ ok: true, id: "o1" });
-    const result = await runManageEducationOffering(ctx(), {
-      action: "invite_external_instructor",
-      offeringId: "o1",
-      netId: "jdoe",
-      firstName: "Jane",
-      lastName: "Doe",
-    });
-    expect(result.ok).toBe(true);
-  });
-
   it("rejects non-manager for set_form_binding", async () => {
     vi.mocked(isOfferingManager).mockResolvedValue(false);
     await expect(

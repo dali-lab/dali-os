@@ -1,24 +1,6 @@
-// MCP tool: manage_education_offering — create, update, set status, set
-// instructors, duplicate, invite/remove external instructors, set form bindings,
-// or write a decision email. All mutations go through runOfferingAction or
-// the appropriate lib server function, which is the same path the HTTP routes
-// use, keeping validation/business logic in one place.
-//
-// Access tiers match the HTTP routes:
-//   create / set_instructors / delete / duplicate / invite_external_instructor /
-//   remove_external_instructor
-//                                        → Core only
-//   update / set_status / set_form_binding
-//                                        → instructor or Core (isOfferingManager)
-
 import { runOfferingAction } from "~/education/lib/offerings.server";
 import { isOfferingManager } from "~/education/lib/access.server";
 import { setFormBinding } from "~/education/lib/feedback.server";
-import {
-  DECISION_EMAIL_SLOTS,
-  decisionSlot,
-  type DecisionSlotStatus,
-} from "~/education/lib/education-emails";
 import { isCore } from "~/lib/roles";
 import {
   requireForAction,
@@ -32,7 +14,7 @@ import {
 export const MANAGE_EDUCATION_OFFERING_TOOL = {
   name: "manage_education_offering",
   description:
-    "Create, update, set status, set instructors, duplicate, invite/remove external instructors, or bind feedback forms for an education offering. Actions: create (Core only) · update (instructor/Core) · set_status (instructor/Core) · set_instructors (Core only) · delete (Core, Draft only) · duplicate (Core only) · invite_external_instructor (Core only) · remove_external_instructor (Core only) · set_form_binding (instructor/Core). Decision-email copy is edited with manage_email_template.",
+    "Create, update, publish or archive, duplicate or delete an education offering, or bind its feedback forms. Actions: create (Core only) · update (instructor/Core) · set_status (instructor/Core) · delete (Core, Draft only) · duplicate (Core only) · set_form_binding (instructor/Core). Instructors are managed with manage_offering_instructors; decision-email copy with manage_email_template.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -42,11 +24,8 @@ export const MANAGE_EDUCATION_OFFERING_TOOL = {
           "create",
           "update",
           "set_status",
-          "set_instructors",
           "delete",
           "duplicate",
-          "invite_external_instructor",
-          "remove_external_instructor",
           "set_form_binding",
         ],
       },
@@ -78,33 +57,10 @@ export const MANAGE_EDUCATION_OFFERING_TOOL = {
         enum: ["Draft", "Published", "Archived"],
         description: "For set_status.",
       },
-      userIds: {
-        type: "array",
-        items: { type: "string" },
-        description: "For set_instructors: list of user IDs to assign as instructors.",
-      },
       firstSessionDate: {
         type: "string",
         description:
           "duplicate: ISO datetime of the first session in the new run. All other sessions and registration dates are shifted by the same delta. Omit to copy dates as-is.",
-      },
-      netId: {
-        type: "string",
-        description:
-          "invite_external_instructor: Dartmouth NetID of the external instructor.",
-      },
-      firstName: {
-        type: "string",
-        description: "invite_external_instructor: first name.",
-      },
-      lastName: {
-        type: "string",
-        description: "invite_external_instructor: last name.",
-      },
-      userId: {
-        type: "string",
-        description:
-          "remove_external_instructor: user ID of the external instructor to remove.",
       },
       slot: {
         type: "string",
@@ -136,17 +92,9 @@ type Args = {
   requiresReview?: boolean;
   calendarEmail?: string;
   status?: string;
-  userIds?: string[];
   firstSessionDate?: string;
-  netId?: string;
-  firstName?: string;
-  lastName?: string;
-  userId?: string;
   slot?: string;
   formId?: string | null;
-  decisionStatus?: string;
-  subject?: string;
-  body?: string;
 };
 
 export async function runManageEducationOffering(ctx: McpCtx, args: Args) {
@@ -170,15 +118,11 @@ export async function runManageEducationOffering(ctx: McpCtx, args: Args) {
       "endsAt",
     ],
     set_status: ["offeringId", "status"],
-    set_instructors: ["offeringId", "userIds"],
     delete: ["offeringId"],
     duplicate: ["offeringId"],
-    invite_external_instructor: ["offeringId", "netId", "firstName", "lastName"],
-    remove_external_instructor: ["offeringId", "userId"],
     set_form_binding: ["offeringId", "slot"],
   });
 
-  // Per-action access gate before touching the DB.
   if (
     args.action === "update" ||
     args.action === "set_status" ||
@@ -188,11 +132,8 @@ export async function runManageEducationOffering(ctx: McpCtx, args: Args) {
       throw new McpForbiddenError();
     }
   } else if (
-    args.action === "set_instructors" ||
     args.action === "delete" ||
-    args.action === "duplicate" ||
-    args.action === "invite_external_instructor" ||
-    args.action === "remove_external_instructor"
+    args.action === "duplicate"
   ) {
     if (!(await isCore(ctx.user.id))) {
       throw new McpForbiddenError("Core only");
@@ -200,7 +141,6 @@ export async function runManageEducationOffering(ctx: McpCtx, args: Args) {
   }
   // create: runOfferingAction re-checks isCore internally.
 
-  // set_form_binding uses the feedback server fn directly (not runOfferingAction).
   if (args.action === "set_form_binding") {
     const result = await setFormBinding({
       offeringId: args.offeringId!,
@@ -215,16 +155,12 @@ export async function runManageEducationOffering(ctx: McpCtx, args: Args) {
     return { ok: true, id: args.offeringId ?? null };
   }
 
-  // Map action to the intent string runOfferingAction dispatches on.
   const intentMap: Record<string, string> = {
     create: "create-offering",
     update: "update-offering",
     set_status: "set-status",
-    set_instructors: "set-instructors",
     delete: "delete-offering",
     duplicate: "duplicate-offering",
-    invite_external_instructor: "invite-external-instructor",
-    remove_external_instructor: "remove-external-instructor",
   };
   const intent = intentMap[args.action];
 
@@ -246,19 +182,7 @@ export async function runManageEducationOffering(ctx: McpCtx, args: Args) {
     fd.set("calendarEmail", args.calendarEmail);
   }
   if (args.status) fd.set("status", args.status);
-  if (args.userIds) {
-    for (const id of args.userIds) {
-      fd.append("userIds", id);
-    }
-  }
-  // duplicate
   if (args.firstSessionDate) fd.set("firstSessionDate", args.firstSessionDate);
-  // invite_external_instructor
-  if (args.netId) fd.set("netId", args.netId);
-  if (args.firstName) fd.set("firstName", args.firstName);
-  if (args.lastName) fd.set("lastName", args.lastName);
-  // remove_external_instructor
-  if (args.userId) fd.set("userId", args.userId);
 
   const result = await runOfferingAction(fd, ctx.user.id);
 

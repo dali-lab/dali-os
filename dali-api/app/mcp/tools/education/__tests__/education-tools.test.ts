@@ -128,13 +128,13 @@ import {
   runGetCeCreditStanding,
 } from "../get-ce-credit-standing";
 import {
-  SUBMIT_EDUCATION_APPLICATION_TOOL,
-  runSubmitEducationApplication,
-} from "../submit-education-application";
+  MANAGE_MY_EDUCATION_APPLICATION_TOOL,
+  runManageMyEducationApplication,
+} from "../manage-my-education-application";
 import {
-  WITHDRAW_EDUCATION_APPLICATION_TOOL,
-  runWithdrawEducationApplication,
-} from "../withdraw-education-application";
+  MANAGE_OFFERING_INSTRUCTORS_TOOL,
+  runManageOfferingInstructors,
+} from "../manage-offering-instructors";
 import {
   DECIDE_EDUCATION_APPLICATION_TOOL,
   runDecideEducationApplication,
@@ -209,11 +209,11 @@ describe("scopes", () => {
   it("get_ce_credit_standing requires mcp:read", () => {
     expect(GET_CE_CREDIT_STANDING_TOOL.requiredScope).toBe("mcp:read");
   });
-  it("submit_education_application requires mcp:write", () => {
-    expect(SUBMIT_EDUCATION_APPLICATION_TOOL.requiredScope).toBe("mcp:write");
+  it("manage_my_education_application requires mcp:write", () => {
+    expect(MANAGE_MY_EDUCATION_APPLICATION_TOOL.requiredScope).toBe("mcp:write");
   });
-  it("withdraw_education_application requires mcp:write", () => {
-    expect(WITHDRAW_EDUCATION_APPLICATION_TOOL.requiredScope).toBe("mcp:write");
+  it("manage_offering_instructors requires mcp:write", () => {
+    expect(MANAGE_OFFERING_INSTRUCTORS_TOOL.requiredScope).toBe("mcp:write");
   });
   it("decide_education_application requires mcp:write", () => {
     expect(DECIDE_EDUCATION_APPLICATION_TOOL.requiredScope).toBe("mcp:write");
@@ -429,39 +429,39 @@ describe("get_ce_credit_standing", () => {
 
 // ─── submit_education_application ────────────────────────────────────────────
 
-describe("submit_education_application", () => {
+describe("manage_my_education_application / apply", () => {
   it("surfaces Approved outcome", async () => {
     vi.mocked(submitApplication).mockResolvedValue({ ok: true, status: "Approved" });
-    const result = await runSubmitEducationApplication(ctx(), { offeringId: "o1" });
-    expect(result.status).toBe("Approved");
+    const result = await runManageMyEducationApplication(ctx(), { action: "apply", offeringId: "o1" });
+    expect(result).toMatchObject({ status: "Approved" });
   });
 
   it("throws invalid on error result", async () => {
     vi.mocked(submitApplication).mockResolvedValue({ error: "Registration isn't open", status: 400 });
     await expect(
-      runSubmitEducationApplication(ctx(), { offeringId: "o1" }),
+      runManageMyEducationApplication(ctx(), { action: "apply", offeringId: "o1" }),
     ).rejects.toMatchObject({ name: "McpInvalidError" });
   });
 
   it("throws not-found when offering missing", async () => {
     vi.mocked(submitApplication).mockResolvedValue({ error: "Offering not found.", status: 404 });
     await expect(
-      runSubmitEducationApplication(ctx(), { offeringId: "gone" }),
+      runManageMyEducationApplication(ctx(), { action: "apply", offeringId: "gone" }),
     ).rejects.toMatchObject({ name: "McpNotFoundError" });
   });
 });
 
 // ─── withdraw_education_application ──────────────────────────────────────────
 
-describe("withdraw_education_application", () => {
+describe("manage_my_education_application / withdraw", () => {
   it("succeeds and reports promoted seat", async () => {
     vi.mocked(withdrawApplication).mockResolvedValue({
       ok: true,
       status: "Withdrawn",
       promotedApplicationId: "app2",
     });
-    const result = await runWithdrawEducationApplication(ctx(), { offeringId: "o1" });
-    expect(result.promotedFromWaitlist).toBe(true);
+    const result = await runManageMyEducationApplication(ctx(), { action: "withdraw", offeringId: "o1" });
+    expect(result).toEqual({ ok: true, promotedFromWaitlist: true });
   });
 
   it("throws not-found when no application exists", async () => {
@@ -470,7 +470,7 @@ describe("withdraw_education_application", () => {
       status: 404,
     });
     await expect(
-      runWithdrawEducationApplication(ctx(), { offeringId: "o1" }),
+      runManageMyEducationApplication(ctx(), { action: "withdraw", offeringId: "o1" }),
     ).rejects.toMatchObject({ name: "McpNotFoundError" });
   });
 });
@@ -497,7 +497,7 @@ describe("decide_education_application", () => {
       applicationId: "a1",
       status: "Approved",
     });
-    expect(result.status).toBe("Approved");
+    expect(result).toMatchObject({ status: "Approved" });
     expect(result.promotedFromWaitlist).toBe(false);
   });
 
@@ -561,15 +561,16 @@ describe("manage_education_offering", () => {
     ).rejects.toMatchObject({ name: "McpInvalidError" });
   });
 
-  it("rejects non-core for set_instructors", async () => {
-    vi.mocked(isCore).mockResolvedValue(false);
-    await expect(
-      runManageEducationOffering(ctx(), {
-        action: "set_instructors",
-        offeringId: "o1",
-        userIds: ["u2"],
-      }),
-    ).rejects.toMatchObject({ name: "McpForbiddenError" });
+  it("no longer takes instructor actions or their properties", async () => {
+    for (const action of ["set_instructors", "invite_external_instructor", "remove_external_instructor"]) {
+      await expect(
+        runManageEducationOffering(ctx(), { action, offeringId: "o1" }),
+      ).rejects.toMatchObject({ name: "McpInvalidError" });
+    }
+    expect(runOfferingAction).not.toHaveBeenCalled();
+    for (const prop of ["userIds", "netId", "firstName", "lastName", "userId"]) {
+      expect(MANAGE_EDUCATION_OFFERING_TOOL.inputSchema.properties).not.toHaveProperty(prop);
+    }
   });
 
   it("rejects non-manager for update", async () => {
@@ -601,6 +602,58 @@ describe("manage_education_offering", () => {
   });
 });
 
+// ─── manage_offering_instructors ──────────────────────────────────────────────
+
+describe("manage_offering_instructors", () => {
+  const set = { action: "set", offeringId: "o1", userIds: ["u2"] };
+  const invite = { action: "invite_external", offeringId: "o1", netId: "jdoe", firstName: "Jane", lastName: "Doe" };
+  const remove = { action: "remove_external", offeringId: "o1", userId: "u9" };
+
+  it("rejects non-Core for every action", async () => {
+    vi.mocked(isCore).mockResolvedValue(false);
+    for (const args of [set, invite, remove]) {
+      await expect(runManageOfferingInstructors(ctx(), args)).rejects.toMatchObject({
+        name: "McpForbiddenError",
+      });
+    }
+    expect(runOfferingAction).not.toHaveBeenCalled();
+  });
+
+  it("requires each action's arguments and rejects unknown actions", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    await expect(
+      runManageOfferingInstructors(ctx(), { action: "set", offeringId: "o1" }),
+    ).rejects.toMatchObject({ name: "McpInvalidError" });
+    await expect(
+      runManageOfferingInstructors(ctx(), { action: "invite_external", offeringId: "o1", netId: "x" }),
+    ).rejects.toMatchObject({ name: "McpInvalidError" });
+    await expect(
+      runManageOfferingInstructors(ctx(), { action: "set_instructors", offeringId: "o1", userIds: [] }),
+    ).rejects.toMatchObject({ name: "McpInvalidError" });
+  });
+
+  it("sends each action's intent and fields to runOfferingAction", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    vi.mocked(runOfferingAction).mockResolvedValue({ ok: true, id: "o1" });
+    const sent = () => vi.mocked(runOfferingAction).mock.calls.at(-1)![0];
+    await expect(runManageOfferingInstructors(ctx(), set)).resolves.toEqual({ ok: true, id: "o1" });
+    expect(sent().get("intent")).toBe("set-instructors");
+    expect(sent().getAll("userIds")).toEqual(["u2"]);
+    await runManageOfferingInstructors(ctx(), invite);
+    expect(sent().get("intent")).toBe("invite-external-instructor");
+    expect(sent().get("netId")).toBe("jdoe");
+    await runManageOfferingInstructors(ctx(), remove);
+    expect(sent().get("intent")).toBe("remove-external-instructor");
+    expect(sent().get("userId")).toBe("u9");
+  });
+
+  it("maps a missing offering to not found", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    vi.mocked(runOfferingAction).mockResolvedValue({ error: "Offering not found", status: 404 });
+    await expect(runManageOfferingInstructors(ctx(), set)).rejects.toMatchObject({ name: "McpNotFoundError" });
+  });
+});
+
 // ─── manage_education_session ─────────────────────────────────────────────────
 
 describe("manage_education_session", () => {
@@ -608,23 +661,31 @@ describe("manage_education_session", () => {
     vi.mocked(isOfferingManager).mockResolvedValue(false);
     await expect(
       runManageEducationSession(ctx(), {
-        action: "add",
+        action: "create",
         offeringId: "o1",
         datetime: "2026-03-01T18:00:00Z",
       }),
     ).rejects.toMatchObject({ name: "McpForbiddenError" });
   });
 
-  it("adds a session via runOfferingAction", async () => {
+  it("creates a session via runOfferingAction", async () => {
     vi.mocked(isOfferingManager).mockResolvedValue(true);
     vi.mocked(runOfferingAction).mockResolvedValue({ ok: true, id: "s-new" });
     const result = await runManageEducationSession(ctx(), {
-      action: "add",
+      action: "create",
       offeringId: "o1",
       datetime: "2026-03-01T18:00:00Z",
       location: "Sudikoff 115",
     });
     expect(result.id).toBe("s-new");
+  });
+
+  it("no longer takes add", async () => {
+    await expect(
+      runManageEducationSession(ctx(), { action: "add", offeringId: "o1", datetime: "2026-03-01T18:00:00Z" }),
+    ).rejects.toMatchObject({ name: "McpInvalidError" });
+    expect(MANAGE_EDUCATION_SESSION_TOOL.inputSchema.properties.action.enum).toContain("create");
+    expect(MANAGE_EDUCATION_SESSION_TOOL.inputSchema.properties.action.enum).not.toContain("add");
   });
 
   it("rejects unknown action", async () => {
