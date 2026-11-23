@@ -14,7 +14,6 @@ vi.mock("~/calendar/lib/notebooks.server", () => ({
   setNotebookTemplate: vi.fn(),
   setNoteDate: vi.fn(),
   setSeriesNotebook: vi.fn(),
-  trashNotebook: vi.fn(),
 }));
 
 import * as lib from "~/calendar/lib/notebooks.server";
@@ -38,15 +37,14 @@ describe("manage_notebook definition", () => {
       "set_date",
       "merge_into",
       "dissolve",
-      "trash",
       "set_series_notebook",
     ]);
   });
 
   it("runs as the calling user", async () => {
-    vi.mocked(lib.trashNotebook).mockResolvedValue(undefined);
-    await MANAGE_NOTEBOOK.run({ user: { id: "u9" } } as never, { action: "trash", notebookId: "nb1" });
-    expect(lib.trashNotebook).toHaveBeenCalledWith("nb1", "u9");
+    vi.mocked(lib.dissolveNotebook).mockResolvedValue({ moved: 0 });
+    await MANAGE_NOTEBOOK.run({ user: { id: "u9" } } as never, { action: "dissolve", notebookId: "nb1" });
+    expect(lib.dissolveNotebook).toHaveBeenCalledWith("nb1", "u9");
   });
 });
 
@@ -65,7 +63,6 @@ describe("manage_notebook required fields", () => {
     ["set_date", { pageId: "d1", date: "tuesday" }],
     ["merge_into", { notebookId: "nb1" }],
     ["dissolve", {}],
-    ["trash", {}],
     ["set_series_notebook", { meetingId: "m1" }],
     ["set_series_notebook", { scope: "all" }],
   ])("%s rejects %j", async (action, rest) => {
@@ -75,6 +72,11 @@ describe("manage_notebook required fields", () => {
 
   it("rejects an unknown action", async () => {
     await expect(run({ action: "explode" })).rejects.toMatchObject({ status: 400 });
+  });
+
+  it("no longer trashes: that is manage_drive_trash", async () => {
+    await expect(run({ action: "trash", notebookId: "nb1" })).rejects.toMatchObject({ status: 400 });
+    expect("trashNotebook" in lib).toBe(false);
   });
 });
 
@@ -171,11 +173,6 @@ describe("manage_notebook actions", () => {
     expect(lib.dissolveNotebook).toHaveBeenCalledWith("nb1", "u1");
   });
 
-  it("trash", async () => {
-    expect(await run({ action: "trash", notebookId: "nb1" })).toEqual({ ok: true });
-    expect(lib.trashNotebook).toHaveBeenCalledWith("nb1", "u1");
-  });
-
   it("set_series_notebook sets, and unsets when notebookId is omitted", async () => {
     vi.mocked(lib.setSeriesNotebook).mockResolvedValue({ moved: 2, skipped: 0 });
     expect(await run({ action: "set_series_notebook", meetingId: "m1", notebookId: "nb1", scope: "all" })).toEqual({
@@ -211,7 +208,6 @@ describe("manage_notebook authorization", () => {
     ["set_date", { action: "set_date", pageId: "d1", date: "2026-10-14" }, "setNoteDate"],
     ["merge_into", { action: "merge_into", notebookId: "nb1", targetId: "nb2" }, "mergeNotebooks"],
     ["dissolve", { action: "dissolve", notebookId: "nb1" }, "dissolveNotebook"],
-    ["trash", { action: "trash", notebookId: "nb1" }, "trashNotebook"],
     ["set_series_notebook", { action: "set_series_notebook", meetingId: "m1", scope: "all" }, "setSeriesNotebook"],
   ] as const)("%s surfaces the library's 403 with its status", async (_action, input, fn) => {
     (lib[fn] as unknown as ReturnType<typeof vi.fn>).mockRejectedValue(refusal);

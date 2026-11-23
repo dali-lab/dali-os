@@ -29,7 +29,6 @@ import { LIST_EPICS_TOOL, runListEpics } from "./list-epics";
 import { LIST_PROJECT_PAGES_TOOL, runListProjectPages } from "./list-project-pages";
 import { READ_PAGE_TOOL, runReadPage } from "./read-page";
 import { CREATE_PAGE_TOOL, runCreatePage } from "./create-page";
-import { SET_PAGE_CONTENT_TOOL, runSetPageContent } from "./set-page-content";
 import { LIST_PROJECT_FILES_TOOL, runListProjectFiles } from "./list-project-files";
 import { UPLOAD_PROJECT_FILE_TOOL, runUploadProjectFile } from "./upload-project-file";
 import {
@@ -45,8 +44,7 @@ import {
   runGetStaffingBoard,
 } from "./staffing";
 import { LIST_DOCUMENT_SHARING_TOOL, runListDocumentSharing } from "./document-curation";
-import { LIST_FILE_SHARES_TOOL, runListFileShares } from "./file-sharing";
-import { LIST_PAGE_SHARES_TOOL, runListPageShares } from "./page-sharing";
+import { GET_SHARING_TOOL, runGetSharing } from "./get-sharing";
 
 type CallerTool = (callerId: string, args: never, ctx: McpCtx) => Promise<unknown>;
 
@@ -84,13 +82,11 @@ export const BASE_TOOLS: McpTool[] = [
   asCaller(LIST_PROJECT_PAGES_TOOL, runListProjectPages),
   asCaller(READ_PAGE_TOOL, runReadPage),
   asCaller(CREATE_PAGE_TOOL, runCreatePage),
-  asCaller(SET_PAGE_CONTENT_TOOL, runSetPageContent),
   asCaller(LIST_PROJECT_FILES_TOOL, runListProjectFiles),
   asCaller(UPLOAD_PROJECT_FILE_TOOL, runUploadProjectFile),
   asCaller(LIST_MY_TIME_ENTRIES_TOOL, runListMyTimeEntries),
   asCaller(UPDATE_PROJECT_SHOWCASE_TOOL, runUpdateProjectShowcase),
   asCaller(GET_STAFFING_BOARD_TOOL, runGetStaffingBoard),
   asCaller(LIST_DOCUMENT_SHARING_TOOL, runListDocumentSharing),
-  asCaller(LIST_FILE_SHARES_TOOL, runListFileShares),
-  asCaller(LIST_PAGE_SHARES_TOOL, runListPageShares),
+  asCaller(GET_SHARING_TOOL, runGetSharing),
 ];

@@ -125,7 +125,7 @@ describe("apply_doc_tag", () => {
   it("rejects non-Core callers", async () => {
     vi.mocked(isCore).mockResolvedValue(false);
     await expect(
-      runApplyDocTag("u1", { targetType: "doc", targetId: "p1", tagId: "t1", op: "add" }),
+      runApplyDocTag("u1", { targetType: "doc", targetId: "p1", tagId: "t1", action: "add" }),
     ).rejects.toMatchObject({ name: "DocTagError", status: 403 });
   });
 
@@ -133,7 +133,7 @@ describe("apply_doc_tag", () => {
     vi.mocked(isCore).mockResolvedValue(true);
     mockPrisma.docTag.findUnique.mockResolvedValue(null);
     await expect(
-      runApplyDocTag("u1", { targetType: "doc", targetId: "p1", tagId: "missing", op: "add" }),
+      runApplyDocTag("u1", { targetType: "doc", targetId: "p1", tagId: "missing", action: "add" }),
     ).rejects.toMatchObject({ name: "DocTagError", status: 404 });
   });
 
@@ -143,8 +143,27 @@ describe("apply_doc_tag", () => {
     mockPrisma.page.findUnique.mockResolvedValue({ workspaceType: "Lab", archivedAt: null });
     mockPrisma.pageTag.upsert.mockResolvedValue({});
 
-    const out = await runApplyDocTag("u1", { targetType: "doc", targetId: "p1", tagId: "t1", op: "add" });
+    const out = await runApplyDocTag("u1", { targetType: "doc", targetId: "p1", tagId: "t1", action: "add" });
     expect(out).toEqual({ ok: true });
     expect(mockPrisma.pageTag.upsert).toHaveBeenCalled();
+  });
+
+  it("takes its verb as action, not op", () => {
+    const schema = APPLY_DOC_TAG_TOOL.inputSchema;
+    expect(schema.properties.action.enum).toEqual(["add", "remove"]);
+    expect(schema.required).toContain("action");
+    expect(schema.properties).not.toHaveProperty("op");
+  });
+
+  it("removes a tag from a doc for Core", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    mockPrisma.docTag.findUnique.mockResolvedValue({ id: "t1" });
+    mockPrisma.page.findUnique.mockResolvedValue({ workspaceType: "Lab", archivedAt: null });
+    mockPrisma.pageTag.deleteMany.mockResolvedValue({ count: 1 });
+
+    const out = await runApplyDocTag("u1", { targetType: "doc", targetId: "p1", tagId: "t1", action: "remove" });
+    expect(out).toEqual({ ok: true });
+    expect(mockPrisma.pageTag.deleteMany).toHaveBeenCalledWith({ where: { pageId: "p1", tagId: "t1" } });
+    expect(mockPrisma.pageTag.upsert).not.toHaveBeenCalled();
   });
 });

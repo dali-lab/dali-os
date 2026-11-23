@@ -8,32 +8,23 @@ import { setFavorite } from "~/lib/user-pages.server";
 import { logAuditEvent } from "~/lib/audit";
 import { movePage } from "~/drive/lib/page-move.server";
 import { runUpdatePage } from "~/mcp/tools/update-page";
-import { runSetPageVisibility } from "~/mcp/tools/projects-extra/set-page-visibility";
 import type { McpCtx, McpTool } from "~/mcp/registry";
 
 export const MANAGE_PAGE_TOOL_DEF = {
   name: "manage_page",
   description:
-    "Manage a page: update (rename or set the icon of any doc, note, notebook or folder you can edit; archive or restore a project page), set_visibility (share a project page with the partner portal, or make it the public write-up), pin/unpin, move/reorder, duplicate, favorite/unfavorite, toggle template status, or update typography display settings. Permissions mirror the web (rename and icon follow the page's own edit access, the same as the web; archive, restore and set_visibility require Core or being staffed on the project; pin requires project-edit or lab-member; move requires manage access; duplicate/set_template requires edit access; favorite requires view access; typography requires edit access on a FreeForm page).",
+    "Manage a page: update (rename or set the icon of any doc, note, notebook or folder you can edit), pin (pin or unpin a project or lab page), move/reorder, duplicate, favorite/unfavorite, set_template (toggle template status) or typography (display settings). Rename and icon follow the page's own edit access; pin needs project edit access or lab membership; move needs manage access; duplicate and set_template need edit access; favorite needs view access; typography needs edit access on a FreeForm page. Trash and restore with manage_drive_trash; share and set partner or public visibility with share_page.",
   inputSchema: {
     type: "object" as const,
     properties: {
       action: {
         type: "string",
-        enum: ["update", "set_visibility", "pin", "move", "duplicate", "favorite", "set_template", "typography"],
+        enum: ["update", "pin", "move", "duplicate", "favorite", "set_template", "typography"],
       },
       pageId: { type: "string", minLength: 1, description: "Required for all actions." },
       // update
       title: { type: "string", minLength: 1, maxLength: 200, description: "For 'update': new title." },
       iconEmoji: { type: "string", maxLength: 8, description: "For 'update': empty string clears the icon." },
-      archived: { type: "boolean", description: "For 'update': true archives (soft-deletes) the page, false restores it." },
-      // set_visibility
-      audience: {
-        type: "string",
-        enum: ["partner", "public"],
-        description: "For 'set_visibility': 'partner' shares the page with the partner portal; 'public' makes it the public write-up.",
-      },
-      visible: { type: "boolean", description: "For 'set_visibility': true to show, false to hide." },
       // pin
       pinned: { type: "boolean", description: "For 'pin': true to pin, false to unpin." },
       // move
@@ -80,7 +71,6 @@ export class ManagePageError extends Error {
 
 const ACTION_REQUIRED: Record<string, string[]> = {
   update: [],
-  set_visibility: ["audience", "visible"],
   pin: ["pinned"],
   move: [],
   duplicate: [],
@@ -90,13 +80,10 @@ const ACTION_REQUIRED: Record<string, string[]> = {
 };
 
 type ManagePageInput = {
-  action: "update" | "set_visibility" | "pin" | "move" | "duplicate" | "favorite" | "set_template" | "typography";
+  action: "update" | "pin" | "move" | "duplicate" | "favorite" | "set_template" | "typography";
   pageId: string;
   title?: string;
   iconEmoji?: string;
-  archived?: boolean;
-  audience?: "partner" | "public";
-  visible?: boolean;
   pinned?: boolean;
   parentPageId?: string | null;
   beforeId?: string;
@@ -114,12 +101,8 @@ export async function runManagePage(callerId: string, input: ManagePageInput) {
   requireForAction(input.action, input as Record<string, unknown>, ACTION_REQUIRED);
 
   if (input.action === "update") {
-    const { pageId, title, iconEmoji, archived } = input;
-    return runUpdatePage(callerId, { pageId, title, iconEmoji, archived });
-  }
-
-  if (input.action === "set_visibility") {
-    return runSetPageVisibility(callerId, { action: input.audience!, pageId: input.pageId, visible: input.visible! });
+    const { pageId, title, iconEmoji } = input;
+    return runUpdatePage(callerId, { pageId, title, iconEmoji });
   }
 
   if (input.action === "duplicate") {

@@ -24,9 +24,8 @@ vi.mock("~/collab/deck-live.server", () => ({
 }));
 vi.mock("~/collab/blocknote-server", async (importOriginal) => importOriginal());
 
-import { runManageSlideDeck } from "../manage-slide-deck";
+import { MANAGE_SLIDE_DECK_TOOL_DEF, runManageSlideDeck } from "../manage-slide-deck";
 import type { OutlineSlide } from "../slide-outline";
-import { runCreateSlideDeck, CREATE_SLIDE_DECK_TOOL_DEF } from "../create-slide-deck";
 import { seedDeckDoc } from "~/collab/deck-write.server";
 import { projectLegacySlides, readDeck } from "~/collab/read-deck.server";
 import { richDocToMarkdown } from "~/components/slides/slide-markdown.server";
@@ -198,7 +197,9 @@ describe("add_slides", () => {
   });
 });
 
-describe("create_slide_deck", () => {
+const create = (args: Record<string, unknown>) => runManageSlideDeck("u1", { action: "create", ...args } as never) as Promise<Record<string, any>>;
+
+describe("manage_slide_deck create", () => {
   beforeEach(() => {
     env.doc = new Y.Doc();
     seedDeckDoc(env.doc, [{ id: "starter", layout: "content", title: "" }]);
@@ -211,7 +212,7 @@ describe("create_slide_deck", () => {
   ];
 
   it("creates a lab Slides page, sets the theme, replaces the starter slide and returns every element id", async () => {
-    const out = await runCreateSlideDeck("u1", { title: "Launch", themeId: "dali-light", parentPageId: "folder1", slides });
+    const out = await create({ title: "Launch", themeId: "dali-light", parentPageId: "folder1", outline: slides });
     expect(labDocs.runCreateLabDocument).toHaveBeenCalledWith("u1", { title: "Launch", kind: "Slides", parentPageId: "folder1" });
     expect(out).toMatchObject({ pageId: "p1", themeId: "dali-light" });
     expect(read().slides.map((s) => s.layoutId)).toEqual(["title", "content"]);
@@ -221,25 +222,33 @@ describe("create_slide_deck", () => {
   });
 
   it("checks the outline before creating a page", async () => {
-    await expect(runCreateSlideDeck("u1", { title: "x", slides: [{ layoutId: "nope" }] })).rejects.toMatchObject({ status: 400 });
-    await expect(runCreateSlideDeck("u1", { title: "x", themeId: "nope", slides })).rejects.toMatchObject({ status: 400 });
+    await expect(create({ title: "x", outline: [{ layoutId: "nope" }] })).rejects.toMatchObject({ status: 400 });
+    await expect(create({ title: "x", themeId: "nope", outline: slides })).rejects.toMatchObject({ status: 400 });
     expect(labDocs.runCreateLabDocument).not.toHaveBeenCalled();
   });
 
   it("does not create a page when the live deck editor is off for the caller", async () => {
     flags.isFeatureEnabled.mockResolvedValue(false);
-    await expect(runCreateSlideDeck("u1", { title: "x", slides })).rejects.toMatchObject({ status: 400 });
+    await expect(create({ title: "x", outline: slides })).rejects.toMatchObject({ status: 400 });
     expect(labDocs.runCreateLabDocument).not.toHaveBeenCalled();
   });
 
   it("passes on the lab document tool's refusal for a non-member", async () => {
     labDocs.runCreateLabDocument.mockRejectedValue(Object.assign(new Error("Forbidden"), { status: 403 }));
-    await expect(runCreateSlideDeck("u1", { title: "x", slides })).rejects.toMatchObject({ status: 403 });
+    await expect(create({ title: "x", outline: slides })).rejects.toMatchObject({ status: 403 });
   });
 
-  it("is a write tool with a documented schema", () => {
-    expect(CREATE_SLIDE_DECK_TOOL_DEF.requiredScope).toBe("mcp:write");
-    expect(CREATE_SLIDE_DECK_TOOL_DEF.inputSchema.required).toEqual(["title", "slides"]);
-    expect(CREATE_SLIDE_DECK_TOOL_DEF.description).not.toMatch(/Ask DALI/);
+  it("needs a title and an outline but no pageId", async () => {
+    await expect(create({ outline: slides })).rejects.toMatchObject({ status: 400, message: expect.stringContaining("title") });
+    await expect(create({ title: "x" })).rejects.toMatchObject({ status: 400, message: expect.stringContaining("outline") });
+    expect(labDocs.runCreateLabDocument).not.toHaveBeenCalled();
+    expect(decks.deckAccess).not.toHaveBeenCalled();
+  });
+
+  it("is the one tool that creates a deck, with pageId required for every other action", async () => {
+    expect(MANAGE_SLIDE_DECK_TOOL_DEF.requiredScope).toBe("mcp:write");
+    expect(MANAGE_SLIDE_DECK_TOOL_DEF.inputSchema.required).toEqual(["action"]);
+    expect(MANAGE_SLIDE_DECK_TOOL_DEF.inputSchema.properties.action.enum).toContain("create");
+    await expect(runManageSlideDeck("u1", { action: "delete_slide", slideId: "a" } as never)).rejects.toMatchObject({ status: 400, message: expect.stringContaining("pageId") });
   });
 });

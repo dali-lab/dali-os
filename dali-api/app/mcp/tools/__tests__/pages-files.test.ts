@@ -30,11 +30,7 @@ import {
   runListProjectFiles,
   LIST_PROJECT_FILES_TOOL,
 } from "~/mcp/tools/list-project-files";
-import {
-  runSetPageContent,
-  SET_PAGE_CONTENT_TOOL,
-  SetPageContentError,
-} from "~/mcp/tools/set-page-content";
+import { loadEditablePage, EditablePageError } from "~/mcp/tools/editable-page";
 import { UPLOAD_PROJECT_FILE_TOOL } from "~/mcp/tools/upload-project-file";
 import { GET_TASK_TOOL } from "~/mcp/tools/get-task";
 
@@ -279,7 +275,7 @@ describe("pages + files tools", () => {
     );
   });
 
-  it("set_page_content rejects folders and archived pages", async () => {
+  it("loadEditablePage rejects folders and trashed pages", async () => {
     vi.mocked(isCore).mockResolvedValue(true);
     mockPrisma.page.findUnique.mockResolvedValue({
       id: "pg1",
@@ -290,8 +286,8 @@ describe("pages + files tools", () => {
       archivedAt: null,
     });
     await expect(
-      runSetPageContent("u1", { pageId: "pg1", markdown: "x" }),
-    ).rejects.toBeInstanceOf(SetPageContentError);
+      loadEditablePage("u1", "pg1"),
+    ).rejects.toBeInstanceOf(EditablePageError);
 
     mockPrisma.page.findUnique.mockResolvedValue({
       id: "pg1",
@@ -302,63 +298,8 @@ describe("pages + files tools", () => {
       archivedAt: new Date(),
     });
     await expect(
-      runSetPageContent("u1", { pageId: "pg1", markdown: "x" }),
-    ).rejects.toThrow(/archived/);
-  });
-
-  it("set_page_content replaces the derived doc and stamps lastEditedBy", async () => {
-    vi.mocked(isCore).mockResolvedValue(true);
-    mockPrisma.page.findUnique.mockResolvedValue({
-      id: "pg1",
-      kind: "FreeForm",
-      workspaceType: "Project",
-      workspaceId: "p1",
-      contentDocId: null,
-      archivedAt: null,
-    });
-    mockPrisma.page.update.mockResolvedValue({ id: "pg1" });
-    const out = await runSetPageContent("u1", { pageId: "pg1", markdown: "# T\n\nbody" });
-    expect(replaceCollabDocContent).toHaveBeenCalledWith(
-      "doc:pg1:body",
-      expect.arrayContaining([expect.objectContaining({ type: "heading" })]),
-      "u1",
-    );
-    expect(mockPrisma.page.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { lastEditedById: "u1" } }),
-    );
-    expect(out).toMatchObject({ id: "pg1", blockCount: 2 });
-  });
-
-  it("set_page_content keeps a lab member mention and warns about an unknown page", async () => {
-    vi.mocked(isCore).mockResolvedValue(true);
-    mockPrisma.page.findUnique.mockResolvedValue({
-      id: "pg1", kind: "FreeForm", workspaceType: "Project", workspaceId: "p1", contentDocId: null, archivedAt: null,
-    });
-    mockPrisma.page.update.mockResolvedValue({ id: "pg1" });
-    vi.mocked(prisma.user.findMany).mockResolvedValue([{ id: "u2", handle: "ana" }] as never);
-    mockPrisma.page.findMany.mockResolvedValue([]);
-    const out = await runSetPageContent("u1", {
-      pageId: "pg1",
-      markdown: "Ask [@Ana Ruiz](/members/u2) about [Old plan](/documents/gone)",
-    });
-    expect(out.warnings).toEqual(['No page with id gone: "Old plan" was written as plain text']);
-    const [, blocks] = vi.mocked(replaceCollabDocContent).mock.calls[0]!;
-    expect((blocks as any[])[0].content).toEqual([
-      { type: "text", text: "Ask ", styles: {} },
-      { type: "mention", props: { id: "u2", label: "ana" } },
-      { type: "text", text: " about ", styles: {} },
-      { type: "text", text: "Old plan", styles: {} },
-    ]);
-  });
-
-  it("set_page_content leaves warnings out when every reference checks out", async () => {
-    vi.mocked(isCore).mockResolvedValue(true);
-    mockPrisma.page.findUnique.mockResolvedValue({
-      id: "pg1", kind: "FreeForm", workspaceType: "Project", workspaceId: "p1", contentDocId: null, archivedAt: null,
-    });
-    mockPrisma.page.update.mockResolvedValue({ id: "pg1" });
-    const out = await runSetPageContent("u1", { pageId: "pg1", markdown: "plain" });
-    expect(out).not.toHaveProperty("warnings");
+      loadEditablePage("u1", "pg1"),
+    ).rejects.toThrow(/manage_drive_trash/);
   });
 
   it("create_page returns warnings for references it wrote as plain text", async () => {
@@ -383,7 +324,7 @@ describe("pages + files tools", () => {
     expect(prisma.user.findMany).not.toHaveBeenCalled();
   });
 
-  it("read_page writes mentions as links that set_page_content reads back", async () => {
+  it("read_page writes mentions as links that edit_content reads back", async () => {
     vi.mocked(authorizeCollabDoc).mockResolvedValue({ allowed: true, readOnly: false });
     mockPrisma.page.findUnique.mockResolvedValue({
       id: "pg1", title: "T", kind: "FreeForm", workspaceType: "Lab", workspaceId: null, contentDocId: null, iconEmoji: null,
@@ -405,7 +346,7 @@ describe("pages + files tools", () => {
     expect(out.markdown.trim()).toBe("[@ana](/members/u2) [Plan](/documents/pg9)");
   });
 
-  it("set_page_content denies callers who are neither Core nor staffed", async () => {
+  it("loadEditablePage denies callers who are neither Core nor staffed", async () => {
     vi.mocked(isCore).mockResolvedValue(false);
     vi.mocked(isProjectMember).mockResolvedValue(false);
     mockPrisma.page.findUnique.mockResolvedValue({
@@ -416,15 +357,11 @@ describe("pages + files tools", () => {
       contentDocId: null,
       archivedAt: null,
     });
-    await expect(
-      runSetPageContent("u1", { pageId: "pg1", markdown: "x" }),
-    ).rejects.toMatchObject({ status: 403 });
-    // set_page_content now gates via getPageAccess (covers Lab + note pages
-    // too), which resolves project membership with an optional term arg.
+    await expect(loadEditablePage("u1", "pg1")).rejects.toMatchObject({ status: 403 });
     expect(isProjectMember).toHaveBeenCalledWith("u1", "p1", undefined);
   });
 
-  it("set_page_content allows non-Core members staffed on the project (web parity)", async () => {
+  it("loadEditablePage allows non-Core members staffed on the project (web parity)", async () => {
     vi.mocked(isCore).mockResolvedValue(false);
     vi.mocked(isProjectMember).mockResolvedValue(true);
     mockPrisma.page.findUnique.mockResolvedValue({
@@ -435,10 +372,8 @@ describe("pages + files tools", () => {
       contentDocId: null,
       archivedAt: null,
     });
-    mockPrisma.page.update.mockResolvedValue({ id: "pg1" });
-    const out = await runSetPageContent("u1", { pageId: "pg1", markdown: "hello" });
-    expect(out.id).toBe("pg1");
-    expect(replaceCollabDocContent).toHaveBeenCalled();
+    const page = await loadEditablePage("u1", "pg1");
+    expect(page.id).toBe("pg1");
   });
 
   it("create_page allows non-Core members staffed on the project (web parity)", async () => {

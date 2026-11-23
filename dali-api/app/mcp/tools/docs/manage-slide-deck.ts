@@ -1,4 +1,6 @@
 import { McpError, requireForAction } from "../../errors";
+import { getUserRoles } from "~/lib/roles";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { prisma } from "~/lib/db.server";
 import { announceAgent, pagePresenceRoom } from "~/collab/agent-presence.server";
 import { deckAccess, deckStorage, editDeck, loadDeck, migrateDeckOnOpen, readDeckModel, type DeckResult } from "~/lib/slide-decks.server";
@@ -13,7 +15,8 @@ import {
   type SlideOutput,
 } from "~/components/slides/slide-markdown.server";
 import { moveItem } from "~/components/slides/slide-edit";
-import { setLayout } from "~/components/slides/deck/deck-ops";
+import { setLayout, setThemeId } from "~/components/slides/deck/deck-ops";
+import { isDeleted, slidesMap, tombstoneSlide } from "~/components/slides/deck/model";
 import {
   DECK_ACTIONS,
   ELEMENT_INPUT_SCHEMA,
@@ -30,10 +33,11 @@ import {
 import type { Slide } from "~/components/slides/types";
 import { pageArray, pageProps, type PageArgs } from "../../pagination";
 import { OUTLINE_SLIDE_SCHEMA, MAX_OUTLINE_SLIDES, prepareOutline, writeOutline, type OutlineSlide } from "./slide-outline";
+import { runCreateLabDocument } from "./lab-documents";
 
 const PAGE_LIMITS = { defaultLimit: 50, maxLimit: 200 };
 
-const SLIDE_ACTIONS = ["set_slides", "add_slide", "add_slides", "update_slide", "delete_slide", "move_slide", "duplicate_slide", "set_layout", "set_theme"] as const;
+const SLIDE_ACTIONS = ["create", "set_slides", "add_slide", "add_slides", "update_slide", "delete_slide", "move_slide", "duplicate_slide", "set_layout", "set_theme"] as const;
 const ELEMENT_ACTIONS = ["add_element", "update_element", "delete_elements", "duplicate_elements", "reorder_elements", "group_elements", "ungroup_elements", "align_elements", "distribute_elements", "snap_back"] as const;
 const ACTIONS = ["get", "export", ...SLIDE_ACTIONS, ...ELEMENT_ACTIONS] as const;
 type Action = (typeof ACTIONS)[number];
@@ -63,23 +67,25 @@ export const GET_SLIDE_DECK_TOOL_DEF = {
 export const MANAGE_SLIDE_DECK_TOOL_DEF = {
   name: "manage_slide_deck",
   description:
-    "Edit the slides of a Drive slide deck. Actions: set_slides (replace every slide) · add_slide (optional index, else at the end; layoutId for any layout) · add_slides (draft several slides at once from an outline: each has a layoutId, text per box in slots, notes and free elements) · update_slide (fields left out are kept) · delete_slide · move_slide (to toIndex) · duplicate_slide · set_layout · set_theme. Bodies are Markdown, including pipe tables and fenced code blocks. An outline slide with html makes a slide whose content is your own HTML, CSS and script. " + HTML_NOTE + " Read the deck with get_slide_deck; edit what's on a slide with manage_slide_elements. Create a new deck from an outline with create_slide_deck. set_slides, add_slide, update_slide, delete_slide and move_slide return the whole deck; the others return what they changed.",
+    "Create or edit a Drive slide deck. Actions: create (a new lab deck from an outline in one step; returns pageId and every slide with its element ids; needs the live deck editor to be on for you) · set_slides (replace every slide) · add_slide (optional index, else at the end; layoutId for any layout) · add_slides (draft several slides at once from an outline: each has a layoutId, text per box in slots, notes and free elements) · update_slide (fields left out are kept) · delete_slide · move_slide (to toIndex) · duplicate_slide · set_layout · set_theme. Bodies are Markdown, including pipe tables and fenced code blocks. An outline slide with html makes a slide whose content is your own HTML, CSS and script. " + HTML_NOTE + " Read the deck with get_slide_deck; edit what's on a slide with manage_slide_elements. set_slides, add_slide, update_slide, delete_slide and move_slide return the whole deck; the others return what they changed.",
   inputSchema: {
     type: "object" as const,
     properties: {
       action: { type: "string", enum: [...SLIDE_ACTIONS] },
-      pageId: pageIdProp,
+      pageId: { ...pageIdProp, description: "The deck's page id. Every action except create." },
+      title: { type: "string", minLength: 1, maxLength: 200, description: "create: the new deck's title." },
+      parentPageId: { type: "string", description: "create: put the deck inside an existing top-level Lab folder. Omit for the top level." },
       slides: { type: "array", items: SLIDE_INPUT_SCHEMA, maxItems: 300, description: "set_slides: the whole deck, in order." },
       slide: { ...SLIDE_INPUT_SCHEMA, description: "add_slide and update_slide: the slide's fields." },
       slideId: { ...slideIdProp, description: "update_slide, delete_slide, move_slide, duplicate_slide and set_layout." },
       index: { type: "number", minimum: 0, description: "add_slide and add_slides: where to insert, 0-based." },
       toIndex: { type: "number", minimum: 0, description: "move_slide: the new 0-based position." },
-      outline: { type: "array", items: OUTLINE_SLIDE_SCHEMA, minItems: 1, maxItems: MAX_OUTLINE_SLIDES, description: "add_slides: the slides to add, in order, at index (the end when left out)." },
-      themeId: { type: "string", enum: THEME_IDS, description: "set_theme." },
+      outline: { type: "array", items: OUTLINE_SLIDE_SCHEMA, minItems: 1, maxItems: MAX_OUTLINE_SLIDES, description: "create: the deck's slides, in order. add_slides: the slides to add, in order, at index (the end when left out)." },
+      themeId: { type: "string", enum: THEME_IDS, description: "create (defaults to the standard dark theme) and set_theme." },
       layoutId: { type: "string", enum: LAYOUT_IDS, description: "set_layout, and add_slide for layouts beyond the four in slide.layout." },
       ...pageProps(PAGE_LIMITS),
     },
-    required: ["action", "pageId"],
+    required: ["action"],
     additionalProperties: false,
   },
   requiredScope: "mcp:write" as const,
@@ -109,9 +115,40 @@ export const MANAGE_SLIDE_ELEMENTS_TOOL_DEF = {
   requiredScope: "mcp:write" as const,
 };
 
+const DECK_ACTION_REQUIRED: Record<string, string[]> = {
+  get: [],
+  set_slides: ["slides"],
+  add_slide: ["slide"],
+  update_slide: ["slideId", "slide"],
+  delete_slide: ["slideId"],
+  move_slide: ["slideId", "toIndex"],
+  export: [],
+  add_slides: ["outline"],
+  set_theme: ["themeId"],
+  set_layout: ["slideId", "layoutId"],
+  duplicate_slide: ["slideId"],
+  add_element: ["slideId", "element"],
+  update_element: ["slideId", "elementId", "element"],
+  delete_elements: ["slideId", "elementIds"],
+  duplicate_elements: ["slideId", "elementIds"],
+  reorder_elements: ["slideId", "elementIds", "direction"],
+  group_elements: ["slideId", "elementIds"],
+  ungroup_elements: ["slideId", "elementIds"],
+  align_elements: ["slideId", "elementIds", "align"],
+  distribute_elements: ["slideId", "elementIds", "axis"],
+  snap_back: ["slideId", "elementIds"],
+};
+
+const ACTION_REQUIRED: Record<string, string[]> = {
+  create: ["title", "outline"],
+  ...Object.fromEntries(Object.entries(DECK_ACTION_REQUIRED).map(([action, fields]) => [action, ["pageId", ...fields]])),
+};
+
 type Args = PageArgs & Omit<DeckArgs, "pageId"> & {
   action: Action;
-  pageId: string;
+  pageId?: string;
+  title?: string;
+  parentPageId?: string;
   slides?: SlideInput[];
   slide?: SlideInput;
   slideId?: string;
@@ -140,32 +177,34 @@ async function deckOutput(title: string, slides: Slide[], version: string) {
 type SlideAction = "get" | "set_slides" | "add_slide" | "update_slide" | "delete_slide" | "move_slide";
 type SlideOutputDeck = { title: string; version: string; slides: SlideOutput[]; page?: ReturnType<typeof pageArray>["page"] };
 
+async function createDeck(userId: string, args: Args) {
+  if (args.themeId !== undefined && !THEME_IDS.includes(args.themeId)) throw new McpError(`themeId must be one of: ${THEME_IDS.join(", ")}.`, 400);
+  const prepared = await prepareOutline(args.outline!);
+  if (!(await isFeatureEnabled("slides-collab", userId, await getUserRoles(userId)))) {
+    throw new McpError("The live deck editor isn't on for you, so a deck can't be drafted from an outline.", 400);
+  }
+  const { id } = await runCreateLabDocument(userId, { title: args.title!, kind: "Slides", parentPageId: args.parentPageId });
+  if ((await migrateDeckOnOpen(userId, id)) !== "yjs") throw new McpError("The new deck couldn't be opened for editing.", 500);
+  let slideIds: string[] = [];
+  await transactDeck(id, userId, (doc) => {
+    slidesMap(doc).forEach((slide) => {
+      if (!isDeleted(slide)) tombstoneSlide(slide);
+    });
+    if (args.themeId) setThemeId(doc, args.themeId);
+    slideIds = writeOutline(doc, prepared);
+  });
+  await prisma.page.update({ where: { id }, data: { lastEditedById: userId } });
+  const read = await readDeckModel(id);
+  const created = slideIds.map((sid) => read.slides.find((s) => s.id === sid)!).filter(Boolean);
+  return { pageId: id, title: args.title, themeId: read.themeId, slides: await Promise.all(created.map((s) => slideView(s))) };
+}
+
 export function runManageSlideDeck(userId: string, args: Args & { action: SlideAction }): Promise<SlideOutputDeck>;
 export function runManageSlideDeck(userId: string, args: Args): Promise<object>;
-export async function runManageSlideDeck(userId: string, args: Args) {
-  requireForAction(args.action, args as unknown as Record<string, unknown>, {
-    get: [],
-    set_slides: ["slides"],
-    add_slide: ["slide"],
-    update_slide: ["slideId", "slide"],
-    delete_slide: ["slideId"],
-    move_slide: ["slideId", "toIndex"],
-    export: [],
-    add_slides: ["outline"],
-    set_theme: ["themeId"],
-    set_layout: ["slideId", "layoutId"],
-    duplicate_slide: ["slideId"],
-    add_element: ["slideId", "element"],
-    update_element: ["slideId", "elementId", "element"],
-    delete_elements: ["slideId", "elementIds"],
-    duplicate_elements: ["slideId", "elementIds"],
-    reorder_elements: ["slideId", "elementIds", "direction"],
-    group_elements: ["slideId", "elementIds"],
-    ungroup_elements: ["slideId", "elementIds"],
-    align_elements: ["slideId", "elementIds", "align"],
-    distribute_elements: ["slideId", "elementIds", "axis"],
-    snap_back: ["slideId", "elementIds"],
-  });
+export async function runManageSlideDeck(userId: string, input: Args) {
+  requireForAction(input.action, input as unknown as Record<string, unknown>, ACTION_REQUIRED);
+  if (input.action === "create") return createDeck(userId, input);
+  const args = input as Args & { pageId: string };
   const { page, canEdit } = unwrap(await deckAccess(userId, args.pageId));
   if (args.action === "get" || args.action === "export") void announceAgent({ action: "reading", presenceRoom: pagePresenceRoom(args.pageId) });
 

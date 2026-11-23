@@ -10,7 +10,6 @@ import {
   setNotebookTemplate,
   setNoteDate,
   setSeriesNotebook,
-  trashNotebook,
 } from "~/calendar/lib/notebooks.server";
 import type { McpCtx, McpTool } from "~/mcp/registry";
 import { APPLICATION_TZ, ymdDayStartUtc } from "~/lib/timezone";
@@ -18,7 +17,7 @@ import { APPLICATION_TZ, ymdDayStartUtc } from "~/lib/timezone";
 export const MANAGE_NOTEBOOK_TOOL_DEF = {
   name: "manage_notebook",
   description:
-    "Manage meeting notebooks (a notebook holds notes as tabs). Actions: create (an empty notebook), set_template (the template new notes seed from; omit templatePageId to clear), add_page (file a doc or note into a notebook), detach_note (a meeting note becomes a plain doc in the notebook's folder), attach_note (a plain doc becomes the note for one occurrence of a meeting), set_date (the date a note tab is filed under in its notebook; pass date null to clear it; a note linked to a meeting takes its date from the meeting instead), merge_into (move every tab into another notebook and retire this one), dissolve (tabs become plain docs in the notebook's folder, notebook archived), trash (archive the notebook and its tabs), set_series_notebook (a meeting series' default notebook; omit notebookId to unset). Anyone who can edit a notebook can add to it; series changes and attach_note need the meeting's organizer or Core.",
+    "Manage meeting notebooks (a notebook holds notes as tabs). Actions: create (an empty notebook), set_template (the template new notes seed from; omit templatePageId to clear), add_page (file a doc or note into a notebook), detach_note (a meeting note becomes a plain doc in the notebook's folder), attach_note (a plain doc becomes the note for one occurrence of a meeting), set_date (the date a note tab is filed under in its notebook; pass date null to clear it; a note linked to a meeting takes its date from the meeting instead), merge_into (move every tab into another notebook and retire this one), dissolve (tabs become plain docs in the notebook's folder, notebook archived), set_series_notebook (a meeting series' default notebook; omit notebookId to unset). Anyone who can edit a notebook can add to it; series changes and attach_note need the meeting's organizer or Core. Trash a notebook with manage_drive_trash.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -33,7 +32,6 @@ export const MANAGE_NOTEBOOK_TOOL_DEF = {
           "set_date",
           "merge_into",
           "dissolve",
-          "trash",
           "set_series_notebook",
         ],
       },
@@ -41,7 +39,7 @@ export const MANAGE_NOTEBOOK_TOOL_DEF = {
         type: "string",
         minLength: 1,
         description:
-          "The notebook. Required for set_template, add_page, merge_into (the source), dissolve, trash. For set_series_notebook, the notebook to use (omit to unset).",
+          "The notebook. Required for set_template, add_page, merge_into (the source), dissolve. For set_series_notebook, the notebook to use (omit to unset).",
       },
       title: { type: "string", minLength: 1, maxLength: 200, description: "For 'create'." },
       workspaceType: { type: "string", enum: ["Lab", "Project"], description: "For 'create'." },
@@ -83,7 +81,6 @@ const ACTION_REQUIRED: Record<string, string[]> = {
   set_date: ["pageId"],
   merge_into: ["notebookId", "targetId"],
   dissolve: ["notebookId"],
-  trash: ["notebookId"],
   set_series_notebook: ["meetingId", "scope"],
 };
 
@@ -143,9 +140,6 @@ export async function runManageNotebook(callerId: string, input: ManageNotebookI
       return { ok: true, ...(await mergeNotebooks(input.notebookId!, input.targetId!, callerId)) };
     case "dissolve":
       return { ok: true, ...(await dissolveNotebook(input.notebookId!, callerId)) };
-    case "trash":
-      await trashNotebook(input.notebookId!, callerId);
-      return { ok: true };
     case "set_series_notebook":
       return {
         ok: true,

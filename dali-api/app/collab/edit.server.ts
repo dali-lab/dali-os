@@ -115,7 +115,7 @@ const BLOCK_NODES = new Set(["blockContainer", "columnList", "column"]);
 const PREVIEW_MAX = 80;
 const UNDO_LABEL = "Before agent edit";
 const LEGACY_MESSAGE =
-  "This document is in the old editor format. Open the page in the editor once, or use set_page_content, before editing it block by block.";
+  "This document is in the old editor format. Open the page in the editor once, or use edit_content replace_all, before editing it block by block.";
 
 const blockSchema = serverSchema.blockSchema as unknown as Record<string, { content: string }>;
 

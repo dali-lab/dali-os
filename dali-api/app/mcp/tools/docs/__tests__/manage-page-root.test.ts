@@ -10,7 +10,6 @@ vi.mock("~/lib/user-pages.server", () => ({ setFavorite: vi.fn() }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("~/mcp/tools/access", () => ({ canEditProject: vi.fn() }));
 vi.mock("~/mcp/tools/update-page", () => ({ runUpdatePage: vi.fn() }));
-vi.mock("~/mcp/tools/projects-extra/set-page-visibility", () => ({ runSetPageVisibility: vi.fn() }));
 
 import { movePage } from "~/drive/lib/page-move.server";
 import { MANAGE_PAGE_TOOL_DEF, runManagePage } from "~/mcp/tools/docs/manage-page";
@@ -91,6 +90,6 @@ describe("manage_page move goes through the Drive's own move", () => {
 describe("manage_page actions", () => {
   it("does not offer shortcut actions", () => {
     const actions = (MANAGE_PAGE_TOOL_DEF.inputSchema.properties.action as { enum: string[] }).enum;
-    expect(actions).toEqual(["update", "set_visibility", "pin", "move", "duplicate", "favorite", "set_template", "typography"]);
+    expect(actions).toEqual(["update", "pin", "move", "duplicate", "favorite", "set_template", "typography"]);
   });
 });

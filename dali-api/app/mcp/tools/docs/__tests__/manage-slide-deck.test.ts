@@ -67,7 +67,7 @@ describe("slide deck tool split", () => {
   it("splits slide actions from element actions with no overlap", () => {
     const slides = actionsOf(MANAGE_SLIDE_DECK_TOOL_DEF);
     const elements = actionsOf(MANAGE_SLIDE_ELEMENTS_TOOL_DEF);
-    expect(slides).toEqual(["set_slides", "add_slide", "add_slides", "update_slide", "delete_slide", "move_slide", "duplicate_slide", "set_layout", "set_theme"]);
+    expect(slides).toEqual(["create", "set_slides", "add_slide", "add_slides", "update_slide", "delete_slide", "move_slide", "duplicate_slide", "set_layout", "set_theme"]);
     expect(elements.every((a) => a.endsWith("_element") || a.endsWith("_elements") || a === "snap_back")).toBe(true);
     expect(slides.filter((a) => elements.includes(a))).toEqual([]);
     expect(MANAGE_SLIDE_DECK_TOOL_DEF.inputSchema.properties).not.toHaveProperty("element");

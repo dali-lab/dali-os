@@ -1063,11 +1063,11 @@ describe("reads", () => {
     return doc;
   }
 
-  it("refuses legacy docs and points at set_page_content", async () => {
+  it("refuses legacy docs and points at edit_content", async () => {
     findUnique.mockResolvedValue({ state: Y.encodeStateAsUpdate(legacyDoc()) });
-    await expect(outlineDoc("doc:p1:body")).rejects.toMatchObject({ code: "LEGACY_DOC", message: expect.stringContaining("set_page_content") });
+    await expect(outlineDoc("doc:p1:body")).rejects.toMatchObject({ code: "LEGACY_DOC", message: expect.stringContaining("edit_content") });
     await expect(getDocBlocks("doc:p1:body")).rejects.toMatchObject({ code: "LEGACY_DOC" });
-    expect(attempt(() => applyOpsToDoc(legacyDoc(), [{ op: "delete", blockId: "x", expectedHash: "h" }])).message).toContain("set_page_content");
+    expect(attempt(() => applyOpsToDoc(legacyDoc(), [{ op: "delete", blockId: "x", expectedHash: "h" }])).message).toContain("edit_content");
   });
 
   it("reads a doc with no saved state through the same seeding the editor uses", async () => {

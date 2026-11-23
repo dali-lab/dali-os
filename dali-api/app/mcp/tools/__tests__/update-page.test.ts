@@ -86,22 +86,6 @@ describe("update_page", () => {
     );
   });
 
-  it("refuses to archive a folder with live children", async () => {
-    mockPrisma.page.findUnique.mockResolvedValue({ ...basePage, kind: "Folder" });
-    mockPrisma.page.count.mockResolvedValue(2);
-    await expect(
-      runUpdatePage("u1", { pageId: "pg1", archived: true }),
-    ).rejects.toThrow(/inside this folder/);
-  });
-
-  it("unarchives", async () => {
-    mockPrisma.page.findUnique.mockResolvedValue({ ...basePage, archivedAt: new Date() });
-    await runUpdatePage("u1", { pageId: "pg1", archived: false });
-    expect(mockPrisma.page.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { archivedAt: null } }),
-    );
-  });
-
   it("moves under a top-level Folder, appending position", async () => {
     mockPrisma.page.findUnique
       .mockResolvedValueOnce(basePage) // the page
@@ -250,9 +234,8 @@ describe("update_page renaming outside projects", () => {
   });
 
   it.each([
-    [{ archived: true }],
     [{ parentPageId: "f1" }],
-  ])("refuses to move or archive a non-project page: %j", async (rest) => {
+  ])("refuses to move a non-project page: %j", async (rest) => {
     mockPrisma.page.findUnique.mockResolvedValue(notebookTab);
     vi.mocked(getPageAccess).mockResolvedValue({ canEdit: true } as never);
     await expect(runUpdatePage("u1", { pageId: "pg1", ...rest })).rejects.toMatchObject({ status: 400 });

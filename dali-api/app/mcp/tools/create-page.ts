@@ -1,8 +1,3 @@
-// MCP `create_page` — creates a Page in a project workspace: a FreeForm
-// document (optionally seeded with Markdown content via the collab write
-// pipeline) or a Folder container. Mirrors api.projects.$id.documents — same
-// nesting rules and same gate (Core, or staffed on the project).
-
 import { prisma } from "~/lib/db.server";
 import { canEditProject } from "./access";
 import { parseMarkdown } from "../doc-markdown.server";
@@ -10,50 +5,51 @@ import { replaceCollabDocContent } from "~/collab/write";
 import { pageDocName } from "~/collab/roomName";
 import { pageDepth, MAX_PAGE_DEPTH } from "~/lib/pages.server";
 import { duplicatePage } from "~/drive/lib/page-copy.server";
+import { runCreateLabDocument } from "./docs/lab-documents";
 
 const MAX_MARKDOWN_LENGTH = 300_000;
 
 export const CREATE_PAGE_TOOL = {
   name: "create_page",
   description:
-    "Create a page in a project's workspace: a FreeForm document (optionally with Markdown content) or a Folder. Documents and folders nest inside any folder, up to 6 levels deep, as in the Drive. Requires Core or being staffed on the project.",
+    "Create a page: a FreeForm document (optionally with Markdown content), a Folder, or in the lab a slide deck. With projectId the page goes in that project's workspace (needs Core or being staffed on the project); without it the page goes in the lab (any lab member at the top level, edit access to the folder inside one). Documents and folders nest inside any folder, up to 6 levels deep, as in the Drive. Fill a new slide deck with manage_slide_deck.",
   inputSchema: {
     type: "object" as const,
     properties: {
-      projectId: { type: "string", minLength: 1 },
+      projectId: { type: "string", minLength: 1, description: "The project to create the page in. Omit to create a lab page." },
       title: { type: "string", minLength: 1, maxLength: 200 },
       kind: {
         type: "string",
-        enum: ["FreeForm", "Folder"],
-        description: "Default 'FreeForm' (a document). 'Folder' creates a container page.",
+        enum: ["FreeForm", "Folder", "Slides"],
+        description: "Default 'FreeForm' (a document). 'Folder' creates a container page. 'Slides' creates an empty slide deck (lab only).",
       },
       parentPageId: {
         type: "string",
-        description: "Optional. Nest inside this folder (any depth up to 6 levels).",
+        description: "Nest inside this folder in the same workspace (any depth up to 6 levels).",
       },
       content: {
         type: "string",
         maxLength: MAX_MARKDOWN_LENGTH,
         description:
-          "Optional initial body as Markdown (FreeForm only), same dialect as set_page_content: mention a member as [@handle](/members/<userId>), not @Name. Unknown ids are written as plain text and listed in warnings.",
+          "Initial body as Markdown (project documents only), same dialect as edit_content: mention a member as [@handle](/members/<userId>), not @Name. Unknown ids are written as plain text and listed in warnings.",
       },
       fromTemplatePageId: {
         type: "string",
         description:
-          "Optional. Create the document by duplicating this template page's content (a Lab page marked as a template). Mutually exclusive with 'content'; FreeForm only.",
+          "Create the document by duplicating this template page's content (a Lab page marked as a template). Mutually exclusive with 'content'; documents only.",
       },
-      iconEmoji: { type: "string", maxLength: 8 },
+      iconEmoji: { type: "string", maxLength: 8, description: "Project pages only." },
     },
-    required: ["projectId", "title"],
+    required: ["title"],
     additionalProperties: false,
   },
   requiredScope: "mcp:write" as const,
 };
 
 type Input = {
-  projectId: string;
+  projectId?: string;
   title: string;
-  kind?: "FreeForm" | "Folder";
+  kind?: "FreeForm" | "Folder" | "Slides";
   parentPageId?: string;
   content?: string;
   fromTemplatePageId?: string;
@@ -68,9 +64,17 @@ export class CreatePageError extends Error {
 }
 
 export async function runCreatePage(callerId: string, input: Input) {
-  if (!(await canEditProject(callerId, input.projectId))) {
+  if (!input.projectId) {
+    if (input.content !== undefined) {
+      throw new CreatePageError("Lab pages can't be created with content. Create the page, then fill it with edit_content", 400);
+    }
+    return runCreateLabDocument(callerId, input);
+  }
+  const projectId = input.projectId;
+  if (!(await canEditProject(callerId, projectId))) {
     throw new CreatePageError("Forbidden", 403);
   }
+  if (input.kind === "Slides") throw new CreatePageError("Slide decks can only be created in the lab", 400);
 
   const title = input.title.trim();
   if (!title) throw new CreatePageError("Title is required", 400);
@@ -89,7 +93,7 @@ export async function runCreatePage(callerId: string, input: Input) {
   }
 
   const project = await prisma.project.findUnique({
-    where: { id: input.projectId },
+    where: { id: projectId },
     select: { id: true },
   });
   if (!project) throw new CreatePageError("Project not found", 404);
@@ -110,7 +114,7 @@ export async function runCreatePage(callerId: string, input: Input) {
     if (!parent || parent.archivedAt !== null) {
       throw new CreatePageError("Parent page not found", 404);
     }
-    if (parent.workspaceType !== "Project" || parent.workspaceId !== input.projectId) {
+    if (parent.workspaceType !== "Project" || parent.workspaceId !== projectId) {
       throw new CreatePageError(
         "Parent page is not in this project's workspace",
         400,
@@ -141,7 +145,7 @@ export async function runCreatePage(callerId: string, input: Input) {
       createdById: callerId,
       titleOverride: title,
       workspaceTypeOverride: "Project",
-      workspaceIdOverride: input.projectId,
+      workspaceIdOverride: projectId,
       parentPageIdOverride: parentPageId,
     });
     return { id: result.id, kind: "FreeForm" as const, parentPageId };
@@ -156,7 +160,7 @@ export async function runCreatePage(callerId: string, input: Input) {
   const last = await prisma.page.findFirst({
     where: {
       workspaceType: "Project",
-      workspaceId: input.projectId,
+      workspaceId: projectId,
       parentPageId,
     },
     orderBy: { position: "desc" },
@@ -167,7 +171,7 @@ export async function runCreatePage(callerId: string, input: Input) {
   const page = await prisma.page.create({
     data: {
       workspaceType: "Project",
-      workspaceId: input.projectId,
+      workspaceId: projectId,
       parentPageId,
       title,
       kind,

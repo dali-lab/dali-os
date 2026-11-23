@@ -25,7 +25,6 @@ vi.mock("~/collab/deck-live.server", () => ({
 vi.mock("~/collab/blocknote-server", async (importOriginal) => importOriginal());
 
 import { runManageSlideDeck, GET_SLIDE_DECK_TOOL_DEF, MANAGE_SLIDE_DECK_TOOL_DEF, MANAGE_SLIDE_ELEMENTS_TOOL_DEF } from "../manage-slide-deck";
-import { runCreateSlideDeck, CREATE_SLIDE_DECK_TOOL_DEF } from "../create-slide-deck";
 import { seedDeckDoc } from "~/collab/deck-write.server";
 import { projectLegacySlides, readDeck } from "~/collab/read-deck.server";
 import { elementsOf, slidesMap } from "~/components/slides/deck/model";
@@ -139,10 +138,10 @@ describe("custom HTML through manage_slide_deck", () => {
     expect(schema.element.properties.kind.enum).toContain("html");
     expect(schema.element.properties.html.maxLength).toBe(200_000);
     expect((GET_SLIDE_DECK_TOOL_DEF.inputSchema.properties as any).includeHtml.type).toBe("boolean");
-    for (const def of [MANAGE_SLIDE_DECK_TOOL_DEF, MANAGE_SLIDE_ELEMENTS_TOOL_DEF, CREATE_SLIDE_DECK_TOOL_DEF]) {
+    for (const def of [MANAGE_SLIDE_DECK_TOOL_DEF, MANAGE_SLIDE_ELEMENTS_TOOL_DEF]) {
       expect(JSON.stringify(def)).toContain("--slide-accent");
     }
-    const text = JSON.stringify(MANAGE_SLIDE_ELEMENTS_TOOL_DEF) + JSON.stringify(CREATE_SLIDE_DECK_TOOL_DEF);
+    const text = JSON.stringify(MANAGE_SLIDE_ELEMENTS_TOOL_DEF);
     for (const needle of ["1920 by 1080", "--slide-accent", "--slide-font-body", "Network requests", "cdnjs.cloudflare.com", "cdn.jsdelivr.net", "unpkg.com", "200000", "PowerPoint export turns it into a picture"]) {
       expect(text).toContain(needle);
     }
@@ -181,7 +180,7 @@ describe("custom HTML in outlines", () => {
   });
 });
 
-describe("custom HTML in create_slide_deck", () => {
+describe("custom HTML in manage_slide_deck create", () => {
   beforeEach(() => {
     env.doc = new Y.Doc();
     seedDeckDoc(env.doc, [{ id: "starter", layout: "content", title: "" }]);
@@ -189,14 +188,14 @@ describe("custom HTML in create_slide_deck", () => {
   });
 
   it("drafts a deck of html slides", async () => {
-    const out = await runCreateSlideDeck("u1", { title: "Demo", slides: [{ html: "<h1>One</h1>" }, { html: "<h1>Two</h1>" }] });
+    const out = await runManageSlideDeck("u1", { action: "create", title: "Demo", outline: [{ html: "<h1>One</h1>" }, { html: "<h1>Two</h1>" }] });
     expect(out.slides).toHaveLength(2);
     expect(out.slides[0].elements[0]).toMatchObject({ kind: "html", htmlFill: true, htmlLength: 12 });
     expect(read().slides.map((s) => s.elements[0]?.html)).toEqual(["<h1>One</h1>", "<h1>Two</h1>"]);
   });
 
   it("writes nothing when one slide is over the cap", async () => {
-    await expect(runCreateSlideDeck("u1", { title: "x", slides: [{ html: "ok" }, { html: BIG }] })).rejects.toMatchObject({ status: 400 });
+    await expect(runManageSlideDeck("u1", { action: "create", title: "x", outline: [{ html: "ok" }, { html: BIG }] } as never)).rejects.toMatchObject({ status: 400 });
     expect(labDocs.runCreateLabDocument).not.toHaveBeenCalled();
   });
 });

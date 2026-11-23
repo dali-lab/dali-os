@@ -188,8 +188,8 @@ describe("runAskTool", () => {
   });
 
   it("refuses tools outside the allowlist without dispatching", async () => {
-    const out = await runAskTool("set_page_content", { pageId: "p1" }, CALLER, new SourceRegistry());
-    expect(out).toEqual({ content: "The tool set_page_content isn't available here.", isError: true, sources: [] });
+    const out = await runAskTool("edit_content", { pageId: "p1" }, CALLER, new SourceRegistry());
+    expect(out).toEqual({ content: "The tool edit_content isn't available here.", isError: true, sources: [] });
     expect(h.dispatchTool).not.toHaveBeenCalled();
   });
 

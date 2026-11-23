@@ -744,7 +744,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
 }
 {
   "name": "read_page",
-  "description": "Read a workspace page's content as Markdown (headings, lists, check lists, quotes, code, tables, images). Lossy for editor-only blocks (callouts/toggles flatten). Member mentions read as [@handle](/members/<userId>), page mentions as [Title](/documents/<pageId>) and task mentions as [Title](/projects/<projectId>?tab=progress&task=<taskId>); all three round-trip through set_page_content. To change part of a page, use outline_content and edit_content (when available) rather than rewriting it. Long pages come back in chunks of limit characters (default 50000, max 200000): pass page.nextCursor as cursor until page.hasMore is false. page.total is the full Markdown length.",
+  "description": "Read a workspace page's content as Markdown (headings, lists, check lists, quotes, code, tables, images). Lossy for editor-only blocks (callouts/toggles flatten). Member mentions read as [@handle](/members/<userId>), page mentions as [Title](/documents/<pageId>) and task mentions as [Title](/projects/<projectId>?tab=progress&task=<taskId>); all three round-trip through edit_content. To change part of a page, use outline_content and edit_content rather than rewriting it; edit_content replace_all swaps the whole body. For a personal note, also returns its tags, public flag, lab listing, share count and whether you own it. Long pages come back in chunks of limit characters (default 50000, max 200000): pass page.nextCursor as cursor until page.hasMore is false. page.total is the full Markdown length.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -772,13 +772,14 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
 }
 {
   "name": "create_page",
-  "description": "Create a page in a project's workspace: a FreeForm document (optionally with Markdown content) or a Folder. Documents and folders nest inside any folder, up to 6 levels deep, as in the Drive. Requires Core or being staffed on the project.",
+  "description": "Create a page: a FreeForm document (optionally with Markdown content), a Folder, or in the lab a slide deck. With projectId the page goes in that project's workspace (needs Core or being staffed on the project); without it the page goes in the lab (any lab member at the top level, edit access to the folder inside one). Documents and folders nest inside any folder, up to 6 levels deep, as in the Drive. Fill a new slide deck with manage_slide_deck.",
   "inputSchema": {
     "type": "object",
     "properties": {
       "projectId": {
         "type": "string",
-        "minLength": 1
+        "minLength": 1,
+        "description": "The project to create the page in. Omit to create a lab page."
       },
       "title": {
         "type": "string",
@@ -789,55 +790,32 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
         "type": "string",
         "enum": [
           "FreeForm",
-          "Folder"
+          "Folder",
+          "Slides"
         ],
-        "description": "Default 'FreeForm' (a document). 'Folder' creates a container page."
+        "description": "Default 'FreeForm' (a document). 'Folder' creates a container page. 'Slides' creates an empty slide deck (lab only)."
       },
       "parentPageId": {
         "type": "string",
-        "description": "Optional. Nest inside this folder (any depth up to 6 levels)."
+        "description": "Nest inside this folder in the same workspace (any depth up to 6 levels)."
       },
       "content": {
         "type": "string",
         "maxLength": 300000,
-        "description": "Optional initial body as Markdown (FreeForm only), same dialect as set_page_content: mention a member as [@handle](/members/<userId>), not @Name. Unknown ids are written as plain text and listed in warnings."
+        "description": "Initial body as Markdown (project documents only), same dialect as edit_content: mention a member as [@handle](/members/<userId>), not @Name. Unknown ids are written as plain text and listed in warnings."
       },
       "fromTemplatePageId": {
         "type": "string",
-        "description": "Optional. Create the document by duplicating this template page's content (a Lab page marked as a template). Mutually exclusive with 'content'; FreeForm only."
+        "description": "Create the document by duplicating this template page's content (a Lab page marked as a template). Mutually exclusive with 'content'; documents only."
       },
       "iconEmoji": {
         "type": "string",
-        "maxLength": 8
+        "maxLength": 8,
+        "description": "Project pages only."
       }
     },
     "required": [
-      "projectId",
       "title"
-    ],
-    "additionalProperties": false
-  },
-  "requiredScope": "mcp:write"
-}
-{
-  "name": "set_page_content",
-  "description": "Replace a page's body with content rendered from Markdown (headings, lists, quotes, code blocks, links, bold/italic/strike, and images via ![alt](src) — use upload_project_file with purpose 'pageImage' to get a src). ![title](youtube url) adds a video player. Works for Project, Lab, and personal-note (Member) workspace pages. OVERWRITES the existing body. To change part of an existing page, use edit_content instead (when available); otherwise read_page first to preserve content. Mention a member as [@handle](/members/<userId>) (not @Name), a page as [Title](/documents/<pageId>) and a task as [Title](/projects/<projectId>?tab=progress&task=<taskId>); an id that is unknown (or not a lab member, or a task outside the named project) is written as plain text and listed in warnings. The old body remains restorable from the page's version history. Requires edit access on the page (Core, staffed on the project, or page owner).",
-  "inputSchema": {
-    "type": "object",
-    "properties": {
-      "pageId": {
-        "type": "string",
-        "minLength": 1
-      },
-      "markdown": {
-        "type": "string",
-        "maxLength": 300000,
-        "description": "New page body as Markdown. Empty string clears the page."
-      }
-    },
-    "required": [
-      "pageId",
-      "markdown"
     ],
     "additionalProperties": false
   },
@@ -876,7 +854,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
 }
 {
   "name": "upload_project_file",
-  "description": "Upload a file to a project from base64 content (max ~9 MB decoded). purpose \\"file\\" (default) adds it to the project's Files list; \\"pageImage\\" uploads an image for embedding in page bodies via set_page_content — use the returned src in ![alt](src). For a larger file, or one on disk you can reach with a shell, use create_project_file_upload instead (up to 100 MB, no base64). Requires Core or being staffed on the project.",
+  "description": "Upload a file to a project from base64 content (max ~9 MB decoded). purpose \\"file\\" (default) adds it to the project's Files list; \\"pageImage\\" uploads an image for embedding in page bodies via edit_content — use the returned src in ![alt](src). For a larger file, or one on disk you can reach with a shell, use create_project_file_upload instead (up to 100 MB, no base64). Requires Core or being staffed on the project.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -1102,37 +1080,22 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
   "requiredScope": "mcp:read"
 }
 {
-  "name": "list_file_shares",
-  "description": "List who a project file is shared with: each share's id, person or group, and permission, plus the file's link access and any access it inherits from its folder. Needs permission to manage the file's sharing. Use the share ids with manage_document_sharing unshare_file.",
-  "inputSchema": {
-    "type": "object",
-    "properties": {
-      "fileId": {
-        "type": "string",
-        "minLength": 1
-      }
-    },
-    "required": [
-      "fileId"
-    ],
-    "additionalProperties": false
-  },
-  "requiredScope": "mcp:read"
-}
-{
-  "name": "list_page_shares",
-  "description": "List who a document or folder (lab, project or personal) is shared with: each share's id, person or group, and permission, plus its general access, its folder access if it is a folder, and the access it inherits from a parent folder. Needs permission to manage the document's sharing. Use the share ids with manage_document_sharing unshare_page.",
+  "name": "get_sharing",
+  "description": "Get who a page or a file is shared with: each share's id, person or group and permission, plus its general or link access and any access it inherits from a parent folder (folders also return their folder access). Pass pageId or fileId, not both. Needs permission to manage its sharing. Use the share ids with share_page or share_file unshare.",
   "inputSchema": {
     "type": "object",
     "properties": {
       "pageId": {
         "type": "string",
-        "minLength": 1
+        "minLength": 1,
+        "description": "A lab, project or personal page."
+      },
+      "fileId": {
+        "type": "string",
+        "minLength": 1,
+        "description": "A project file."
       }
     },
-    "required": [
-      "pageId"
-    ],
     "additionalProperties": false
   },
   "requiredScope": "mcp:read"
@@ -3128,63 +3091,8 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
   "requiredScope": "mcp:read"
 }
 {
-  "name": "create_lab_document",
-  "description": "Create a new lab-wide document, folder, or slide deck. Any lab member may create at the top level; inside a folder you need edit access to it. Documents and folders nest inside any folder, up to 6 levels deep, as in the Drive. Fill a new slide deck with manage_slide_deck.",
-  "inputSchema": {
-    "type": "object",
-    "properties": {
-      "title": {
-        "type": "string",
-        "minLength": 1,
-        "maxLength": 200
-      },
-      "kind": {
-        "type": "string",
-        "enum": [
-          "FreeForm",
-          "Folder",
-          "Slides"
-        ],
-        "description": "Defaults to 'FreeForm'. 'Slides' creates an empty slide deck."
-      },
-      "parentPageId": {
-        "type": "string",
-        "description": "Nest it inside this Lab folder (any depth up to 6 levels). Omit for a top-level page."
-      },
-      "fromTemplatePageId": {
-        "type": "string",
-        "description": "Optional. Create the document by duplicating this template page's content (a Lab page marked as a template). FreeForm only."
-      }
-    },
-    "required": [
-      "title"
-    ],
-    "additionalProperties": false
-  },
-  "requiredScope": "mcp:write"
-}
-{
-  "name": "delete_lab_document",
-  "description": "Archive a lab-wide document or folder. Requires Core access or being the creator of the document.",
-  "inputSchema": {
-    "type": "object",
-    "properties": {
-      "pageId": {
-        "type": "string",
-        "minLength": 1,
-        "description": "ID of the lab document to archive."
-      }
-    },
-    "required": [
-      "pageId"
-    ],
-    "additionalProperties": false
-  },
-  "requiredScope": "mcp:write"
-}
-{
   "name": "list_personal_notes",
-  "description": "List personal notes visible to the caller: own notes plus notes shared with them (by direct share or group). Returns note metadata without body content: use get_personal_note to read body. Pass page.nextCursor as cursor to read the next page until page.hasMore is false.",
+  "description": "List personal notes visible to the caller: own notes plus notes shared with them (by direct share or group). Returns note metadata without body content: use read_page to read a note. Pass page.nextCursor as cursor to read the next page until page.hasMore is false.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -3212,26 +3120,8 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
   "requiredScope": "mcp:read"
 }
 {
-  "name": "get_personal_note",
-  "description": "Get a single personal note's metadata. Must have view access (own, shared, public, or lab-listed). To read the body content use read_page after verifying access.",
-  "inputSchema": {
-    "type": "object",
-    "properties": {
-      "pageId": {
-        "type": "string",
-        "minLength": 1
-      }
-    },
-    "required": [
-      "pageId"
-    ],
-    "additionalProperties": false
-  },
-  "requiredScope": "mcp:read"
-}
-{
   "name": "manage_personal_note",
-  "description": "Manage a personal note. Owner-gated for all actions. Actions: create (own space), update (title/icon/parent), delete, set_visibility (public/private), share_add (share with user/group), share_remove (revoke a share).",
+  "description": "Create or rename your own personal notes and folders. Actions: create (in your own space), update (title, icon or parent folder). Only the owner can change a note. Trash a note with manage_drive_trash; share it or make it public with share_page; read it with read_page.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -3239,54 +3129,30 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
         "type": "string",
         "enum": [
           "create",
-          "update",
-          "delete",
-          "set_visibility",
-          "share_add",
-          "share_remove"
+          "update"
         ]
       },
       "pageId": {
         "type": "string",
-        "description": "Required for all actions except 'create'."
+        "description": "update: the note."
       },
       "title": {
         "type": "string",
         "maxLength": 300,
-        "description": "For create/update."
+        "description": "create, update."
       },
       "iconEmoji": {
         "type": "string",
         "maxLength": 10,
-        "description": "For update. Empty string clears it."
+        "description": "update: empty string clears it."
       },
       "parentPageId": {
         "type": "string",
-        "description": "For create/update. Empty string clears parent."
+        "description": "create, update: the parent folder. Empty string clears the parent."
       },
       "isFolder": {
         "type": "boolean",
-        "description": "For create only. Creates a folder instead of a note."
-      },
-      "isPublic": {
-        "type": "boolean",
-        "description": "For set_visibility."
-      },
-      "principalType": {
-        "type": "string",
-        "enum": [
-          "User",
-          "Group"
-        ],
-        "description": "For share_add."
-      },
-      "principalId": {
-        "type": "string",
-        "description": "User or Group id for share_add."
-      },
-      "shareId": {
-        "type": "string",
-        "description": "PageShare id for share_remove."
+        "description": "create: creates a folder instead of a note."
       }
     },
     "required": [
@@ -3344,7 +3210,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
 }
 {
   "name": "apply_doc_tag",
-  "description": "Add or remove a tag on a document (Page) or project file. Core only. op 'add' is idempotent; 'remove' is a no-op if the tag isn't applied.",
+  "description": "Add or remove a tag on a document (Page) or project file. Core only. 'add' is idempotent; 'remove' is a no-op if the tag isn't applied.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -3363,7 +3229,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
         "type": "string",
         "minLength": 1
       },
-      "op": {
+      "action": {
         "type": "string",
         "enum": [
           "add",
@@ -3372,10 +3238,10 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
       }
     },
     "required": [
+      "action",
       "targetType",
       "targetId",
-      "tagId",
-      "op"
+      "tagId"
     ],
     "additionalProperties": false
   },
@@ -3579,7 +3445,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
 }
 {
   "name": "manage_page",
-  "description": "Manage a page: update (rename or set the icon of any doc, note, notebook or folder you can edit; archive or restore a project page), set_visibility (share a project page with the partner portal, or make it the public write-up), pin/unpin, move/reorder, duplicate, favorite/unfavorite, toggle template status, or update typography display settings. Permissions mirror the web (rename and icon follow the page's own edit access, the same as the web; archive, restore and set_visibility require Core or being staffed on the project; pin requires project-edit or lab-member; move requires manage access; duplicate/set_template requires edit access; favorite requires view access; typography requires edit access on a FreeForm page).",
+  "description": "Manage a page: update (rename or set the icon of any doc, note, notebook or folder you can edit), pin (pin or unpin a project or lab page), move/reorder, duplicate, favorite/unfavorite, set_template (toggle template status) or typography (display settings). Rename and icon follow the page's own edit access; pin needs project edit access or lab membership; move needs manage access; duplicate and set_template need edit access; favorite needs view access; typography needs edit access on a FreeForm page. Trash and restore with manage_drive_trash; share and set partner or public visibility with share_page.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -3587,7 +3453,6 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
         "type": "string",
         "enum": [
           "update",
-          "set_visibility",
           "pin",
           "move",
           "duplicate",
@@ -3611,22 +3476,6 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
         "type": "string",
         "maxLength": 8,
         "description": "For 'update': empty string clears the icon."
-      },
-      "archived": {
-        "type": "boolean",
-        "description": "For 'update': true archives (soft-deletes) the page, false restores it."
-      },
-      "audience": {
-        "type": "string",
-        "enum": [
-          "partner",
-          "public"
-        ],
-        "description": "For 'set_visibility': 'partner' shares the page with the partner portal; 'public' makes it the public write-up."
-      },
-      "visible": {
-        "type": "boolean",
-        "description": "For 'set_visibility': true to show, false to hide."
       },
       "pinned": {
         "type": "boolean",
@@ -3694,302 +3543,6 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
   "requiredScope": "mcp:write"
 }
 {
-  "name": "create_slide_deck",
-  "description": "Create a lab slide deck from an outline in one step. Each slide has a layoutId, its text by box name in slots (Markdown), speaker notes, and free elements (text, image by URL, shape, chart with data, icon, video, poll, custom HTML) as in manage_slide_elements add_element. A slide can instead be one custom HTML page: give it html (a Blank-layout slide filled by your HTML). Custom HTML (kind 'html'): html is the page's markup, CSS and script as one string, up to 200000 characters. It runs in a sandboxed frame laid out at the element's w by h in stage units, so 1px of your CSS is one stage unit; a full slide is 1920 by 1080. Set htmlFill: true to cover the whole slide (x, y, w, h are then ignored). Theme CSS variables are set on :root: --slide-accent, --slide-fg, --slide-muted, --slide-surface, --slide-ground, --slide-rule, --slide-font-display, --slide-font-body; html and body have no margin and are 100% tall. Network requests (fetch, XHR, WebSocket, forms) are blocked. Scripts run inline or from cdnjs.cloudflare.com, cdn.jsdelivr.net and unpkg.com only; images load over https or data:. It is not shared live between screens. PDF export prints what the frame shows after it loads; PowerPoint export turns it into a picture. Returns the deck's pageId and every slide with its element ids; edit it afterwards with manage_slide_deck and manage_slide_elements. Needs the live deck editor to be on for you.",
-  "inputSchema": {
-    "type": "object",
-    "properties": {
-      "title": {
-        "type": "string",
-        "minLength": 1,
-        "maxLength": 200
-      },
-      "themeId": {
-        "type": "string",
-        "enum": [
-          "dali-dark",
-          "dali-light"
-        ],
-        "description": "Defaults to the standard dark theme."
-      },
-      "parentPageId": {
-        "type": "string",
-        "description": "Put the deck inside an existing top-level Lab folder. Omit for the top level."
-      },
-      "slides": {
-        "type": "array",
-        "items": {
-          "type": "object",
-          "properties": {
-            "layoutId": {
-              "type": "string",
-              "enum": [
-                "title",
-                "content",
-                "split",
-                "image",
-                "section",
-                "bignumber",
-                "blank"
-              ],
-              "description": "Defaults to 'content'."
-            },
-            "slots": {
-              "type": "object",
-              "description": "Text for the layout's boxes, by slot name (title, subtitle, body and so on). Text is Markdown. An image box takes an object { src, alt } instead of text.",
-              "additionalProperties": true
-            },
-            "html": {
-              "type": "string",
-              "maxLength": 200000,
-              "description": "A custom slide: this HTML fills a Blank-layout slide. layoutId and slots are not used with it. Custom HTML (kind 'html'): html is the page's markup, CSS and script as one string, up to 200000 characters. It runs in a sandboxed frame laid out at the element's w by h in stage units, so 1px of your CSS is one stage unit; a full slide is 1920 by 1080. Set htmlFill: true to cover the whole slide (x, y, w, h are then ignored). Theme CSS variables are set on :root: --slide-accent, --slide-fg, --slide-muted, --slide-surface, --slide-ground, --slide-rule, --slide-font-display, --slide-font-body; html and body have no margin and are 100% tall. Network requests (fetch, XHR, WebSocket, forms) are blocked. Scripts run inline or from cdnjs.cloudflare.com, cdn.jsdelivr.net and unpkg.com only; images load over https or data:. It is not shared live between screens. PDF export prints what the frame shows after it loads; PowerPoint export turns it into a picture."
-            },
-            "notes": {
-              "type": "string",
-              "maxLength": 20000,
-              "description": "Speaker notes."
-            },
-            "elements": {
-              "type": "array",
-              "maxItems": 30,
-              "items": {
-                "type": "object",
-                "properties": {
-                  "kind": {
-                    "type": "string",
-                    "enum": [
-                      "text",
-                      "image",
-                      "shape",
-                      "chart",
-                      "icon",
-                      "video",
-                      "poll",
-                      "html"
-                    ],
-                    "description": "add_element only. Tables and code go in a text element's markdown (a pipe table or a fenced block)."
-                  },
-                  "shape": {
-                    "type": "string",
-                    "enum": [
-                      "rect",
-                      "rounded",
-                      "ellipse",
-                      "line",
-                      "arrow"
-                    ],
-                    "description": "Shapes: required when adding one."
-                  },
-                  "fill": {
-                    "type": "string",
-                    "enum": [
-                      "accent",
-                      "fg",
-                      "muted",
-                      "surface",
-                      "rule"
-                    ],
-                    "description": "Shapes: a theme color."
-                  },
-                  "markdown": {
-                    "type": "string",
-                    "maxLength": 20000,
-                    "description": "Text: the whole text, replacing what is there."
-                  },
-                  "textStyle": {
-                    "type": "string",
-                    "enum": [
-                      "title",
-                      "heading",
-                      "body",
-                      "kicker",
-                      "default"
-                    ],
-                    "description": "Text: a theme text style. 'default' goes back to the layout's style."
-                  },
-                  "src": {
-                    "type": "string",
-                    "maxLength": 2000,
-                    "description": "Images: an http(s) URL or a path on this site. Required when adding one."
-                  },
-                  "alt": {
-                    "type": "string",
-                    "maxLength": 300
-                  },
-                  "chart": {
-                    "type": "object",
-                    "description": "Charts: required when adding one; on update it replaces the chart. Every series needs one value per label.",
-                    "properties": {
-                      "type": {
-                        "type": "string",
-                        "enum": [
-                          "bar",
-                          "line",
-                          "pie"
-                        ]
-                      },
-                      "labels": {
-                        "type": "array",
-                        "items": {
-                          "type": "string",
-                          "maxLength": 60
-                        },
-                        "minItems": 1,
-                        "maxItems": 24
-                      },
-                      "series": {
-                        "type": "array",
-                        "minItems": 1,
-                        "maxItems": 6,
-                        "items": {
-                          "type": "object",
-                          "properties": {
-                            "name": {
-                              "type": "string",
-                              "maxLength": 60
-                            },
-                            "values": {
-                              "type": "array",
-                              "items": {
-                                "type": "number"
-                              },
-                              "maxItems": 24
-                            }
-                          },
-                          "required": [
-                            "name",
-                            "values"
-                          ],
-                          "additionalProperties": false
-                        }
-                      }
-                    },
-                    "required": [
-                      "type",
-                      "labels",
-                      "series"
-                    ],
-                    "additionalProperties": false
-                  },
-                  "icon": {
-                    "type": "string",
-                    "maxLength": 60,
-                    "description": "Icons: a lucide icon name such as 'rocket' or 'bar-chart-3'. Required when adding one."
-                  },
-                  "videoUrl": {
-                    "type": "string",
-                    "maxLength": 2048,
-                    "description": "Videos: a YouTube link. Required when adding one."
-                  },
-                  "poll": {
-                    "type": "object",
-                    "description": "Polls: required when adding one. Followers vote while you present.",
-                    "properties": {
-                      "question": {
-                        "type": "string",
-                        "maxLength": 200
-                      },
-                      "options": {
-                        "type": "array",
-                        "items": {
-                          "type": "string",
-                          "maxLength": 80
-                        },
-                        "minItems": 2,
-                        "maxItems": 6
-                      },
-                      "multi": {
-                        "type": "boolean",
-                        "description": "Allow several answers."
-                      }
-                    },
-                    "required": [
-                      "question",
-                      "options"
-                    ],
-                    "additionalProperties": false
-                  },
-                  "html": {
-                    "type": "string",
-                    "maxLength": 200000,
-                    "description": "Custom HTML: the source, replacing what is there. Required when adding one. Custom HTML (kind 'html'): html is the page's markup, CSS and script as one string, up to 200000 characters. It runs in a sandboxed frame laid out at the element's w by h in stage units, so 1px of your CSS is one stage unit; a full slide is 1920 by 1080. Set htmlFill: true to cover the whole slide (x, y, w, h are then ignored). Theme CSS variables are set on :root: --slide-accent, --slide-fg, --slide-muted, --slide-surface, --slide-ground, --slide-rule, --slide-font-display, --slide-font-body; html and body have no margin and are 100% tall. Network requests (fetch, XHR, WebSocket, forms) are blocked. Scripts run inline or from cdnjs.cloudflare.com, cdn.jsdelivr.net and unpkg.com only; images load over https or data:. It is not shared live between screens. PDF export prints what the frame shows after it loads; PowerPoint export turns it into a picture."
-                  },
-                  "htmlFill": {
-                    "type": "boolean",
-                    "description": "Custom HTML: cover the whole slide."
-                  },
-                  "x": {
-                    "type": "number",
-                    "description": "Left edge on the 1920 by 1080 stage."
-                  },
-                  "y": {
-                    "type": "number",
-                    "description": "Top edge on the stage."
-                  },
-                  "w": {
-                    "type": "number",
-                    "description": "Width on the stage."
-                  },
-                  "h": {
-                    "type": "number",
-                    "description": "Height on the stage."
-                  },
-                  "rot": {
-                    "type": "number",
-                    "description": "Rotation in degrees."
-                  },
-                  "build": {
-                    "type": "integer",
-                    "minimum": 0,
-                    "maximum": 50,
-                    "description": "The presenting step it appears at. 0 shows it from the start."
-                  },
-                  "buildBullets": {
-                    "type": "boolean",
-                    "description": "Text: show its top-level blocks one per step, the first together with the box."
-                  },
-                  "buildEffect": {
-                    "type": "string",
-                    "enum": [
-                      "appear",
-                      "fade",
-                      "rise",
-                      "scale"
-                    ],
-                    "description": "How it enters while presenting. Fade when left out."
-                  },
-                  "buildAfter": {
-                    "type": "boolean",
-                    "description": "Its step plays by itself after the previous step instead of waiting for a key press."
-                  },
-                  "buildDelay": {
-                    "type": "integer",
-                    "minimum": 0,
-                    "maximum": 5000,
-                    "description": "Milliseconds to wait before an automatic step."
-                  }
-                },
-                "additionalProperties": false
-              },
-              "description": "Free elements to add to the slide, each as in manage_slide_elements add_element."
-            }
-          },
-          "additionalProperties": false
-        },
-        "minItems": 1,
-        "maxItems": 60,
-        "description": "The slides, in order."
-      }
-    },
-    "required": [
-      "title",
-      "slides"
-    ],
-    "additionalProperties": false
-  },
-  "requiredScope": "mcp:write"
-}
-{
   "name": "get_slide_deck",
   "description": "Read a Drive slide deck. Returns slides in pages of limit: pass page.nextCursor as cursor until page.hasMore is false (page.total is the slide count). Pass elements: true to also get the theme, each slide's layoutId and its elements (text boxes, images, shapes, charts, icons, videos, polls, custom HTML and layout boxes, whose id is their slot name). Pass exportLinks: true to get PDF and PowerPoint download links instead. Edit slides with manage_slide_deck and elements with manage_slide_elements. Version history is list_collab_versions with docName 'slides:{pageId}:deck'.",
   "inputSchema": {
@@ -4032,13 +3585,14 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
 }
 {
   "name": "manage_slide_deck",
-  "description": "Edit the slides of a Drive slide deck. Actions: set_slides (replace every slide) · add_slide (optional index, else at the end; layoutId for any layout) · add_slides (draft several slides at once from an outline: each has a layoutId, text per box in slots, notes and free elements) · update_slide (fields left out are kept) · delete_slide · move_slide (to toIndex) · duplicate_slide · set_layout · set_theme. Bodies are Markdown, including pipe tables and fenced code blocks. An outline slide with html makes a slide whose content is your own HTML, CSS and script. Custom HTML (kind 'html'): html is the page's markup, CSS and script as one string, up to 200000 characters. It runs in a sandboxed frame laid out at the element's w by h in stage units, so 1px of your CSS is one stage unit; a full slide is 1920 by 1080. Set htmlFill: true to cover the whole slide (x, y, w, h are then ignored). Theme CSS variables are set on :root: --slide-accent, --slide-fg, --slide-muted, --slide-surface, --slide-ground, --slide-rule, --slide-font-display, --slide-font-body; html and body have no margin and are 100% tall. Network requests (fetch, XHR, WebSocket, forms) are blocked. Scripts run inline or from cdnjs.cloudflare.com, cdn.jsdelivr.net and unpkg.com only; images load over https or data:. It is not shared live between screens. PDF export prints what the frame shows after it loads; PowerPoint export turns it into a picture. Read the deck with get_slide_deck; edit what's on a slide with manage_slide_elements. Create a new deck from an outline with create_slide_deck. set_slides, add_slide, update_slide, delete_slide and move_slide return the whole deck; the others return what they changed.",
+  "description": "Create or edit a Drive slide deck. Actions: create (a new lab deck from an outline in one step; returns pageId and every slide with its element ids; needs the live deck editor to be on for you) · set_slides (replace every slide) · add_slide (optional index, else at the end; layoutId for any layout) · add_slides (draft several slides at once from an outline: each has a layoutId, text per box in slots, notes and free elements) · update_slide (fields left out are kept) · delete_slide · move_slide (to toIndex) · duplicate_slide · set_layout · set_theme. Bodies are Markdown, including pipe tables and fenced code blocks. An outline slide with html makes a slide whose content is your own HTML, CSS and script. Custom HTML (kind 'html'): html is the page's markup, CSS and script as one string, up to 200000 characters. It runs in a sandboxed frame laid out at the element's w by h in stage units, so 1px of your CSS is one stage unit; a full slide is 1920 by 1080. Set htmlFill: true to cover the whole slide (x, y, w, h are then ignored). Theme CSS variables are set on :root: --slide-accent, --slide-fg, --slide-muted, --slide-surface, --slide-ground, --slide-rule, --slide-font-display, --slide-font-body; html and body have no margin and are 100% tall. Network requests (fetch, XHR, WebSocket, forms) are blocked. Scripts run inline or from cdnjs.cloudflare.com, cdn.jsdelivr.net and unpkg.com only; images load over https or data:. It is not shared live between screens. PDF export prints what the frame shows after it loads; PowerPoint export turns it into a picture. Read the deck with get_slide_deck; edit what's on a slide with manage_slide_elements. set_slides, add_slide, update_slide, delete_slide and move_slide return the whole deck; the others return what they changed.",
   "inputSchema": {
     "type": "object",
     "properties": {
       "action": {
         "type": "string",
         "enum": [
+          "create",
           "set_slides",
           "add_slide",
           "add_slides",
@@ -4053,7 +3607,17 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
       "pageId": {
         "type": "string",
         "minLength": 1,
-        "description": "The deck's page id."
+        "description": "The deck's page id. Every action except create."
+      },
+      "title": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200,
+        "description": "create: the new deck's title."
+      },
+      "parentPageId": {
+        "type": "string",
+        "description": "create: put the deck inside an existing top-level Lab folder. Omit for the top level."
       },
       "slides": {
         "type": "array",
@@ -4427,7 +3991,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
         },
         "minItems": 1,
         "maxItems": 60,
-        "description": "add_slides: the slides to add, in order, at index (the end when left out)."
+        "description": "create: the deck's slides, in order. add_slides: the slides to add, in order, at index (the end when left out)."
       },
       "themeId": {
         "type": "string",
@@ -4435,7 +3999,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
           "dali-dark",
           "dali-light"
         ],
-        "description": "set_theme."
+        "description": "create (defaults to the standard dark theme) and set_theme."
       },
       "layoutId": {
         "type": "string",
@@ -4462,8 +4026,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
       }
     },
     "required": [
-      "action",
-      "pageId"
+      "action"
     ],
     "additionalProperties": false
   },
@@ -4782,7 +4345,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
 }
 {
   "name": "manage_notebook",
-  "description": "Manage meeting notebooks (a notebook holds notes as tabs). Actions: create (an empty notebook), set_template (the template new notes seed from; omit templatePageId to clear), add_page (file a doc or note into a notebook), detach_note (a meeting note becomes a plain doc in the notebook's folder), attach_note (a plain doc becomes the note for one occurrence of a meeting), set_date (the date a note tab is filed under in its notebook; pass date null to clear it; a note linked to a meeting takes its date from the meeting instead), merge_into (move every tab into another notebook and retire this one), dissolve (tabs become plain docs in the notebook's folder, notebook archived), trash (archive the notebook and its tabs), set_series_notebook (a meeting series' default notebook; omit notebookId to unset). Anyone who can edit a notebook can add to it; series changes and attach_note need the meeting's organizer or Core.",
+  "description": "Manage meeting notebooks (a notebook holds notes as tabs). Actions: create (an empty notebook), set_template (the template new notes seed from; omit templatePageId to clear), add_page (file a doc or note into a notebook), detach_note (a meeting note becomes a plain doc in the notebook's folder), attach_note (a plain doc becomes the note for one occurrence of a meeting), set_date (the date a note tab is filed under in its notebook; pass date null to clear it; a note linked to a meeting takes its date from the meeting instead), merge_into (move every tab into another notebook and retire this one), dissolve (tabs become plain docs in the notebook's folder, notebook archived), set_series_notebook (a meeting series' default notebook; omit notebookId to unset). Anyone who can edit a notebook can add to it; series changes and attach_note need the meeting's organizer or Core. Trash a notebook with manage_drive_trash.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -4797,14 +4360,13 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
           "set_date",
           "merge_into",
           "dissolve",
-          "trash",
           "set_series_notebook"
         ]
       },
       "notebookId": {
         "type": "string",
         "minLength": 1,
-        "description": "The notebook. Required for set_template, add_page, merge_into (the source), dissolve, trash. For set_series_notebook, the notebook to use (omit to unset)."
+        "description": "The notebook. Required for set_template, add_page, merge_into (the source), dissolve. For set_series_notebook, the notebook to use (omit to unset)."
       },
       "title": {
         "type": "string",
@@ -4925,18 +4487,49 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
 }
 {
   "name": "manage_drive_trash",
-  "description": "Restore or permanently purge an archived drive item. Pages require edit access; files require edit-file access; forms require edit access on the form. Purging a form fails if the form is still bound to active hiring or education workflows.",
+  "description": "Move a drive item to the trash, or restore it from the trash. Works on pages in any workspace (lab, project, notebook, personal note), project and drive files, and forms. Trashing a folder trashes everything inside it. Restoring a folder restores only the folder. Pages need edit access (lab pages: the creator or Core; personal notes: the owner; notebooks: someone who can manage them); files need edit-file access; forms need edit access on the form. See list_drive_trash for what is in the trash and purge_drive_item to delete for good.",
   "inputSchema": {
     "type": "object",
     "properties": {
       "action": {
         "type": "string",
         "enum": [
-          "restore",
-          "purge"
+          "trash",
+          "restore"
         ],
-        "description": "'restore' clears archivedAt; 'purge' permanently deletes."
+        "description": "'trash' moves the item to the trash; 'restore' brings it back."
       },
+      "type": {
+        "type": "string",
+        "enum": [
+          "doc",
+          "folder",
+          "file",
+          "form"
+        ],
+        "description": "Item type. Use doc for documents, notes, slide decks and notebooks."
+      },
+      "id": {
+        "type": "string",
+        "minLength": 1,
+        "description": "Item id."
+      }
+    },
+    "required": [
+      "action",
+      "type",
+      "id"
+    ],
+    "additionalProperties": false
+  },
+  "requiredScope": "mcp:write"
+}
+{
+  "name": "purge_drive_item",
+  "description": "Permanently delete an item that is already in the trash. This cannot be undone. Pages need edit access, files need edit-file access, forms need edit access on the form and fail while still bound to active hiring or education workflows. Trash an item first with manage_drive_trash.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
       "type": {
         "type": "string",
         "enum": [
@@ -4950,11 +4543,10 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
       "id": {
         "type": "string",
         "minLength": 1,
-        "description": "Item id."
+        "description": "Id of an item in the trash."
       }
     },
     "required": [
-      "action",
       "type",
       "id"
     ],
@@ -5102,7 +4694,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
 }
 {
   "name": "manage_blog_post",
-  "description": "Write a story (blog post). Actions: create (a new draft by the caller), update (title/summary/audience/body), publish, unpublish. Only the author and Core can change a post. publish by an Admin publishes it (and approves a post in review); by anyone else it submits the draft to the Admins for review. unpublish returns a published post to a draft, or withdraws one from review. markdown OVERWRITES the whole body (same Markdown as set_page_content: mention a member as [@handle](/members/<userId>), not @Name, a page as [Title](/documents/<pageId>), a task as [Title](/projects/<projectId>?tab=progress&task=<taskId>); unknown ids are written as plain text and come back in warnings); to change part of an existing post, use edit_content with target { type: 'blogPost', id } (when available), otherwise read_blog_post first to preserve content. isPublic also lists the post on the DALI website once published, and only an Admin can change it after a post leaves draft.",
+  "description": "Write a story (blog post). Actions: create (a new draft by the caller), update (title/summary/audience/body), publish, unpublish. Only the author and Core can change a post. publish by an Admin publishes it (and approves a post in review); by anyone else it submits the draft to the Admins for review. unpublish returns a published post to a draft, or withdraws one from review. markdown OVERWRITES the whole body (same Markdown as edit_content: mention a member as [@handle](/members/<userId>), not @Name, a page as [Title](/documents/<pageId>), a task as [Title](/projects/<projectId>?tab=progress&task=<taskId>); unknown ids are written as plain text and come back in warnings); to change part of an existing post, use edit_content with target { type: 'blogPost', id } (when available), otherwise read_blog_post first to preserve content. isPublic also lists the post on the DALI website once published, and only an Admin can change it after a post leaves draft.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -5245,7 +4837,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
 }
 {
   "name": "edit_content",
-  "description": "Edit part of a page or blog post without resending the whole body. Ops apply in order, all or none, live to anyone who has it open (they see your caret and the blocks you touched). Before a delete, replace_all or children replacement the page's current state is saved to version history, so people can restore it. Read block ids and hashes with outline_content / get_content_blocks first; every op on an existing block needs that block's expectedHash, and a stale one fails with BLOCK_CHANGED plus the block's current content and hashes. A block you already changed earlier in the same call needs no new hash.\\nBlocks with children: delete, move, and update with children also need expectedTreeHash (the block's treeHash), so you don't remove or move children someone else just changed.\\nOps:\\nreplace_text {blockId, expectedHash, find, replace}: find must occur exactly once in the block's own text (not in children, not across a mention or line break). The cheapest edit; keeps formatting and comments around it.\\nupdate {blockId, expectedHash, markdown | block}: replace one block's content (markdown must be one block); its children stay unless you pass children.\\ninsert {position, markdown | blocks}: new blocks at position. Leave ids out to get new ones (returned in results); an id that already exists fails with ID_EXISTS, so retrying an insert that went through can't duplicate it.\\ndelete {blockId, expectedHash}: a block and its children.\\nmove {blockId, expectedHash, position}.\\nreplace_all {markdown | blocks}: the whole body; must be the only op.\\nTables: insert_row {blockId, expectedHash, index?, cells: [markdown per cell]} (index omitted appends), delete_row {blockId, expectedHash, index}, set_cell {blockId, expectedHash, row, col, markdown}. Rows and columns count from 0, header row included. Tables with merged cells fail with TABLE_HAS_MERGED_CELLS; update the whole table instead.\\nMarkdown: mentions are [@Name](/members/<userId>), page links [Title](/documents/<pageId>); an unknown id is written as plain text and reported in warnings. Use <br> for a line break in a table cell. JSON blocks use BlockNote's block shape.\\nReturns the new hash (and treeHash) of every block you touched, so a follow-up edit needs no re-read, and seenBy: how many people had it open when your edit landed (null when unknown).",
+  "description": "Edit part of a page or blog post without resending the whole body. Ops apply in order, all or none, live to anyone who has it open. Before a delete, replace_all or children replacement the current state is saved to version history.\\nRead block ids and hashes with outline_content / get_content_blocks first; every op on an existing block needs its expectedHash, and a stale one fails with BLOCK_CHANGED plus the block's current content. A block you already changed earlier in the same call needs no new hash.\\nReturns the new hash (and treeHash) of every block you touched, and seenBy: how many people had it open (null when unknown).",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -5290,16 +4882,20 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
                 "insert_row",
                 "delete_row",
                 "set_cell"
-              ]
+              ],
+              "description": "replace_text: swap one string in a block (cheapest). update: replace one block. insert: add blocks at position. delete: a block and its children. move. replace_all: the whole body, the only op in the call. insert_row, delete_row, set_cell: table edits (merged cells fail with TABLE_HAS_MERGED_CELLS; update the whole table)."
             },
             "blockId": {
-              "type": "string"
+              "type": "string",
+              "description": "Every op except insert and replace_all."
             },
             "expectedHash": {
-              "type": "string"
+              "type": "string",
+              "description": "Required on every op that names a blockId."
             },
             "expectedTreeHash": {
-              "type": "string"
+              "type": "string",
+              "description": "delete, move, and update with children: the block's treeHash."
             },
             "position": {
               "type": "object",
@@ -5328,47 +4924,57 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
             },
             "markdown": {
               "type": "string",
-              "maxLength": 300000
+              "maxLength": 300000,
+              "description": "update (one block; its children stay unless you pass children), insert, replace_all, set_cell. Mentions are [@Name](/members/<userId>), page links [Title](/documents/<pageId>); an unknown id is written as plain text and reported in warnings. <br> breaks a line in a table cell."
             },
             "block": {
-              "type": "object"
+              "type": "object",
+              "description": "update: BlockNote block shape instead of markdown."
             },
             "blocks": {
               "type": "array",
               "items": {
                 "type": "object"
-              }
+              },
+              "description": "insert, replace_all: BlockNote JSON instead of markdown. Leave ids out to get new ones; an existing id fails with ID_EXISTS, so a retried insert can't duplicate."
             },
             "children": {
               "type": "array",
               "items": {
                 "type": "object"
-              }
+              },
+              "description": "update: replace the block's children."
             },
             "find": {
               "type": "string",
-              "minLength": 1
+              "minLength": 1,
+              "description": "replace_text: occurs exactly once in the block's own text (not children, not across a mention or line break)."
             },
             "replace": {
-              "type": "string"
+              "type": "string",
+              "description": "replace_text: the replacement. Formatting and comments around it are kept."
             },
             "index": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 0,
+              "description": "insert_row (omit to append), delete_row: 0-based, header row included."
             },
             "row": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 0,
+              "description": "set_cell: 0-based, header row included."
             },
             "col": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 0,
+              "description": "set_cell: 0-based."
             },
             "cells": {
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "description": "insert_row: Markdown for each cell."
             }
           },
           "required": [
@@ -8209,30 +7815,6 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
   "requiredScope": "mcp:write"
 }
 {
-  "name": "set_file_partner_visibility",
-  "description": "Set whether a project file is visible in the partner portal. The file must be live (not archived).",
-  "inputSchema": {
-    "type": "object",
-    "properties": {
-      "fileId": {
-        "type": "string",
-        "minLength": 1,
-        "description": "ProjectFile.id."
-      },
-      "partnerVisible": {
-        "type": "boolean",
-        "description": "true to share with the partner portal, false to hide."
-      }
-    },
-    "required": [
-      "fileId",
-      "partnerVisible"
-    ],
-    "additionalProperties": false
-  },
-  "requiredScope": "mcp:write"
-}
-{
   "name": "manage_staffing",
   "description": "Manage staffing. Actions: assign (propose a member's placement on a project; Proposed rows only, Confirmed/Declined stay as the audit trail), set_eligibility (a member's level ceiling in a domain), set_mentor_role (mark a user as mentor/non-mentor), add_external_mentor / remove_external_mentor (external mentor entries on a project), add_board_member / remove_board_member (who appears on the board). Staffing managers only.",
   "inputSchema": {
@@ -8814,48 +8396,32 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
   "requiredScope": "mcp:write"
 }
 {
-  "name": "manage_document_sharing",
-  "description": "Manage document and file audience/curation. Pass \`action\` to select the operation:\\n- \`set_document_sharing\`: change a document's audience (partner visibility, public write-up, pinned). Requires: pageId.\\n- \`delete_document\`: archive or permanently delete a project document. Requires: pageId.\\n- \`set_file_sharing\`: share a project file with the partner org, or stop sharing it. Requires: fileId, partnerVisible.\\n- \`delete_file\`: archive a project file so it drops out of the Files list. Requires: fileId.\\n- \`share_file\`: share a project file with a member or group. Requires: fileId, principalType, principalId.\\n- \`unshare_file\`: remove a share (ids from list_file_shares). Requires: fileId, shareId.\\n- \`set_file_link_access\`: set who can open the file by link. Requires: fileId, linkAccess.\\n- \`share_page\`: share a document or folder you manage (lab, project or personal) with a member or group. Requires: pageId, principalType, principalId.\\n- \`unshare_page\`: remove a document share (ids from list_page_shares). Requires: pageId, shareId.\\n- \`set_page_general_access\`: set whether everyone in the lab or only people you add can open a document. Requires: pageId, linkAccess.\\n- \`set_folder_access\`: set who can open a folder and everything in it. Private and Group also switch every document inside to only people you add. Requires: pageId, scopeKind (plus scopeGroupId for Group).",
+  "name": "list_project_templates",
+  "description": "List available project templates (Core only).",
+  "inputSchema": {
+    "type": "object",
+    "properties": {},
+    "additionalProperties": false
+  },
+  "requiredScope": "mcp:read"
+}
+{
+  "name": "share_page",
+  "description": "Change who can open a page and where it shows. Actions: share (add a person or group), unshare (remove a share), set_general_access (everyone in the lab, or only people you add), set_folder_access (who can open a folder and everything in it), set_visibility (show a project page to its partner org or as the public write-up; on a personal note, make it public or private on the owner's profile). Works on lab, project and personal pages. You need permission to manage the page's sharing; only the owner can share a personal note. See who has access with get_sharing.",
   "inputSchema": {
     "type": "object",
     "properties": {
       "action": {
         "type": "string",
         "enum": [
-          "set_document_sharing",
-          "delete_document",
-          "set_file_sharing",
-          "delete_file",
-          "share_file",
-          "unshare_file",
-          "set_file_link_access",
-          "share_page",
-          "unshare_page",
-          "set_page_general_access",
-          "set_folder_access"
-        ],
-        "description": "Operation to perform."
+          "share",
+          "unshare",
+          "set_general_access",
+          "set_folder_access",
+          "set_visibility"
+        ]
       },
       "pageId": {
-        "type": "string",
-        "minLength": 1
-      },
-      "partnerVisible": {
-        "type": "boolean"
-      },
-      "publicVisible": {
-        "type": "boolean",
-        "description": "Use as the public write-up rendered under the showcase card on dali.website."
-      },
-      "pinned": {
-        "type": "boolean",
-        "description": "Pin to the top of the project's Documents block."
-      },
-      "permanent": {
-        "type": "boolean",
-        "description": "Delete rather than archive. Irreversible. Defaults to false."
-      },
-      "fileId": {
         "type": "string",
         "minLength": 1
       },
@@ -8865,12 +8431,12 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
           "User",
           "Group"
         ],
-        "description": "share_file / share_page: who the grant is for."
+        "description": "share."
       },
       "principalId": {
         "type": "string",
         "minLength": 1,
-        "description": "share_file / share_page: User.id or Group id."
+        "description": "share: User.id or Group id."
       },
       "permission": {
         "type": "string",
@@ -8880,12 +8446,12 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
           "Edit",
           "FullAccess"
         ],
-        "description": "share_file / share_page: access level. Defaults to View. FullAccess lets them re-share."
+        "description": "share: defaults to View. FullAccess lets them re-share. Personal notes are always view-only."
       },
       "shareId": {
         "type": "string",
         "minLength": 1,
-        "description": "unshare_file / unshare_page: the share id from list_file_shares or list_page_shares."
+        "description": "unshare: the share id from get_sharing."
       },
       "linkAccess": {
         "type": "string",
@@ -8893,7 +8459,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
           "Restricted",
           "LabMembers"
         ],
-        "description": "set_file_link_access / set_page_general_access: Restricted = only people you add; LabMembers = everyone in the lab."
+        "description": "set_general_access: Restricted = only people you add; LabMembers = everyone in the lab."
       },
       "linkPermission": {
         "type": "string",
@@ -8902,7 +8468,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
           "Comment",
           "Edit"
         ],
-        "description": "set_file_link_access / set_page_general_access: level for lab members. Defaults to View."
+        "description": "set_general_access: level for lab members. Defaults to View."
       },
       "scopeKind": {
         "type": "string",
@@ -8912,7 +8478,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
           "Group",
           "Inherit"
         ],
-        "description": "set_folder_access: Private = only the owner and people named on each document; Lab = every lab member; Group = members of scopeGroupId; Inherit = clear it and follow the parent folder. Private and Group switch every document inside to only people you add."
+        "description": "set_folder_access: Private = only the owner and people named on each document; Lab = every lab member; Group = members of scopeGroupId; Inherit = follow the parent folder. Private and Group also switch every document inside to only people you add."
       },
       "scopeGroupId": {
         "type": "string",
@@ -8927,24 +8493,100 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
           "Edit"
         ],
         "description": "set_folder_access: what people in the scope can do. Defaults to View for Lab, Edit otherwise."
+      },
+      "partnerVisible": {
+        "type": "boolean",
+        "description": "set_visibility: show to (or hide from) the project's partner org. Project pages only."
+      },
+      "publicVisible": {
+        "type": "boolean",
+        "description": "set_visibility: use as the public write-up on dali.website (project pages), or make a personal note public (personal notes)."
       }
     },
     "required": [
-      "action"
+      "action",
+      "pageId"
     ],
     "additionalProperties": false
   },
   "requiredScope": "mcp:write"
 }
 {
-  "name": "list_project_templates",
-  "description": "List available project templates (Core only).",
+  "name": "share_file",
+  "description": "Change who can open a file and where it shows. Actions: share (add a person or group), unshare (remove a share), set_link_access (everyone in the lab, or only people you add), set_partner_visibility (show a project file to the project's partner org). You need permission to manage the file's sharing. See who has access with get_sharing.",
   "inputSchema": {
     "type": "object",
-    "properties": {},
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": [
+          "share",
+          "unshare",
+          "set_link_access",
+          "set_partner_visibility"
+        ]
+      },
+      "fileId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "principalType": {
+        "type": "string",
+        "enum": [
+          "User",
+          "Group"
+        ],
+        "description": "share."
+      },
+      "principalId": {
+        "type": "string",
+        "minLength": 1,
+        "description": "share: User.id or Group id."
+      },
+      "permission": {
+        "type": "string",
+        "enum": [
+          "View",
+          "Comment",
+          "Edit",
+          "FullAccess"
+        ],
+        "description": "share: defaults to View. FullAccess lets them re-share."
+      },
+      "shareId": {
+        "type": "string",
+        "minLength": 1,
+        "description": "unshare: the share id from get_sharing."
+      },
+      "linkAccess": {
+        "type": "string",
+        "enum": [
+          "Restricted",
+          "LabMembers"
+        ],
+        "description": "set_link_access: Restricted = only people you add; LabMembers = everyone in the lab."
+      },
+      "linkPermission": {
+        "type": "string",
+        "enum": [
+          "View",
+          "Comment",
+          "Edit"
+        ],
+        "description": "set_link_access: level for lab members. Defaults to View."
+      },
+      "partnerVisible": {
+        "type": "boolean",
+        "description": "set_partner_visibility: show to (or hide from) the partner org. Project files only."
+      }
+    },
+    "required": [
+      "action",
+      "fileId"
+    ],
     "additionalProperties": false
   },
-  "requiredScope": "mcp:read"
+  "requiredScope": "mcp:write"
 }
 {
   "name": "manage_project_template",

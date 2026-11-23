@@ -8,7 +8,6 @@ type Input = {
   title?: string;
   iconEmoji?: string;
   parentPageId?: string;
-  archived?: boolean;
 };
 
 export class UpdatePageError extends Error {
@@ -37,8 +36,8 @@ export async function runUpdatePage(callerId: string, input: Input) {
   if (!(await canEditPageMetadata(callerId, page))) {
     throw isProject ? new UpdatePageError("Forbidden", 403) : new UpdatePageError("Page not found", 404);
   }
-  if (!isProject && (input.parentPageId !== undefined || input.archived !== undefined)) {
-    throw new UpdatePageError("Only project pages can be moved or archived here", 400);
+  if (!isProject && input.parentPageId !== undefined) {
+    throw new UpdatePageError("Only project pages can be moved here", 400);
   }
 
   const data: {
@@ -46,7 +45,6 @@ export async function runUpdatePage(callerId: string, input: Input) {
     iconEmoji?: string | null;
     parentPageId?: string | null;
     position?: number;
-    archivedAt?: Date | null;
     lastEditedById?: string;
   } = {};
 
@@ -108,25 +106,6 @@ export async function runUpdatePage(callerId: string, input: Input) {
     data.position = last ? last.position + 1 : 0;
   }
 
-  if (input.archived !== undefined) {
-    if (input.archived && !page.archivedAt) {
-      if (page.kind === "Folder") {
-        const childCount = await prisma.page.count({
-          where: { parentPageId: page.id, archivedAt: null },
-        });
-        if (childCount > 0) {
-          throw new UpdatePageError(
-            "Move or archive the documents inside this folder first",
-            400,
-          );
-        }
-      }
-      data.archivedAt = new Date();
-    } else if (!input.archived && page.archivedAt) {
-      data.archivedAt = null;
-    }
-  }
-
   if (Object.keys(data).length === 0) {
     throw new UpdatePageError("Nothing to update", 400);
   }
@@ -134,7 +113,7 @@ export async function runUpdatePage(callerId: string, input: Input) {
   const updated = await prisma.page.update({
     where: { id: page.id },
     data,
-    select: { id: true, title: true, iconEmoji: true, parentPageId: true, archivedAt: true },
+    select: { id: true, title: true, iconEmoji: true, parentPageId: true },
   });
   void announceAgent({ action: "editing", presenceRoom: pagePresenceRoom(page.id) });
 
@@ -143,6 +122,5 @@ export async function runUpdatePage(callerId: string, input: Input) {
     title: updated.title,
     iconEmoji: updated.iconEmoji,
     parentPageId: updated.parentPageId,
-    archivedAt: updated.archivedAt?.toISOString() ?? null,
   };
 }

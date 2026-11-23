@@ -280,7 +280,7 @@ export async function reviewLabListing(
 /** Archive (soft-delete) a note, and stop it being visible anywhere. */
 export async function archiveNote(pageId: string, ownerId: string): Promise<void> {
   await requireNoteOwner(pageId, ownerId);
-  const children = await prisma.page.count({ where: { parentPageId: pageId } });
+  const children = await prisma.page.count({ where: { parentPageId: pageId, archivedAt: null } });
   if (children > 0) {
     throw new NoteForbiddenError(
       `This folder still holds ${children} note(s) — move or archive them first`,

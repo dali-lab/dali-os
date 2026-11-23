@@ -25,7 +25,7 @@ import type { McpCtx, McpTool } from "../../registry";
 import { McpError, McpForbiddenError, McpInvalidError, McpNotFoundError } from "../../errors";
 import { checkInlineRefs, parseInlineMarkdown, parseMarkdown } from "../../doc-markdown.server";
 import { pageArray, pageProps, type PageArgs } from "../../pagination";
-import { loadEditablePage } from "../set-page-content";
+import { loadEditablePage } from "../editable-page";
 import { requireViewer } from "./blog-posts";
 
 const MARKDOWN = { inlineRefs: true };
@@ -217,18 +217,9 @@ const POSITION_SCHEMA = {
 export const EDIT_CONTENT_TOOL = {
   name: "edit_content",
   description: [
-    "Edit part of a page or blog post without resending the whole body. Ops apply in order, all or none, live to anyone who has it open (they see your caret and the blocks you touched). Before a delete, replace_all or children replacement the page's current state is saved to version history, so people can restore it. Read block ids and hashes with outline_content / get_content_blocks first; every op on an existing block needs that block's expectedHash, and a stale one fails with BLOCK_CHANGED plus the block's current content and hashes. A block you already changed earlier in the same call needs no new hash.",
-    "Blocks with children: delete, move, and update with children also need expectedTreeHash (the block's treeHash), so you don't remove or move children someone else just changed.",
-    "Ops:",
-    "replace_text {blockId, expectedHash, find, replace}: find must occur exactly once in the block's own text (not in children, not across a mention or line break). The cheapest edit; keeps formatting and comments around it.",
-    "update {blockId, expectedHash, markdown | block}: replace one block's content (markdown must be one block); its children stay unless you pass children.",
-    "insert {position, markdown | blocks}: new blocks at position. Leave ids out to get new ones (returned in results); an id that already exists fails with ID_EXISTS, so retrying an insert that went through can't duplicate it.",
-    "delete {blockId, expectedHash}: a block and its children.",
-    "move {blockId, expectedHash, position}.",
-    "replace_all {markdown | blocks}: the whole body; must be the only op.",
-    "Tables: insert_row {blockId, expectedHash, index?, cells: [markdown per cell]} (index omitted appends), delete_row {blockId, expectedHash, index}, set_cell {blockId, expectedHash, row, col, markdown}. Rows and columns count from 0, header row included. Tables with merged cells fail with TABLE_HAS_MERGED_CELLS; update the whole table instead.",
-    "Markdown: mentions are [@Name](/members/<userId>), page links [Title](/documents/<pageId>); an unknown id is written as plain text and reported in warnings. Use <br> for a line break in a table cell. JSON blocks use BlockNote's block shape.",
-    "Returns the new hash (and treeHash) of every block you touched, so a follow-up edit needs no re-read, and seenBy: how many people had it open when your edit landed (null when unknown).",
+    "Edit part of a page or blog post without resending the whole body. Ops apply in order, all or none, live to anyone who has it open. Before a delete, replace_all or children replacement the current state is saved to version history.",
+    "Read block ids and hashes with outline_content / get_content_blocks first; every op on an existing block needs its expectedHash, and a stale one fails with BLOCK_CHANGED plus the block's current content. A block you already changed earlier in the same call needs no new hash.",
+    "Returns the new hash (and treeHash) of every block you touched, and seenBy: how many people had it open (null when unknown).",
   ].join("\n"),
   inputSchema: {
     type: "object" as const,
@@ -241,21 +232,36 @@ export const EDIT_CONTENT_TOOL = {
         items: {
           type: "object",
           properties: {
-            op: { type: "string", enum: [...OP_NAMES] },
-            blockId: { type: "string" },
-            expectedHash: { type: "string" },
-            expectedTreeHash: { type: "string" },
+            op: {
+              type: "string",
+              enum: [...OP_NAMES],
+              description:
+                "replace_text: swap one string in a block (cheapest). update: replace one block. insert: add blocks at position. delete: a block and its children. move. replace_all: the whole body, the only op in the call. insert_row, delete_row, set_cell: table edits (merged cells fail with TABLE_HAS_MERGED_CELLS; update the whole table).",
+            },
+            blockId: { type: "string", description: "Every op except insert and replace_all." },
+            expectedHash: { type: "string", description: "Required on every op that names a blockId." },
+            expectedTreeHash: { type: "string", description: "delete, move, and update with children: the block's treeHash." },
             position: POSITION_SCHEMA,
-            markdown: { type: "string", maxLength: 300_000 },
-            block: { type: "object" },
-            blocks: { type: "array", items: { type: "object" } },
-            children: { type: "array", items: { type: "object" } },
-            find: { type: "string", minLength: 1 },
-            replace: { type: "string" },
-            index: { type: "integer", minimum: 0 },
-            row: { type: "integer", minimum: 0 },
-            col: { type: "integer", minimum: 0 },
-            cells: { type: "array", items: { type: "string" } },
+            markdown: {
+              type: "string",
+              maxLength: 300_000,
+              description:
+                "update (one block; its children stay unless you pass children), insert, replace_all, set_cell. Mentions are [@Name](/members/<userId>), page links [Title](/documents/<pageId>); an unknown id is written as plain text and reported in warnings. <br> breaks a line in a table cell.",
+            },
+            block: { type: "object", description: "update: BlockNote block shape instead of markdown." },
+            blocks: {
+              type: "array",
+              items: { type: "object" },
+              description:
+                "insert, replace_all: BlockNote JSON instead of markdown. Leave ids out to get new ones; an existing id fails with ID_EXISTS, so a retried insert can't duplicate.",
+            },
+            children: { type: "array", items: { type: "object" }, description: "update: replace the block's children." },
+            find: { type: "string", minLength: 1, description: "replace_text: occurs exactly once in the block's own text (not children, not across a mention or line break)." },
+            replace: { type: "string", description: "replace_text: the replacement. Formatting and comments around it are kept." },
+            index: { type: "integer", minimum: 0, description: "insert_row (omit to append), delete_row: 0-based, header row included." },
+            row: { type: "integer", minimum: 0, description: "set_cell: 0-based, header row included." },
+            col: { type: "integer", minimum: 0, description: "set_cell: 0-based." },
+            cells: { type: "array", items: { type: "string" }, description: "insert_row: Markdown for each cell." },
           },
           required: ["op"],
           additionalProperties: false,

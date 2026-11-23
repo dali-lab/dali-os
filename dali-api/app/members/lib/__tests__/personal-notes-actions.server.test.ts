@@ -377,6 +377,11 @@ describe("archiveNote", () => {
     expect(m.page.update).not.toHaveBeenCalled();
   });
 
+  it("counts only live children, so a folder whose notes are already trashed can be trashed", async () => {
+    await archiveNote("n1", OWNER);
+    expect(m.page.count).toHaveBeenCalledWith({ where: { parentPageId: "n1", archivedAt: null } });
+  });
+
   it("archives and pulls the note off the profile and the lab shelf", async () => {
     await archiveNote("n1", OWNER);
     expect(m.page.update).toHaveBeenCalledWith({
