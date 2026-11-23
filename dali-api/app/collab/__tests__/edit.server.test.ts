@@ -168,8 +168,8 @@ describe("blockHash", () => {
     const doc = makeDoc([para("a", "parent", [para("c", "child")]), para("s", "sibling")]);
     const before = hashOf(doc, "a");
     applyOpsToDoc(doc, [
-      { op: "replace_text", blockId: "c", expectedHash: hashOf(doc, "c"), find: "child", replace: "kid" },
-      { op: "replace_text", blockId: "s", expectedHash: hashOf(doc, "s"), find: "sibling", replace: "sib" },
+      { action: "replace_text", blockId: "c", expectedHash: hashOf(doc, "c"), find: "child", replace: "kid" },
+      { action: "replace_text", blockId: "s", expectedHash: hashOf(doc, "s"), find: "sibling", replace: "sib" },
     ]);
     expect(text(find(read(doc), "c"))).toBe("kid");
     expect(hashOf(doc, "a")).toBe(before);
@@ -243,13 +243,13 @@ describe("insert", () => {
   it("places blocks at every kind of position", () => {
     const doc = makeDoc([para("a", "A", [para("c", "C")]), para("b", "B")]);
     applyOpsToDoc(doc, [
-      { op: "insert", position: { after: "a" }, blocks: [para("x1", "after a")] },
-      { op: "insert", position: { before: "a" }, blocks: [para("x2", "before a")] },
-      { op: "insert", position: { start: true }, blocks: [para("x3", "start")] },
-      { op: "insert", position: { end: true }, blocks: [para("x4", "end")] },
-      { op: "insert", position: { firstChildOf: "a" }, blocks: [para("x5", "first child")] },
-      { op: "insert", position: { lastChildOf: "a" }, blocks: [para("x6", "last child")] },
-      { op: "insert", position: { lastChildOf: "b" }, blocks: [para("x7", "new group")] },
+      { action: "insert", position: { after: "a" }, blocks: [para("x1", "after a")] },
+      { action: "insert", position: { before: "a" }, blocks: [para("x2", "before a")] },
+      { action: "insert", position: { start: true }, blocks: [para("x3", "start")] },
+      { action: "insert", position: { end: true }, blocks: [para("x4", "end")] },
+      { action: "insert", position: { firstChildOf: "a" }, blocks: [para("x5", "first child")] },
+      { action: "insert", position: { lastChildOf: "a" }, blocks: [para("x6", "last child")] },
+      { action: "insert", position: { lastChildOf: "b" }, blocks: [para("x7", "new group")] },
     ]);
     const blocks = read(doc);
     expect(blocks.map((b) => b.id)).toEqual(["x3", "x2", "a", "x1", "b", "x4"]);
@@ -261,7 +261,7 @@ describe("insert", () => {
     const doc = makeDoc([para("a", "A")]);
     const result = applyOpsToDoc(doc, [
       {
-        op: "insert",
+        action: "insert",
         position: { end: true },
         blocks: [
           { id: "mine", type: "paragraph", content: "kept" },
@@ -283,9 +283,9 @@ describe("insert", () => {
 
   it("refuses an id that already exists, so a retried insert doesn't duplicate content", () => {
     const doc = makeDoc([para("a", "A")]);
-    applyOpsToDoc(doc, [{ op: "insert", position: { end: true }, blocks: [para("n", "once")] }]);
+    applyOpsToDoc(doc, [{ action: "insert", position: { end: true }, blocks: [para("n", "once")] }]);
     const before = Y.encodeStateAsUpdate(doc);
-    expect(attempt(() => applyOpsToDoc(doc, [{ op: "insert", position: { end: true }, blocks: [para("n", "once")] }]))).toMatchObject({
+    expect(attempt(() => applyOpsToDoc(doc, [{ action: "insert", position: { end: true }, blocks: [para("n", "once")] }]))).toMatchObject({
       code: "ID_EXISTS",
       blockId: "n",
       opIndex: 0,
@@ -298,18 +298,18 @@ describe("insert", () => {
     expect(
       attempt(() =>
         applyOpsToDoc(doc, [
-          { op: "insert", position: { end: true }, blocks: [para("n", "x")] },
-          { op: "insert", position: { end: true }, blocks: [para("m", "y", [para("n", "z")])] },
+          { action: "insert", position: { end: true }, blocks: [para("n", "x")] },
+          { action: "insert", position: { end: true }, blocks: [para("m", "y", [para("n", "z")])] },
         ]),
       ),
     ).toMatchObject({ code: "ID_EXISTS", blockId: "n", opIndex: 1 });
-    expect(attempt(() => applyOpsToDoc(doc, [{ op: "replace_all", blocks: [para("d", "1"), para("d", "2")] }])).code).toBe("ID_EXISTS");
+    expect(attempt(() => applyOpsToDoc(doc, [{ action: "replace_all", blocks: [para("d", "1"), para("d", "2")] }])).code).toBe("ID_EXISTS");
   });
 
   it("returns a range over the inserted text", () => {
     const doc = makeDoc([para("a", "A")]);
     const { range } = applyOpsToDoc(doc, [
-      { op: "insert", position: { end: true }, blocks: [para("n1", "hello"), para("n2", "world")] },
+      { action: "insert", position: { end: true }, blocks: [para("n1", "hello"), para("n2", "world")] },
     ]);
     expect(range).not.toBeNull();
     const start = Y.createAbsolutePositionFromRelativePosition(Y.createRelativePositionFromJSON(range!.start), doc)!;
@@ -322,21 +322,21 @@ describe("insert", () => {
 
   it("returns no range when nothing with text was written", () => {
     const doc = makeDoc([para("a", "A")]);
-    expect(applyOpsToDoc(doc, [{ op: "insert", position: { end: true }, blocks: [para("e", "")] }]).range).toBeNull();
+    expect(applyOpsToDoc(doc, [{ action: "insert", position: { end: true }, blocks: [para("e", "")] }]).range).toBeNull();
   });
 
   it("writes into an empty doc", () => {
     const doc = new Y.Doc();
-    applyOpsToDoc(doc, [{ op: "insert", position: { end: true }, blocks: [para("n", "first")] }]);
+    applyOpsToDoc(doc, [{ action: "insert", position: { end: true }, blocks: [para("n", "first")] }]);
     expect(read(doc).map((b) => [b.id, text(b)])).toEqual([["n", "first"]]);
   });
 
   it("lets later ops edit blocks inserted earlier in the call without a hash", () => {
     const doc = makeDoc([para("a", "A")]);
     applyOpsToDoc(doc, [
-      { op: "insert", position: { end: true }, blocks: [para("n", "draft", [para("nc", "kid")])] },
-      { op: "replace_text", blockId: "n", find: "draft", replace: "final" },
-      { op: "update", blockId: "nc", block: { content: "child" } },
+      { action: "insert", position: { end: true }, blocks: [para("n", "draft", [para("nc", "kid")])] },
+      { action: "replace_text", blockId: "n", find: "draft", replace: "final" },
+      { action: "update", blockId: "nc", block: { content: "child" } },
     ]);
     expect(text(find(read(doc), "n"))).toBe("final");
     expect(text(find(read(doc), "nc"))).toBe("child");
@@ -344,17 +344,17 @@ describe("insert", () => {
 
   it("rejects unknown block types and empty inserts", () => {
     const doc = makeDoc([para("a", "A")]);
-    expect(attempt(() => applyOpsToDoc(doc, [{ op: "insert", position: { end: true }, blocks: [{ type: "nope" }] }])).code).toBe("INVALID_OP");
-    expect(attempt(() => applyOpsToDoc(doc, [{ op: "insert", position: { end: true }, blocks: [] }])).code).toBe("INVALID_OP");
+    expect(attempt(() => applyOpsToDoc(doc, [{ action: "insert", position: { end: true }, blocks: [{ type: "nope" }] }])).code).toBe("INVALID_EDIT");
+    expect(attempt(() => applyOpsToDoc(doc, [{ action: "insert", position: { end: true }, blocks: [] }])).code).toBe("INVALID_EDIT");
   });
 
   it("rejects malformed and unknown positions", () => {
     const doc = makeDoc([para("a", "A")]);
     const at = (position: unknown) =>
-      attempt(() => applyOpsToDoc(doc, [{ op: "insert", position, blocks: [para("n", "x")] } as DocOp]));
-    expect(at({}).code).toBe("INVALID_OP");
-    expect(at({ after: "a", before: "a" }).code).toBe("INVALID_OP");
-    expect(at({ inside: "a" }).code).toBe("INVALID_OP");
+      attempt(() => applyOpsToDoc(doc, [{ action: "insert", position, blocks: [para("n", "x")] } as DocOp]));
+    expect(at({}).code).toBe("INVALID_EDIT");
+    expect(at({ after: "a", before: "a" }).code).toBe("INVALID_EDIT");
+    expect(at({ inside: "a" }).code).toBe("INVALID_EDIT");
     expect(at({ after: "ghost" })).toMatchObject({ code: "BLOCK_NOT_FOUND", blockId: "ghost", opIndex: 0 });
   });
 });
@@ -363,14 +363,14 @@ describe("update", () => {
   it("replaces the content and keeps the id and children", () => {
     const doc = makeDoc([para("a", "old", [para("c", "child")])]);
     const result = applyOpsToDoc(doc, [
-      { op: "update", blockId: "a", expectedHash: hashOf(doc, "a"), block: { type: "heading", props: { level: 2 }, content: "new" } },
+      { action: "update", blockId: "a", expectedHash: hashOf(doc, "a"), block: { type: "heading", props: { level: 2 }, content: "new" } },
     ]);
     const a = find(read(doc), "a")!;
     expect(a.type).toBe("heading");
     expect(a.props.level).toBe(2);
     expect(text(a)).toBe("new");
     expect(a.children.map((c) => c.id)).toEqual(["c"]);
-    expect(result).toMatchObject({ touched: ["a"], results: [{ op: "update", blockIds: ["a"] }] });
+    expect(result).toMatchObject({ touched: ["a"], results: [{ action: "update", blockIds: ["a"] }] });
     expect(result.hashes.a).toBe(hashOf(doc, "a"));
     expect(result.range).not.toBeNull();
   });
@@ -379,19 +379,19 @@ describe("update", () => {
     const styled = { backgroundColor: "yellow", textColor: "red", textAlignment: "center" };
     const doc = makeDoc([{ id: "a", type: "paragraph", props: styled, content: "old", children: [] }]);
     applyOpsToDoc(doc, [
-      { op: "update", blockId: "a", expectedHash: hashOf(doc, "a"), block: { type: "paragraph", content: [{ type: "text", text: "new", styles: {} }] } },
+      { action: "update", blockId: "a", expectedHash: hashOf(doc, "a"), block: { type: "paragraph", content: [{ type: "text", text: "new", styles: {} }] } },
     ]);
     const a = find(read(doc), "a")!;
     expect(a.props).toEqual(styled);
     expect(text(a)).toBe("new");
-    applyOpsToDoc(doc, [{ op: "update", blockId: "a", expectedHash: hashOf(doc, "a"), block: { type: "heading", props: { level: 2 }, content: "title" } }]);
+    applyOpsToDoc(doc, [{ action: "update", blockId: "a", expectedHash: hashOf(doc, "a"), block: { type: "heading", props: { level: 2 }, content: "title" } }]);
     expect(find(read(doc), "a")!.props).toMatchObject({ ...styled, level: 2 });
   });
 
   it("changes only props on the live node when content is omitted, keeping comments", () => {
     const doc = makeDoc([{ id: "t", type: "checkListItem", props: { ...BASE, checked: false }, content: "ship it", children: [] }]);
     comment(doc, "t", 0, 4);
-    applyOpsToDoc(doc, [{ op: "update", blockId: "t", expectedHash: hashOf(doc, "t"), block: { props: { checked: true } } }]);
+    applyOpsToDoc(doc, [{ action: "update", blockId: "t", expectedHash: hashOf(doc, "t"), block: { props: { checked: true } } }]);
     expect(find(read(doc), "t")!.props.checked).toBe(true);
     expect(delta(doc, "t")).toEqual([{ insert: "ship", attributes: { [COMMENT]: COMMENT_VALUE } }, { insert: " it" }]);
   });
@@ -399,7 +399,7 @@ describe("update", () => {
   it("keeps comments when switching between inline block types without new content", () => {
     const doc = makeDoc([para("a", "keep me")]);
     comment(doc, "a", 0, 4);
-    applyOpsToDoc(doc, [{ op: "update", blockId: "a", expectedHash: hashOf(doc, "a"), block: { type: "heading", props: { level: 3 } } }]);
+    applyOpsToDoc(doc, [{ action: "update", blockId: "a", expectedHash: hashOf(doc, "a"), block: { type: "heading", props: { level: 3 } } }]);
     expect(find(read(doc), "a")!.type).toBe("heading");
     expect(delta(doc, "a")[0]).toEqual({ insert: "keep", attributes: { [COMMENT]: COMMENT_VALUE } });
   });
@@ -407,37 +407,37 @@ describe("update", () => {
   it("replaces children when given, freeing their old ids", () => {
     const doc = makeDoc([para("a", "A", [para("c", "old child")])]);
     applyOpsToDoc(doc, [
-      { op: "update", blockId: "a", expectedHash: hashOf(doc, "a"), expectedTreeHash: treeOf(doc, "a"), block: {}, children: [para("c", "new child"), para("d", "two")] },
+      { action: "update", blockId: "a", expectedHash: hashOf(doc, "a"), expectedTreeHash: treeOf(doc, "a"), block: {}, children: [para("c", "new child"), para("d", "two")] },
     ]);
     expect(find(read(doc), "a")!.children.map((c) => [c.id, text(c)])).toEqual([
       ["c", "new child"],
       ["d", "two"],
     ]);
-    applyOpsToDoc(doc, [{ op: "update", blockId: "a", expectedHash: hashOf(doc, "a"), expectedTreeHash: treeOf(doc, "a"), block: {}, children: [] }]);
+    applyOpsToDoc(doc, [{ action: "update", blockId: "a", expectedHash: hashOf(doc, "a"), expectedTreeHash: treeOf(doc, "a"), block: {}, children: [] }]);
     expect(find(read(doc), "a")!.children).toEqual([]);
   });
 
   it("rejects turning a block into a column", () => {
     const doc = makeDoc([para("a", "A")]);
-    expect(attempt(() => applyOpsToDoc(doc, [{ op: "update", blockId: "a", expectedHash: hashOf(doc, "a"), block: { type: "column" } }])).code).toBe("INVALID_OP");
+    expect(attempt(() => applyOpsToDoc(doc, [{ action: "update", blockId: "a", expectedHash: hashOf(doc, "a"), block: { type: "column" } }])).code).toBe("INVALID_EDIT");
   });
 });
 
 describe("delete", () => {
   it("removes the block and its children, and drops an emptied child group", () => {
     const doc = makeDoc([para("a", "A", [para("c", "C", [para("g", "G")])]), para("b", "B")]);
-    const result = applyOpsToDoc(doc, [{ op: "delete", blockId: "c", expectedHash: hashOf(doc, "c"), expectedTreeHash: treeOf(doc, "c") }]);
+    const result = applyOpsToDoc(doc, [{ action: "delete", blockId: "c", expectedHash: hashOf(doc, "c"), expectedTreeHash: treeOf(doc, "c") }]);
     const blocks = read(doc);
     expect(find(blocks, "c")).toBeUndefined();
     expect(find(blocks, "g")).toBeUndefined();
     expect(find(blocks, "a")!.children).toEqual([]);
     expect((container(doc, "a").toArray() as Y.XmlElement[]).map((n) => n.nodeName)).toEqual(["paragraph"]);
-    expect(result).toEqual({ touched: [], hashes: {}, treeHashes: {}, range: null, results: [{ op: "delete", blockIds: ["c"] }] });
+    expect(result).toEqual({ touched: [], hashes: {}, treeHashes: {}, range: null, results: [{ action: "delete", blockIds: ["c"] }] });
   });
 
   it("leaves one empty paragraph when every block is deleted", () => {
     const doc = makeDoc([para("a", "A")]);
-    applyOpsToDoc(doc, [{ op: "delete", blockId: "a", expectedHash: hashOf(doc, "a") }]);
+    applyOpsToDoc(doc, [{ action: "delete", blockId: "a", expectedHash: hashOf(doc, "a") }]);
     const blocks = read(doc);
     expect(blocks).toHaveLength(1);
     expect(blocks[0]).toMatchObject({ type: "paragraph", content: [] });
@@ -448,7 +448,7 @@ describe("move", () => {
   it("moves a block with its children and comments", () => {
     const doc = makeDoc([para("a", "A", [para("c", "C")]), para("b", "B")]);
     comment(doc, "a", 0, 1);
-    const result = applyOpsToDoc(doc, [{ op: "move", blockId: "a", expectedHash: hashOf(doc, "a"), expectedTreeHash: treeOf(doc, "a"), position: { after: "b" } }]);
+    const result = applyOpsToDoc(doc, [{ action: "move", blockId: "a", expectedHash: hashOf(doc, "a"), expectedTreeHash: treeOf(doc, "a"), position: { after: "b" } }]);
     const blocks = read(doc);
     expect(blocks.map((b) => b.id)).toEqual(["b", "a"]);
     expect(find(blocks, "a")!.children.map((c) => c.id)).toEqual(["c"]);
@@ -456,12 +456,12 @@ describe("move", () => {
     expect(result.touched).toEqual([]);
     expect(result.hashes).toEqual({ a: hashOf(doc, "a") });
     expect(result.treeHashes).toEqual({ a: treeOf(doc, "a") });
-    expect(result.results).toEqual([{ op: "move", blockIds: ["a"] }]);
+    expect(result.results).toEqual([{ action: "move", blockIds: ["a"] }]);
   });
 
   it("moves into another block and out of its old parent", () => {
     const doc = makeDoc([para("a", "A", [para("c", "C")]), para("b", "B")]);
-    applyOpsToDoc(doc, [{ op: "move", blockId: "c", expectedHash: hashOf(doc, "c"), position: { firstChildOf: "b" } }]);
+    applyOpsToDoc(doc, [{ action: "move", blockId: "c", expectedHash: hashOf(doc, "c"), position: { firstChildOf: "b" } }]);
     const blocks = read(doc);
     expect(find(blocks, "a")!.children).toEqual([]);
     expect(find(blocks, "b")!.children.map((c) => c.id)).toEqual(["c"]);
@@ -470,8 +470,8 @@ describe("move", () => {
   it("refuses to move a block next to or into itself", () => {
     const doc = makeDoc([para("a", "A", [para("c", "C")]), para("b", "B")]);
     const h = { expectedHash: hashOf(doc, "a"), expectedTreeHash: treeOf(doc, "a") };
-    expect(attempt(() => applyOpsToDoc(doc, [{ op: "move", blockId: "a", ...h, position: { after: "a" } }])).message).toMatch(/itself/);
-    expect(attempt(() => applyOpsToDoc(doc, [{ op: "move", blockId: "a", ...h, position: { firstChildOf: "c" } }])).message).toMatch(/itself/);
+    expect(attempt(() => applyOpsToDoc(doc, [{ action: "move", blockId: "a", ...h, position: { after: "a" } }])).message).toMatch(/itself/);
+    expect(attempt(() => applyOpsToDoc(doc, [{ action: "move", blockId: "a", ...h, position: { firstChildOf: "c" } }])).message).toMatch(/itself/);
   });
 });
 
@@ -497,7 +497,7 @@ describe("replace_text", () => {
     const doc = richDoc();
     comment(doc, "r", 0, 4);
     comment(doc, "r", 9, 4);
-    const result = applyOpsToDoc(doc, [{ op: "replace_text", blockId: "r", expectedHash: hashOf(doc, "r"), find: "beta", replace: "final" }]);
+    const result = applyOpsToDoc(doc, [{ action: "replace_text", blockId: "r", expectedHash: hashOf(doc, "r"), find: "beta", replace: "final" }]);
     expect(delta(doc, "r")).toEqual([
       { insert: "Ship", attributes: { [COMMENT]: COMMENT_VALUE } },
       { insert: " the " },
@@ -515,7 +515,7 @@ describe("replace_text", () => {
 
   it("deletes the match when replace is empty", () => {
     const doc = richDoc();
-    applyOpsToDoc(doc, [{ op: "replace_text", blockId: "r", expectedHash: hashOf(doc, "r"), find: " on Friday", replace: "" }]);
+    applyOpsToDoc(doc, [{ action: "replace_text", blockId: "r", expectedHash: hashOf(doc, "r"), find: " on Friday", replace: "" }]);
     expect(text(find(read(doc), "r"))).toBe("Ship the beta build");
   });
 
@@ -535,7 +535,7 @@ describe("replace_text", () => {
     ]);
     const h = hashOf(doc, "m");
     const run = (find: string) =>
-      attempt(() => applyOpsToDoc(doc, [{ op: "replace_text", blockId: "m", expectedHash: h, find, replace: "x" }]));
+      attempt(() => applyOpsToDoc(doc, [{ action: "replace_text", blockId: "m", expectedHash: h, find, replace: "x" }]));
     expect(run("zebra")).toMatchObject({ code: "TEXT_NOT_FOUND", blockId: "m", opIndex: 0 });
     expect(run("a")).toMatchObject({ code: "TEXT_AMBIGUOUS" });
     expect(run("and a @Kiran")).toMatchObject({ code: "TEXT_SPANS_INLINE" });
@@ -546,13 +546,13 @@ describe("replace_text", () => {
   it("rejects a line break in the replacement and an empty find", () => {
     const doc = richDoc();
     const h = hashOf(doc, "r");
-    expect(attempt(() => applyOpsToDoc(doc, [{ op: "replace_text", blockId: "r", expectedHash: h, find: "beta", replace: "a\nb" }])).code).toBe("INVALID_OP");
-    expect(attempt(() => applyOpsToDoc(doc, [{ op: "replace_text", blockId: "r", expectedHash: h, find: "", replace: "b" }])).code).toBe("INVALID_OP");
+    expect(attempt(() => applyOpsToDoc(doc, [{ action: "replace_text", blockId: "r", expectedHash: h, find: "beta", replace: "a\nb" }])).code).toBe("INVALID_EDIT");
+    expect(attempt(() => applyOpsToDoc(doc, [{ action: "replace_text", blockId: "r", expectedHash: h, find: "", replace: "b" }])).code).toBe("INVALID_EDIT");
   });
 
   it("does not look inside table cells", () => {
     const doc = makeDoc([table("t")]);
-    expect(attempt(() => applyOpsToDoc(doc, [{ op: "replace_text", blockId: "t", expectedHash: hashOf(doc, "t"), find: "Launch", replace: "x" }])).code).toBe("TEXT_NOT_FOUND");
+    expect(attempt(() => applyOpsToDoc(doc, [{ action: "replace_text", blockId: "t", expectedHash: hashOf(doc, "t"), find: "Launch", replace: "x" }])).code).toBe("TEXT_NOT_FOUND");
   });
 });
 
@@ -569,11 +569,11 @@ describe("table ops", () => {
   it("appends a row by default and keeps mentions in other cells", () => {
     const doc = makeDoc([table("t")]);
     const result = applyOpsToDoc(doc, [
-      { op: "insert_row", blockId: "t", expectedHash: hashOf(doc, "t"), cells: [[{ type: "text", text: "Docs", styles: {} }], []] },
+      { action: "insert_row", blockId: "t", expectedHash: hashOf(doc, "t"), cells: [[{ type: "text", text: "Docs", styles: {} }], []] },
     ]);
     expect(rows(doc)).toEqual([["Name", "Owner"], ["Launch", "@Kiran"], ["Docs", ""]]);
     expect(mentionSurvives(doc)).toEqual({ type: "mention", props: { id: "u1", label: "Kiran" } });
-    expect(result).toMatchObject({ touched: ["t"], results: [{ op: "insert_row", blockIds: ["t"] }] });
+    expect(result).toMatchObject({ touched: ["t"], results: [{ action: "insert_row", blockIds: ["t"] }] });
     expect(result.hashes.t).toBe(hashOf(doc, "t"));
     expect(result.range).not.toBeNull();
   });
@@ -581,7 +581,7 @@ describe("table ops", () => {
   it("inserts a header row inside the header band", () => {
     const doc = makeDoc([table("t")]);
     applyOpsToDoc(doc, [
-      { op: "insert_row", blockId: "t", expectedHash: hashOf(doc, "t"), index: 0, cells: [[{ type: "text", text: "Top", styles: {} }], []] },
+      { action: "insert_row", blockId: "t", expectedHash: hashOf(doc, "t"), index: 0, cells: [[{ type: "text", text: "Top", styles: {} }], []] },
     ]);
     const tableEl = container(doc, "t").get(0) as Y.XmlElement;
     const firstRow = tableEl.get(0) as Y.XmlElement;
@@ -592,17 +592,17 @@ describe("table ops", () => {
   it("checks the row index and the column count", () => {
     const doc = makeDoc([table("t")]);
     const h = hashOf(doc, "t");
-    expect(attempt(() => applyOpsToDoc(doc, [{ op: "insert_row", blockId: "t", expectedHash: h, index: 5, cells: [[], []] }])).code).toBe("ROW_OUT_OF_RANGE");
-    expect(attempt(() => applyOpsToDoc(doc, [{ op: "insert_row", blockId: "t", expectedHash: h, cells: [[]] }])).code).toBe("INVALID_OP");
+    expect(attempt(() => applyOpsToDoc(doc, [{ action: "insert_row", blockId: "t", expectedHash: h, index: 5, cells: [[], []] }])).code).toBe("ROW_OUT_OF_RANGE");
+    expect(attempt(() => applyOpsToDoc(doc, [{ action: "insert_row", blockId: "t", expectedHash: h, cells: [[]] }])).code).toBe("INVALID_EDIT");
   });
 
   it("deletes a row", () => {
     const doc = makeDoc([table("t")]);
-    const result = applyOpsToDoc(doc, [{ op: "delete_row", blockId: "t", expectedHash: hashOf(doc, "t"), index: 0 }]);
+    const result = applyOpsToDoc(doc, [{ action: "delete_row", blockId: "t", expectedHash: hashOf(doc, "t"), index: 0 }]);
     expect(rows(doc)).toEqual([["Launch", "@Kiran"]]);
     expect(result.touched).toEqual(["t"]);
-    expect(attempt(() => applyOpsToDoc(doc, [{ op: "delete_row", blockId: "t", expectedHash: hashOf(doc, "t"), index: 0 }])).code).toBe("INVALID_OP");
-    expect(attempt(() => applyOpsToDoc(doc, [{ op: "delete_row", blockId: "t", expectedHash: hashOf(doc, "t"), index: 3 }])).code).toBe("ROW_OUT_OF_RANGE");
+    expect(attempt(() => applyOpsToDoc(doc, [{ action: "delete_row", blockId: "t", expectedHash: hashOf(doc, "t"), index: 0 }])).code).toBe("INVALID_EDIT");
+    expect(attempt(() => applyOpsToDoc(doc, [{ action: "delete_row", blockId: "t", expectedHash: hashOf(doc, "t"), index: 3 }])).code).toBe("ROW_OUT_OF_RANGE");
   });
 
   it("sets one cell and leaves mentions and comments in the others alone", () => {
@@ -610,7 +610,7 @@ describe("table ops", () => {
     const nameCell = firstText(((container(doc, "t").get(0) as Y.XmlElement).get(1) as Y.XmlElement).get(0) as Y.XmlElement);
     nameCell.format(0, 3, { [COMMENT]: COMMENT_VALUE });
     const result = applyOpsToDoc(doc, [
-      { op: "set_cell", blockId: "t", expectedHash: hashOf(doc, "t"), row: 0, col: 1, content: [{ type: "text", text: "Lead", styles: { italic: true } }] },
+      { action: "set_cell", blockId: "t", expectedHash: hashOf(doc, "t"), row: 0, col: 1, content: [{ type: "text", text: "Lead", styles: { italic: true } }] },
     ]);
     expect(rows(doc)).toEqual([["Name", "Lead"], ["Launch", "@Kiran"]]);
     expect(mentionSurvives(doc)).toBeDefined();
@@ -621,17 +621,17 @@ describe("table ops", () => {
   it("checks cell coordinates and that the block is a table", () => {
     const doc = makeDoc([table("t"), para("p", "P")]);
     const h = hashOf(doc, "t");
-    expect(attempt(() => applyOpsToDoc(doc, [{ op: "set_cell", blockId: "t", expectedHash: h, row: 9, col: 0, content: [] }])).code).toBe("ROW_OUT_OF_RANGE");
-    expect(attempt(() => applyOpsToDoc(doc, [{ op: "set_cell", blockId: "t", expectedHash: h, row: 0, col: 2, content: [] }])).code).toBe("CELL_OUT_OF_RANGE");
-    expect(attempt(() => applyOpsToDoc(doc, [{ op: "set_cell", blockId: "p", expectedHash: hashOf(doc, "p"), row: 0, col: 0, content: [] }])).code).toBe("NOT_A_TABLE");
-    expect(attempt(() => applyOpsToDoc(doc, [{ op: "delete_row", blockId: "p", expectedHash: hashOf(doc, "p"), index: 0 }])).code).toBe("NOT_A_TABLE");
+    expect(attempt(() => applyOpsToDoc(doc, [{ action: "set_cell", blockId: "t", expectedHash: h, row: 9, col: 0, content: [] }])).code).toBe("ROW_OUT_OF_RANGE");
+    expect(attempt(() => applyOpsToDoc(doc, [{ action: "set_cell", blockId: "t", expectedHash: h, row: 0, col: 2, content: [] }])).code).toBe("CELL_OUT_OF_RANGE");
+    expect(attempt(() => applyOpsToDoc(doc, [{ action: "set_cell", blockId: "p", expectedHash: hashOf(doc, "p"), row: 0, col: 0, content: [] }])).code).toBe("NOT_A_TABLE");
+    expect(attempt(() => applyOpsToDoc(doc, [{ action: "delete_row", blockId: "p", expectedHash: hashOf(doc, "p"), index: 0 }])).code).toBe("NOT_A_TABLE");
   });
 });
 
 describe("replace_all", () => {
   it("replaces the whole body", () => {
     const doc = makeDoc([para("a", "A"), para("b", "B")]);
-    const result = applyOpsToDoc(doc, [{ op: "replace_all", blocks: [para("n", "new body")] }]);
+    const result = applyOpsToDoc(doc, [{ action: "replace_all", blocks: [para("n", "new body")] }]);
     expect(read(doc).map((b) => [b.id, text(b)])).toEqual([["n", "new body"]]);
     expect(result.touched).toEqual(["n"]);
     expect(result.range).not.toBeNull();
@@ -642,11 +642,11 @@ describe("replace_all", () => {
     expect(
       attempt(() =>
         applyOpsToDoc(doc, [
-          { op: "insert", position: { end: true }, blocks: [para("n", "x")] },
-          { op: "replace_all", blocks: [] },
+          { action: "insert", position: { end: true }, blocks: [para("n", "x")] },
+          { action: "replace_all", blocks: [] },
         ]),
       ),
-    ).toMatchObject({ code: "INVALID_OP", opIndex: 1 });
+    ).toMatchObject({ code: "INVALID_EDIT", opIndex: 1 });
   });
 });
 
@@ -655,8 +655,8 @@ describe("hash checks", () => {
     const doc = makeDoc([para("a", "A"), para("b", "current text")]);
     const err = attempt(() =>
       applyOpsToDoc(doc, [
-        { op: "replace_text", blockId: "a", expectedHash: hashOf(doc, "a"), find: "A", replace: "Z" },
-        { op: "delete", blockId: "b", expectedHash: "000000000000" },
+        { action: "replace_text", blockId: "a", expectedHash: hashOf(doc, "a"), find: "A", replace: "Z" },
+        { action: "delete", blockId: "b", expectedHash: "000000000000" },
       ]),
     );
     expect(err).toBeInstanceOf(DocEditError);
@@ -667,15 +667,15 @@ describe("hash checks", () => {
 
   it("requires a hash for blocks the call has not touched yet", () => {
     const doc = makeDoc([para("a", "A")]);
-    expect(attempt(() => applyOpsToDoc(doc, [{ op: "delete", blockId: "a" }]))).toMatchObject({ code: "INVALID_OP", blockId: "a" });
+    expect(attempt(() => applyOpsToDoc(doc, [{ action: "delete", blockId: "a" }]))).toMatchObject({ code: "INVALID_EDIT", blockId: "a" });
   });
 
   it("accepts the original hash for a block an earlier op already changed", () => {
     const doc = makeDoc([para("a", "one two")]);
     const h = hashOf(doc, "a");
     applyOpsToDoc(doc, [
-      { op: "replace_text", blockId: "a", expectedHash: h, find: "one", replace: "1" },
-      { op: "replace_text", blockId: "a", expectedHash: h, find: "two", replace: "2" },
+      { action: "replace_text", blockId: "a", expectedHash: h, find: "one", replace: "1" },
+      { action: "replace_text", blockId: "a", expectedHash: h, find: "two", replace: "2" },
     ]);
     expect(text(find(read(doc), "a"))).toBe("1 2");
   });
@@ -684,8 +684,8 @@ describe("hash checks", () => {
     const doc = makeDoc([para("a", "A", [para("c", "child")])]);
     const err = attempt(() =>
       applyOpsToDoc(doc, [
-        { op: "update", blockId: "a", expectedHash: hashOf(doc, "a"), block: { content: "x" } },
-        { op: "replace_text", blockId: "c", expectedHash: "stale", find: "child", replace: "kid" },
+        { action: "update", blockId: "a", expectedHash: hashOf(doc, "a"), block: { content: "x" } },
+        { action: "replace_text", blockId: "c", expectedHash: "stale", find: "child", replace: "kid" },
       ]),
     );
     expect(err).toMatchObject({ code: "BLOCK_CHANGED", opIndex: 1, blockId: "c" });
@@ -695,8 +695,8 @@ describe("hash checks", () => {
     const doc = makeDoc([para("a", "A"), para("b", "B")]);
     const err = attempt(() =>
       applyOpsToDoc(doc, [
-        { op: "move", blockId: "a", expectedHash: hashOf(doc, "a"), position: { end: true } },
-        { op: "delete", blockId: "a", expectedHash: "stale" },
+        { action: "move", blockId: "a", expectedHash: hashOf(doc, "a"), position: { end: true } },
+        { action: "delete", blockId: "a", expectedHash: "stale" },
       ]),
     );
     expect(err).toMatchObject({ code: "BLOCK_CHANGED", opIndex: 1 });
@@ -706,11 +706,11 @@ describe("hash checks", () => {
     const item = (id: string, t: string): DocBlock => ({ id, type: "numberedListItem", props: BASE, content: t, children: [] });
     const doc = makeDoc([item("n1", "one"), item("n2", "two"), item("n3", "three")]);
     const result = applyOpsToDoc(doc, [
-      { op: "replace_text", blockId: "n2", expectedHash: hashOf(doc, "n2"), find: "two", replace: "2" },
+      { action: "replace_text", blockId: "n2", expectedHash: hashOf(doc, "n2"), find: "two", replace: "2" },
     ]);
     expect(result.hashes.n2).toBe(hashOf(doc, "n2"));
     expect(
-      applyOpsToDoc(doc, [{ op: "replace_text", blockId: "n3", expectedHash: hashOf(doc, "n3"), find: "three", replace: "3" }]).hashes.n3,
+      applyOpsToDoc(doc, [{ action: "replace_text", blockId: "n3", expectedHash: hashOf(doc, "n3"), find: "three", replace: "3" }]).hashes.n3,
     ).toBe(hashOf(doc, "n3"));
   });
 });
@@ -721,9 +721,9 @@ describe("atomicity and safety", () => {
     const before = Y.encodeStateAsUpdate(doc);
     const err = attempt(() =>
       applyOpsToDoc(doc, [
-        { op: "insert", position: { end: true }, blocks: [para("n", "new")] },
-        { op: "replace_text", blockId: "a", expectedHash: hashOf(doc, "a"), find: "A", replace: "Z" },
-        { op: "set_cell", blockId: "t", expectedHash: hashOf(doc, "t"), row: 0, col: 7, content: [] },
+        { action: "insert", position: { end: true }, blocks: [para("n", "new")] },
+        { action: "replace_text", blockId: "a", expectedHash: hashOf(doc, "a"), find: "A", replace: "Z" },
+        { action: "set_cell", blockId: "t", expectedHash: hashOf(doc, "t"), row: 0, col: 7, content: [] },
       ]),
     );
     expect(err).toMatchObject({ code: "CELL_OUT_OF_RANGE", opIndex: 2 });
@@ -734,11 +734,11 @@ describe("atomicity and safety", () => {
     const doc = makeDoc([para("keep", "untouched note"), para("a", "A", [para("c", "C")]), table("t")]);
     comment(doc, "keep", 0, 9);
     applyOpsToDoc(doc, [
-      { op: "insert", position: { after: "keep" }, blocks: [para("n", "new")] },
-      { op: "update", blockId: "a", expectedHash: hashOf(doc, "a"), block: { content: "changed" } },
-      { op: "move", blockId: "c", expectedHash: hashOf(doc, "c"), position: { start: true } },
-      { op: "set_cell", blockId: "t", expectedHash: hashOf(doc, "t"), row: 1, col: 0, content: [] },
-      { op: "insert_row", blockId: "t", cells: [[], []] },
+      { action: "insert", position: { after: "keep" }, blocks: [para("n", "new")] },
+      { action: "update", blockId: "a", expectedHash: hashOf(doc, "a"), block: { content: "changed" } },
+      { action: "move", blockId: "c", expectedHash: hashOf(doc, "c"), position: { start: true } },
+      { action: "set_cell", blockId: "t", expectedHash: hashOf(doc, "t"), row: 1, col: 0, content: [] },
+      { action: "insert_row", blockId: "t", cells: [[], []] },
     ]);
     expect(delta(doc, "keep")).toEqual([{ insert: "untouched", attributes: { [COMMENT]: COMMENT_VALUE } }, { insert: " note" }]);
   });
@@ -749,13 +749,13 @@ describe("atomicity and safety", () => {
     const p = new Y.XmlElement("paragraph");
     p.insert(0, [new Y.XmlText("old")]);
     legacy.insert(0, [p]);
-    expect(attempt(() => applyOpsToDoc(doc, [{ op: "insert", position: { end: true }, blocks: [para("n", "x")] }])).code).toBe("LEGACY_DOC");
+    expect(attempt(() => applyOpsToDoc(doc, [{ action: "insert", position: { end: true }, blocks: [para("n", "x")] }])).code).toBe("LEGACY_DOC");
   });
 
   it("rejects unknown ops and empty op lists", () => {
     const doc = makeDoc([para("a", "A")]);
-    expect(attempt(() => applyOpsToDoc(doc, [{ op: "explode" } as unknown as DocOp]))).toMatchObject({ code: "INVALID_OP", opIndex: 0 });
-    expect(attempt(() => applyOpsToDoc(doc, []))).toMatchObject({ code: "INVALID_OP", opIndex: null });
+    expect(attempt(() => applyOpsToDoc(doc, [{ action: "explode" } as unknown as DocOp]))).toMatchObject({ code: "INVALID_EDIT", opIndex: 0 });
+    expect(attempt(() => applyOpsToDoc(doc, []))).toMatchObject({ code: "INVALID_EDIT", opIndex: null });
   });
 });
 
@@ -777,8 +777,8 @@ describe("column blocks", () => {
   it("edits blocks inside a column", () => {
     const doc = makeDoc(columns());
     applyOpsToDoc(doc, [
-      { op: "insert", position: { lastChildOf: "col1" }, blocks: [para("l2", "left two")] },
-      { op: "replace_text", blockId: "r", expectedHash: hashOf(doc, "r"), find: "right", replace: "RIGHT" },
+      { action: "insert", position: { lastChildOf: "col1" }, blocks: [para("l2", "left two")] },
+      { action: "replace_text", blockId: "r", expectedHash: hashOf(doc, "r"), find: "right", replace: "RIGHT" },
     ]);
     const blocks = read(doc);
     expect(find(blocks, "col1")!.children.map((b) => b.id)).toEqual(["l", "l2"]);
@@ -787,7 +787,7 @@ describe("column blocks", () => {
 
   it("refills a column whose last block is deleted", () => {
     const doc = makeDoc(columns());
-    applyOpsToDoc(doc, [{ op: "delete", blockId: "l", expectedHash: hashOf(doc, "l") }]);
+    applyOpsToDoc(doc, [{ action: "delete", blockId: "l", expectedHash: hashOf(doc, "l") }]);
     const col = find(read(doc), "col1")!;
     expect(col.children).toHaveLength(1);
     expect(col.children[0]).toMatchObject({ type: "paragraph", content: [] });
@@ -796,22 +796,22 @@ describe("column blocks", () => {
   it("refuses column-level structure changes", () => {
     const doc = makeDoc(columns());
     const ins = (position: unknown) =>
-      attempt(() => applyOpsToDoc(doc, [{ op: "insert", position, blocks: [para("n", "x")] } as DocOp])).code;
-    expect(ins({ after: "col1" })).toBe("INVALID_OP");
-    expect(ins({ firstChildOf: "cl" })).toBe("INVALID_OP");
-    expect(attempt(() => applyOpsToDoc(doc, [{ op: "delete", blockId: "col1", expectedHash: "x" }])).code).toBe("INVALID_OP");
-    expect(attempt(() => applyOpsToDoc(doc, [{ op: "update", blockId: "cl", expectedHash: "x", block: {} }])).code).toBe("INVALID_OP");
+      attempt(() => applyOpsToDoc(doc, [{ action: "insert", position, blocks: [para("n", "x")] } as DocOp])).code;
+    expect(ins({ after: "col1" })).toBe("INVALID_EDIT");
+    expect(ins({ firstChildOf: "cl" })).toBe("INVALID_EDIT");
+    expect(attempt(() => applyOpsToDoc(doc, [{ action: "delete", blockId: "col1", expectedHash: "x" }])).code).toBe("INVALID_EDIT");
+    expect(attempt(() => applyOpsToDoc(doc, [{ action: "update", blockId: "cl", expectedHash: "x", block: {} }])).code).toBe("INVALID_EDIT");
     const freshColumns = { type: "columnList", children: [{ type: "column", children: [{ type: "paragraph" }] }, { type: "column", children: [{ type: "paragraph" }] }] };
-    expect(attempt(() => applyOpsToDoc(doc, [{ op: "insert", position: { firstChildOf: "p" }, blocks: [freshColumns] }])).message).toMatch(/top level/);
-    expect(attempt(() => applyOpsToDoc(doc, [{ op: "insert", position: { end: true }, blocks: [{ type: "paragraph", children: [freshColumns] }] }])).message).toMatch(/top level/);
+    expect(attempt(() => applyOpsToDoc(doc, [{ action: "insert", position: { firstChildOf: "p" }, blocks: [freshColumns] }])).message).toMatch(/top level/);
+    expect(attempt(() => applyOpsToDoc(doc, [{ action: "insert", position: { end: true }, blocks: [{ type: "paragraph", children: [freshColumns] }] }])).message).toMatch(/top level/);
     expect(
-      attempt(() => applyOpsToDoc(doc, [{ op: "update", blockId: "p", expectedHash: hashOf(doc, "p"), block: {}, children: [freshColumns] }])).message,
+      attempt(() => applyOpsToDoc(doc, [{ action: "update", blockId: "p", expectedHash: hashOf(doc, "p"), block: {}, children: [freshColumns] }])).message,
     ).toMatch(/top level/);
   });
 
   it("moves a whole column list", () => {
     const doc = makeDoc(columns());
-    applyOpsToDoc(doc, [{ op: "move", blockId: "cl", expectedHash: hashOf(doc, "cl"), expectedTreeHash: treeOf(doc, "cl"), position: { end: true } }]);
+    applyOpsToDoc(doc, [{ action: "move", blockId: "cl", expectedHash: hashOf(doc, "cl"), expectedTreeHash: treeOf(doc, "cl"), position: { end: true } }]);
     const blocks = read(doc);
     expect(blocks.map((b) => b.id)).toEqual(["p", "cl"]);
     expect(find(blocks, "col2")!.children.map((b) => b.id)).toEqual(["r"]);
@@ -827,7 +827,7 @@ describe("applyDocOps", () => {
       return { state: new Uint8Array([1]), plainText: "" };
     });
 
-    const result = await applyDocOps("doc:p1:body", [{ op: "insert", position: { end: true }, blocks: [para("n", "new")] }], "u-ada");
+    const result = await applyDocOps("doc:p1:body", [{ action: "insert", position: { end: true }, blocks: [para("n", "new")] }], "u-ada");
 
     expect(saved.map((b) => b.id)).toEqual(["a", "n"]);
     expect(storeDocument).toHaveBeenCalledWith("doc:p1:body", expect.any(Y.Doc));
@@ -838,7 +838,7 @@ describe("applyDocOps", () => {
   it("stores nothing when an op fails", async () => {
     findUnique.mockResolvedValue({ state: Y.encodeStateAsUpdate(makeDoc([para("a", "A")])) });
     await expect(
-      applyDocOps("doc:p1:body", [{ op: "delete", blockId: "ghost", expectedHash: "x" }], "u-ada"),
+      applyDocOps("doc:p1:body", [{ action: "delete", blockId: "ghost", expectedHash: "x" }], "u-ada"),
     ).rejects.toMatchObject({ code: "BLOCK_NOT_FOUND" });
     expect(storeDocument).not.toHaveBeenCalled();
   });
@@ -860,7 +860,7 @@ describe("applyDocOps", () => {
 
     const result = await applyDocOps(
       "doc:p1:body",
-      [{ op: "replace_text", blockId: "a", expectedHash: hashOf(live, "a"), find: "A", replace: "B" }],
+      [{ action: "replace_text", blockId: "a", expectedHash: hashOf(live, "a"), find: "A", replace: "B" }],
       "u-ada",
       { onApplied },
     );
@@ -882,8 +882,8 @@ describe("applyDocOps", () => {
       applyDocOps(
         "doc:p1:body",
         [
-          { op: "insert", position: { end: true }, blocks: [para("n", "x")] },
-          { op: "delete", blockId: "a", expectedHash: "stale" },
+          { action: "insert", position: { end: true }, blocks: [para("n", "x")] },
+          { action: "delete", blockId: "a", expectedHash: "stale" },
         ],
         "u-ada",
         { onApplied },
@@ -908,9 +908,9 @@ describe("merged table cells", () => {
     const doc = makeDoc([mergedTable()]);
     const h = hashOf(doc, "t");
     for (const op of [
-      { op: "insert_row", blockId: "t", expectedHash: h, cells: [[], []] },
-      { op: "delete_row", blockId: "t", expectedHash: h, index: 1 },
-      { op: "set_cell", blockId: "t", expectedHash: h, row: 1, col: 0, content: [] },
+      { action: "insert_row", blockId: "t", expectedHash: h, cells: [[], []] },
+      { action: "delete_row", blockId: "t", expectedHash: h, index: 1 },
+      { action: "set_cell", blockId: "t", expectedHash: h, row: 1, col: 0, content: [] },
     ] as DocOp[]) {
       expect(attempt(() => applyOpsToDoc(doc, [op]))).toMatchObject({
         code: "TABLE_HAS_MERGED_CELLS",
@@ -951,7 +951,7 @@ describe("subtree hashes", () => {
   it("changes when any descendant changes, unlike the block hash", () => {
     const doc = nested();
     const before = { hash: hashOf(doc, "a"), tree: treeOf(doc, "a") };
-    applyOpsToDoc(doc, [{ op: "replace_text", blockId: "g", expectedHash: hashOf(doc, "g"), find: "grand", replace: "great" }]);
+    applyOpsToDoc(doc, [{ action: "replace_text", blockId: "g", expectedHash: hashOf(doc, "g"), find: "grand", replace: "great" }]);
     expect(hashOf(doc, "a")).toBe(before.hash);
     expect(treeOf(doc, "a")).not.toBe(before.tree);
   });
@@ -960,21 +960,21 @@ describe("subtree hashes", () => {
     const doc = nested();
     const own = { blockId: "a", expectedHash: hashOf(doc, "a") };
     for (const op of [
-      { op: "delete", ...own },
-      { op: "move", ...own, position: { end: true } },
-      { op: "update", ...own, block: {}, children: [] },
+      { action: "delete", ...own },
+      { action: "move", ...own, position: { end: true } },
+      { action: "update", ...own, block: {}, children: [] },
     ] as DocOp[]) {
-      expect(attempt(() => applyOpsToDoc(doc, [op]))).toMatchObject({ code: "INVALID_OP", blockId: "a", message: expect.stringContaining("expectedTreeHash") });
+      expect(attempt(() => applyOpsToDoc(doc, [op]))).toMatchObject({ code: "INVALID_EDIT", blockId: "a", message: expect.stringContaining("expectedTreeHash") });
     }
-    applyOpsToDoc(doc, [{ op: "update", ...own, block: { content: "no tree hash needed" } }]);
-    applyOpsToDoc(doc, [{ op: "delete", blockId: "s", expectedHash: hashOf(doc, "s") }]);
+    applyOpsToDoc(doc, [{ action: "update", ...own, block: { content: "no tree hash needed" } }]);
+    applyOpsToDoc(doc, [{ action: "delete", blockId: "s", expectedHash: hashOf(doc, "s") }]);
   });
 
   it("rejects a stale tree hash with the current block and both hashes", () => {
     const doc = nested();
     const stale = { expectedHash: hashOf(doc, "a"), expectedTreeHash: treeOf(doc, "a") };
-    applyOpsToDoc(doc, [{ op: "replace_text", blockId: "g", expectedHash: hashOf(doc, "g"), find: "grand", replace: "great" }]);
-    const err = attempt(() => applyOpsToDoc(doc, [{ op: "delete", blockId: "a", ...stale }]));
+    applyOpsToDoc(doc, [{ action: "replace_text", blockId: "g", expectedHash: hashOf(doc, "g"), find: "grand", replace: "great" }]);
+    const err = attempt(() => applyOpsToDoc(doc, [{ action: "delete", blockId: "a", ...stale }]));
     expect(err).toMatchObject({ code: "BLOCK_CHANGED", blockId: "a", opIndex: 0 });
     expect(err.current).toEqual({ block: find(read(doc), "a"), hash: hashOf(doc, "a"), treeHash: treeOf(doc, "a") });
   });
@@ -983,8 +983,8 @@ describe("subtree hashes", () => {
     const doc = nested();
     const tree = { expectedHash: hashOf(doc, "a"), expectedTreeHash: treeOf(doc, "a") };
     applyOpsToDoc(doc, [
-      { op: "replace_text", blockId: "g", expectedHash: hashOf(doc, "g"), find: "grand", replace: "great" },
-      { op: "move", blockId: "a", ...tree, position: { end: true } },
+      { action: "replace_text", blockId: "g", expectedHash: hashOf(doc, "g"), find: "grand", replace: "great" },
+      { action: "move", blockId: "a", ...tree, position: { end: true } },
     ]);
     expect(read(doc).map((b) => b.id)).toEqual(["s", "a"]);
   });
@@ -1005,7 +1005,7 @@ describe("update conversions", () => {
         children: [],
       },
     ]);
-    applyOpsToDoc(doc, [{ op: "update", blockId: "a", expectedHash: hashOf(doc, "a"), block: { type: "codeBlock" } }]);
+    applyOpsToDoc(doc, [{ action: "update", blockId: "a", expectedHash: hashOf(doc, "a"), block: { type: "codeBlock" } }]);
     const a = find(read(doc), "a")!;
     expect(a.type).toBe("codeBlock");
     expect(a.content).toEqual([{ type: "text", text: "call @Kiran now", styles: {} }]);
@@ -1013,7 +1013,7 @@ describe("update conversions", () => {
 
   it("keeps a code block's text when switching back to a paragraph", () => {
     const doc = makeDoc([{ id: "c", type: "codeBlock", props: { language: "ts" }, content: "let x = 1;", children: [] }]);
-    applyOpsToDoc(doc, [{ op: "update", blockId: "c", expectedHash: hashOf(doc, "c"), block: { type: "paragraph" } }]);
+    applyOpsToDoc(doc, [{ action: "update", blockId: "c", expectedHash: hashOf(doc, "c"), block: { type: "paragraph" } }]);
     expect(text(find(read(doc), "c"))).toBe("let x = 1;");
   });
 });
@@ -1024,7 +1024,7 @@ describe("returned range", () => {
 
   it("keeps the caret after its own text when someone types right there", () => {
     const doc = makeDoc([para("a", "Ship beta on Friday")]);
-    const { range } = applyOpsToDoc(doc, [{ op: "replace_text", blockId: "a", expectedHash: hashOf(doc, "a"), find: "beta", replace: "v2" }]);
+    const { range } = applyOpsToDoc(doc, [{ action: "replace_text", blockId: "a", expectedHash: hashOf(doc, "a"), find: "beta", replace: "v2" }]);
     const t = firstText(container(doc, "a"));
     t.insert(7, "XYZ");
     expect(plainTextOf(t)).toBe("Ship v2XYZ on Friday");
@@ -1035,9 +1035,9 @@ describe("returned range", () => {
   it("points at the last span still in the doc", () => {
     const doc = makeDoc([para("a", "alpha"), para("b", "beta")]);
     const { range } = applyOpsToDoc(doc, [
-      { op: "replace_text", blockId: "a", expectedHash: hashOf(doc, "a"), find: "alpha", replace: "ALPHA" },
-      { op: "replace_text", blockId: "b", expectedHash: hashOf(doc, "b"), find: "beta", replace: "BETA" },
-      { op: "delete", blockId: "b", expectedHash: "ignored" },
+      { action: "replace_text", blockId: "a", expectedHash: hashOf(doc, "a"), find: "alpha", replace: "ALPHA" },
+      { action: "replace_text", blockId: "b", expectedHash: hashOf(doc, "b"), find: "beta", replace: "BETA" },
+      { action: "delete", blockId: "b", expectedHash: "ignored" },
     ]);
     expect(abs(doc, range!.start).type).toBe(firstText(container(doc, "a")));
   });
@@ -1045,8 +1045,8 @@ describe("returned range", () => {
   it("follows a block that a later op moved", () => {
     const doc = makeDoc([para("a", "alpha"), para("b", "beta")]);
     const { range } = applyOpsToDoc(doc, [
-      { op: "replace_text", blockId: "a", expectedHash: hashOf(doc, "a"), find: "alpha", replace: "ALPHA" },
-      { op: "move", blockId: "a", expectedHash: "ignored", position: { end: true } },
+      { action: "replace_text", blockId: "a", expectedHash: hashOf(doc, "a"), find: "alpha", replace: "ALPHA" },
+      { action: "move", blockId: "a", expectedHash: "ignored", position: { end: true } },
     ]);
     const moved = firstText(container(doc, "a"));
     expect(abs(doc, range!.start)).toMatchObject({ type: moved, index: 0 });
@@ -1067,7 +1067,7 @@ describe("reads", () => {
     findUnique.mockResolvedValue({ state: Y.encodeStateAsUpdate(legacyDoc()) });
     await expect(outlineDoc("doc:p1:body")).rejects.toMatchObject({ code: "LEGACY_DOC", message: expect.stringContaining("edit_content") });
     await expect(getDocBlocks("doc:p1:body")).rejects.toMatchObject({ code: "LEGACY_DOC" });
-    expect(attempt(() => applyOpsToDoc(legacyDoc(), [{ op: "delete", blockId: "x", expectedHash: "h" }])).message).toContain("edit_content");
+    expect(attempt(() => applyOpsToDoc(legacyDoc(), [{ action: "delete", blockId: "x", expectedHash: "h" }])).message).toContain("edit_content");
   });
 
   it("reads a doc with no saved state through the same seeding the editor uses", async () => {
@@ -1095,7 +1095,7 @@ describe("undo point and author", () => {
       return null;
     });
 
-    await applyDocOps("doc:p1:body", [{ op: "delete", blockId: "b", expectedHash: hashOf(original, "b") }], "u-ada");
+    await applyDocOps("doc:p1:body", [{ action: "delete", blockId: "b", expectedHash: hashOf(original, "b") }], "u-ada");
 
     expect(saveVersion).toHaveBeenCalledWith("doc:p1:body", expect.any(Y.Doc), "Before agent edit", ["u-ada"]);
     expect(savedIds).toEqual(["a", "b"]);
@@ -1105,13 +1105,13 @@ describe("undo point and author", () => {
   it("saves one for replace_all and for replacing children, not for smaller edits", async () => {
     const doc = makeDoc([para("a", "A", [para("c", "C")])]);
     findUnique.mockResolvedValue({ state: Y.encodeStateAsUpdate(doc) });
-    await applyDocOps("doc:p1:body", [{ op: "replace_text", blockId: "a", expectedHash: hashOf(doc, "a"), find: "A", replace: "Z" }], "u");
-    await applyDocOps("doc:p1:body", [{ op: "update", blockId: "a", expectedHash: hashOf(doc, "a"), block: { content: "x" } }], "u");
+    await applyDocOps("doc:p1:body", [{ action: "replace_text", blockId: "a", expectedHash: hashOf(doc, "a"), find: "A", replace: "Z" }], "u");
+    await applyDocOps("doc:p1:body", [{ action: "update", blockId: "a", expectedHash: hashOf(doc, "a"), block: { content: "x" } }], "u");
     expect(saveVersion).not.toHaveBeenCalled();
-    await applyDocOps("doc:p1:body", [{ op: "replace_all", blocks: [para("n", "new")] }], "u");
+    await applyDocOps("doc:p1:body", [{ action: "replace_all", blocks: [para("n", "new")] }], "u");
     await applyDocOps(
       "doc:p1:body",
-      [{ op: "update", blockId: "a", expectedHash: hashOf(doc, "a"), expectedTreeHash: treeOf(doc, "a"), block: {}, children: [] }],
+      [{ action: "update", blockId: "a", expectedHash: hashOf(doc, "a"), expectedTreeHash: treeOf(doc, "a"), block: {}, children: [] }],
       "u",
     );
     expect(saveVersion).toHaveBeenCalledTimes(2);
@@ -1119,7 +1119,7 @@ describe("undo point and author", () => {
 
   it("saves no version when the ops fail validation", async () => {
     findUnique.mockResolvedValue({ state: Y.encodeStateAsUpdate(makeDoc([para("a", "A")])) });
-    await expect(applyDocOps("doc:p1:body", [{ op: "delete", blockId: "a", expectedHash: "stale" }], "u")).rejects.toMatchObject({
+    await expect(applyDocOps("doc:p1:body", [{ action: "delete", blockId: "a", expectedHash: "stale" }], "u")).rejects.toMatchObject({
       code: "BLOCK_CHANGED",
     });
     expect(saveVersion).not.toHaveBeenCalled();
@@ -1138,7 +1138,7 @@ describe("undo point and author", () => {
     saveVersion.mockImplementation(async (_n: string, doc: Y.Doc) => {
       savedIds = read(doc).map((b) => b.id);
     });
-    await applyDocOps("doc:p1:body", [{ op: "delete", blockId: "b", expectedHash: hashOf(live, "b") }], "u-ada");
+    await applyDocOps("doc:p1:body", [{ action: "delete", blockId: "b", expectedHash: hashOf(live, "b") }], "u-ada");
     expect(savedIds).toEqual(["a", "b"]);
     expect(read(live).map((b) => b.id)).toEqual(["a"]);
   });

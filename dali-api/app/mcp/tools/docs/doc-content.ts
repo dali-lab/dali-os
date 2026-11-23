@@ -170,8 +170,8 @@ type InputPosition = {
   end?: boolean;
 };
 
-type InputOp = {
-  op: string;
+type InputEdit = {
+  action: string;
   blockId?: string;
   expectedHash?: string;
   expectedTreeHash?: string;
@@ -217,29 +217,29 @@ const POSITION_SCHEMA = {
 export const EDIT_CONTENT_TOOL = {
   name: "edit_content",
   description: [
-    "Edit part of a page or blog post without resending the whole body. Ops apply in order, all or none, live to anyone who has it open. Before a delete, replace_all or children replacement the current state is saved to version history.",
-    "Read block ids and hashes with outline_content / get_content_blocks first; every op on an existing block needs its expectedHash, and a stale one fails with BLOCK_CHANGED plus the block's current content. A block you already changed earlier in the same call needs no new hash.",
+    "Edit part of a page or blog post without resending the whole body. Edits apply in order, all or none, live to anyone who has it open. Before a delete, replace_all or children replacement the current state is saved to version history.",
+    "Read block ids and hashes with outline_content / get_content_blocks first; every edit on an existing block needs its expectedHash, and a stale one fails with BLOCK_CHANGED plus the block's current content. A block you already changed earlier in the same call needs no new hash.",
     "Returns the new hash (and treeHash) of every block you touched, and seenBy: how many people had it open (null when unknown).",
   ].join("\n"),
   inputSchema: {
     type: "object" as const,
     properties: {
       target: TARGET_SCHEMA,
-      ops: {
+      edits: {
         type: "array",
         minItems: 1,
         maxItems: MAX_OPS,
         items: {
           type: "object",
           properties: {
-            op: {
+            action: {
               type: "string",
               enum: [...OP_NAMES],
               description:
-                "replace_text: swap one string in a block (cheapest). update: replace one block. insert: add blocks at position. delete: a block and its children. move. replace_all: the whole body, the only op in the call. insert_row, delete_row, set_cell: table edits (merged cells fail with TABLE_HAS_MERGED_CELLS; update the whole table).",
+                "replace_text: swap one string in a block (cheapest). update: replace one block. insert: add blocks at position. delete: a block and its children. move. replace_all: the whole body, the only edit in the call. insert_row, delete_row, set_cell: table edits (merged cells fail with TABLE_HAS_MERGED_CELLS; update the whole table).",
             },
-            blockId: { type: "string", description: "Every op except insert and replace_all." },
-            expectedHash: { type: "string", description: "Required on every op that names a blockId." },
+            blockId: { type: "string", description: "Every edit except insert and replace_all." },
+            expectedHash: { type: "string", description: "Required on every edit that names a blockId." },
             expectedTreeHash: { type: "string", description: "delete, move, and update with children: the block's treeHash." },
             position: POSITION_SCHEMA,
             markdown: {
@@ -263,40 +263,40 @@ export const EDIT_CONTENT_TOOL = {
             col: { type: "integer", minimum: 0, description: "set_cell: 0-based." },
             cells: { type: "array", items: { type: "string" }, description: "insert_row: Markdown for each cell." },
           },
-          required: ["op"],
+          required: ["action"],
           additionalProperties: false,
         },
       },
     },
-    required: ["target", "ops"],
+    required: ["target", "edits"],
     additionalProperties: false,
   },
   requiredScope: "mcp:write" as const,
 };
 
-function need<T>(value: T | undefined, op: InputOp, i: number, field: string): T {
+function need<T>(value: T | undefined, op: InputEdit, i: number, field: string): T {
   if (value === undefined || value === null) {
-    throw new McpInvalidError(`ops[${i}] (${op.op}) needs ${field}`);
+    throw new McpInvalidError(`edits[${i}] (${op.action}) needs ${field}`);
   }
   return value;
 }
 
-function toPosition(position: InputPosition | undefined, op: InputOp, i: number): DocPosition {
+function toPosition(position: InputPosition | undefined, op: InputEdit, i: number): DocPosition {
   const p = need(position, op, i, "position");
   const set = (["after", "before", "firstChildOf", "lastChildOf", "start", "end"] as const).filter(
     (k) => p[k] !== undefined && p[k] !== false,
   );
   if (set.length !== 1) {
-    throw new McpInvalidError(`ops[${i}].position needs exactly one of after, before, firstChildOf, lastChildOf, start, end`);
+    throw new McpInvalidError(`edits[${i}].position needs exactly one of after, before, firstChildOf, lastChildOf, start, end`);
   }
   const key = set[0]!;
   if (key === "start" || key === "end") return { [key]: true } as DocPosition;
   return { [key]: p[key] } as DocPosition;
 }
 
-async function bodyBlocks(op: InputOp, i: number, warnings: string[]): Promise<DocBlockInput[]> {
+async function bodyBlocks(op: InputEdit, i: number, warnings: string[]): Promise<DocBlockInput[]> {
   if (op.markdown !== undefined && op.blocks !== undefined) {
-    throw new McpInvalidError(`ops[${i}] (${op.op}) takes markdown or blocks, not both`);
+    throw new McpInvalidError(`edits[${i}] (${op.action}) takes markdown or blocks, not both`);
   }
   if (op.markdown !== undefined) {
     const parsed = await parseMarkdown(op.markdown);
@@ -309,20 +309,20 @@ async function bodyBlocks(op: InputOp, i: number, warnings: string[]): Promise<D
   return checked.blocks;
 }
 
-async function toEngineOp(op: InputOp, i: number, warnings: string[]): Promise<DocOp> {
+async function toEngineOp(op: InputEdit, i: number, warnings: string[]): Promise<DocOp> {
   const blockId = () => need(op.blockId, op, i, "blockId");
   const base = () => ({ blockId: blockId(), expectedHash: op.expectedHash });
   const tree = () => ({ ...base(), ...(op.expectedTreeHash !== undefined ? { expectedTreeHash: op.expectedTreeHash } : {}) });
-  switch (op.op) {
+  switch (op.action) {
     case "replace_text":
-      return { op: "replace_text", ...base(), find: need(op.find, op, i, "find"), replace: need(op.replace, op, i, "replace") };
+      return { action: "replace_text", ...base(), find: need(op.find, op, i, "find"), replace: need(op.replace, op, i, "replace") };
     case "update": {
       let block: { type?: string; props?: Record<string, unknown>; content?: DocBlock["content"] };
       if (op.markdown !== undefined) {
         const parsed = await parseMarkdown(op.markdown);
         warnings.push(...parsed.warnings);
         if (parsed.blocks.length !== 1 || parsed.blocks[0]!.children.length) {
-          throw new McpInvalidError(`ops[${i}] (update) markdown must be exactly one block; use insert to add more`);
+          throw new McpInvalidError(`edits[${i}] (update) markdown must be exactly one block; use insert to add more`);
         }
         const { type, props, content } = parsed.blocks[0]!;
         const shape = Object.fromEntries(Object.entries(props ?? {}).filter(([key]) => !STYLE_PROPS.has(key)));
@@ -339,16 +339,16 @@ async function toEngineOp(op: InputOp, i: number, warnings: string[]): Promise<D
         warnings.push(...checked.warnings);
         children = checked.blocks;
       }
-      return { op: "update", ...tree(), block, ...(children ? { children } : {}) };
+      return { action: "update", ...tree(), block, ...(children ? { children } : {}) };
     }
     case "insert":
-      return { op: "insert", position: toPosition(op.position, op, i), blocks: await bodyBlocks(op, i, warnings) };
+      return { action: "insert", position: toPosition(op.position, op, i), blocks: await bodyBlocks(op, i, warnings) };
     case "delete":
-      return { op: "delete", ...tree() };
+      return { action: "delete", ...tree() };
     case "move":
-      return { op: "move", ...tree(), position: toPosition(op.position, op, i) };
+      return { action: "move", ...tree(), position: toPosition(op.position, op, i) };
     case "replace_all":
-      return { op: "replace_all", blocks: await bodyBlocks(op, i, warnings) };
+      return { action: "replace_all", blocks: await bodyBlocks(op, i, warnings) };
     case "insert_row": {
       const cells = [];
       for (const cell of need(op.cells, op, i, "cells")) {
@@ -356,17 +356,17 @@ async function toEngineOp(op: InputOp, i: number, warnings: string[]): Promise<D
         warnings.push(...parsed.warnings);
         cells.push(parsed.content);
       }
-      return { op: "insert_row", ...base(), ...(op.index !== undefined ? { index: op.index } : {}), cells };
+      return { action: "insert_row", ...base(), ...(op.index !== undefined ? { index: op.index } : {}), cells };
     }
     case "delete_row":
-      return { op: "delete_row", ...base(), index: need(op.index, op, i, "index") };
+      return { action: "delete_row", ...base(), index: need(op.index, op, i, "index") };
     case "set_cell": {
       const parsed = await parseInlineMarkdown(need(op.markdown, op, i, "markdown"));
       warnings.push(...parsed.warnings);
-      return { op: "set_cell", ...base(), row: need(op.row, op, i, "row"), col: need(op.col, op, i, "col"), content: parsed.content };
+      return { action: "set_cell", ...base(), row: need(op.row, op, i, "row"), col: need(op.col, op, i, "col"), content: parsed.content };
     }
     default:
-      throw new McpInvalidError(`ops[${i}]: unknown op '${op.op}'`);
+      throw new McpInvalidError(`edits[${i}]: unknown action '${op.action}'`);
   }
 }
 
@@ -377,7 +377,7 @@ function toMcpError(err: unknown): unknown {
     return new McpNotFoundError(`BLOCK_NOT_FOUND: ${err.message}. See outline_content.`);
   }
   if (!(err instanceof DocEditError)) return err;
-  const where = err.opIndex !== null ? ` (ops[${err.opIndex}])` : "";
+  const where = err.opIndex !== null ? ` (edits[${err.opIndex}])` : "";
   let message = `${err.code}${where}: ${err.message}`;
   if (err.code === "BLOCK_CHANGED" && err.current) {
     message += `\nCurrent hash: ${err.current.hash}`;
@@ -388,11 +388,11 @@ function toMcpError(err: unknown): unknown {
   return NOT_FOUND_CODES.has(err.code) ? new McpNotFoundError(message) : new McpError(message, 409);
 }
 
-export async function runEditContent(ctx: McpCtx, input: { target: Target; ops: InputOp[] }) {
+export async function runEditContent(ctx: McpCtx, input: { target: Target; edits: InputEdit[] }) {
   const resolved = await resolveTarget(ctx.user.id, input.target, "write");
   const warnings: string[] = [];
   const ops: DocOp[] = [];
-  for (const [i, op] of input.ops.entries()) ops.push(await toEngineOp(op, i, warnings));
+  for (const [i, op] of input.edits.entries()) ops.push(await toEngineOp(op, i, warnings));
 
   const announce = await agentAnnouncer();
   let seenBy: number | null = null;

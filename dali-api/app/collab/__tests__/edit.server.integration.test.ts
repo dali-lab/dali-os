@@ -43,8 +43,8 @@ describe("applyDocOps without a collab server", () => {
     const result = await applyDocOps(
       NAME,
       [
-        { op: "replace_text", blockId: "edit", expectedHash: blockHash(blocks[1]!), find: "draft", replace: "final" },
-        { op: "delete", blockId: "gone", expectedHash: blockHash(blocks[2]!) },
+        { action: "replace_text", blockId: "edit", expectedHash: blockHash(blocks[1]!), find: "draft", replace: "final" },
+        { action: "delete", blockId: "gone", expectedHash: blockHash(blocks[2]!) },
       ],
       "u-ada",
     );
@@ -72,7 +72,7 @@ describe("applyDocOps without a collab server", () => {
   it("leaves the stored doc and versions alone when an op fails", async () => {
     const before = await prisma.collabDocument.findUniqueOrThrow({ where: { name: NAME } });
     await expect(
-      applyDocOps(NAME, [{ op: "delete", blockId: "gone", expectedHash: "stale" }], "u-ada"),
+      applyDocOps(NAME, [{ action: "delete", blockId: "gone", expectedHash: "stale" }], "u-ada"),
     ).rejects.toMatchObject({ code: "BLOCK_CHANGED" });
     const row = await prisma.collabDocument.findUniqueOrThrow({ where: { name: NAME } });
     expect(Buffer.from(row.state).equals(Buffer.from(before.state))).toBe(true);
