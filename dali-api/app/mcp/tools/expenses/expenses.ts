@@ -20,6 +20,7 @@ import { createReceiptUpload } from "~/expenses/lib/receipts.server";
 import { isS3Configured } from "~/lib/s3.server";
 import type { McpCtx } from "../../registry";
 import { McpInvalidError, requireForAction } from "../../errors";
+import { exportExpensesFile } from "./export";
 import { curlCommand } from "../presigned-upload";
 import { moneyToCents, parseDay, presentMoney, requireExpenseAccess, withViewer } from "./shared";
 
@@ -28,7 +29,7 @@ const STATUSES = ["DRAFT", "SUBMITTED", "RETURNED", "APPROVED", "PAID"];
 export const LIST_EXPENSES_DEF = {
   name: "list_expenses",
   description:
-    "List expenses. scope 'mine' (default) is the caller's own; 'approvals' is what the caller can approve (staff see everyone's, a card owner sees expenses on their staff cards; defaults to status SUBMITTED); 'all' is every expense and is for Core and staff only. Filter by status, cardId, categoryId, termId, a purchase date range (from, to as YYYY-MM-DD), noReceipt, or outstanding (approved expenses paid on the filer's own card, owed back to them). Amounts are decimal strings. Use get_expense for one expense's receipts, checks and links.",
+    "List expenses, or export them as a file. scope 'mine' (default) is the caller's own; 'approvals' is what the caller can approve (staff see everyone's, a card owner sees expenses on their staff cards; defaults to status SUBMITTED); 'all' is every expense and is for Core and staff only. Filter by status, cardId, categoryId, termId, a purchase date range (from, to as YYYY-MM-DD), noReceipt, or outstanding (approved expenses paid on the filer's own card, owed back to them). Amounts are decimal strings. format 'json' (default) returns the rows; 'csv' or 'pdf' returns the same export as the Expenses page as a download URL that expires in 5 minutes (limit and offset are ignored). Use get_expense for one expense's receipts, checks and links.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -43,6 +44,7 @@ export const LIST_EXPENSES_DEF = {
       outstanding: { type: "boolean" },
       limit: { type: "integer", minimum: 1, maximum: 500 },
       offset: { type: "integer", minimum: 0 },
+      format: { type: "string", enum: ["json", "csv", "pdf"] },
     },
     additionalProperties: false,
   },
@@ -97,12 +99,12 @@ const EXPENSE_ACTIONS = [
 
 export const MANAGE_EXPENSE_DEF = {
   name: "manage_expense",
-  description: `Create and change expenses, with the same rules as the Expenses page. Money is a decimal string such as "12.50"; dates are YYYY-MM-DD. Actions: 'create' (needs receiptKeys from create_expense_receipt_upload; optional paidWith 'STAFF_CARD' or 'OWN_CARD' and cardId; reads the receipts and fills in the merchant, date, total and a category suggestion; saves a draft; with noReceipt true it files without receipts and needs noReceiptReason); 'create_no_receipt' (needs noReceiptReason; optional merchant, purchasedAt, total, purpose, categoryId, paidWith, cardId, or chargeId to file against a statement charge that has no receipt); 'update' (needs expenseId and any of merchant, purchasedAt, total, purpose, categoryId, projectId, attendeeIds, paidWith, cardId, noReceiptReason; the filer edits drafts and returned expenses, approvers can change only categoryId and purpose on a submitted one); 'submit' (needs expenseId; a draft or returned expense with a merchant, date, total and category); 'withdraw' (needs expenseId; filer, while submitted); 'delete' (needs expenseId; a draft only, and removes its receipts); 'mark_paid' (needs expenseId; staff, or the filer for their own approved expense); 'match_charge' (needs expenseId and chargeId; card owner or Core; ties an expense to a statement charge on the same card); 'unmatch_charge' (needs expenseId). Approving and returning are in decide_expense. Returns the expense.`,
+  description: `Create and change expenses, with the same rules as the Expenses page. Money is a decimal string such as "12.50"; dates are YYYY-MM-DD. Actions: 'create' (needs receiptKeys from create_expense_receipt_upload, or noReceipt true with noReceiptReason; reads the receipts, fills in the merchant, date, total and a category suggestion; saves a draft), 'create_no_receipt', 'update' (the filer edits drafts and returned expenses; approvers can change only categoryId and purpose on a submitted one), 'submit' (a draft or returned expense with a merchant, date, total and category), 'withdraw' (filer, while submitted), 'delete' (a draft only), 'mark_paid' (staff, or the filer for their own approved expense), 'match_charge' (card owner or Core; ties an expense to a statement charge on the same card), 'unmatch_charge'. Approving and returning are in decide_expense. Returns the expense.`,
   inputSchema: {
     type: "object" as const,
     properties: {
       action: { type: "string", enum: [...EXPENSE_ACTIONS] },
-      expenseId: { type: "string", minLength: 1 },
+      expenseId: { type: "string", minLength: 1, description: "Required for every action except create and create_no_receipt." },
       receiptKeys: {
         type: "array",
         items: { type: "string", minLength: 1, maxLength: 1024 },
@@ -110,11 +112,11 @@ export const MANAGE_EXPENSE_DEF = {
         maxItems: 12,
         description: "Keys from create_expense_receipt_upload.",
       },
-      paidWith: { type: "string", enum: ["STAFF_CARD", "OWN_CARD"] },
+      paidWith: { type: "string", enum: ["STAFF_CARD", "OWN_CARD"], description: "create, create_no_receipt, update." },
       cardId: { type: "string", minLength: 1 },
-      chargeId: { type: "string", minLength: 1 },
-      noReceipt: { type: "boolean" },
-      noReceiptReason: { type: "string", maxLength: 1000 },
+      chargeId: { type: "string", minLength: 1, description: "Required for match_charge; on create_no_receipt, the statement charge to file against." },
+      noReceipt: { type: "boolean", description: "create: file without receipts." },
+      noReceiptReason: { type: "string", maxLength: 1000, description: "Required for create_no_receipt and for create with noReceipt." },
       merchant: { type: "string", maxLength: 200 },
       purchasedAt: { type: "string", description: "YYYY-MM-DD." },
       total: { type: "string", description: 'Decimal string, e.g. "42.10".' },
@@ -162,6 +164,7 @@ type Args = Record<string, unknown>;
 const str = (v: unknown) => (typeof v === "string" ? v : undefined);
 
 export async function runListExpenses(ctx: McpCtx, args: Args) {
+  if (args.format === "csv" || args.format === "pdf") return exportExpensesFile(ctx, args, args.format);
   const filters: ExpenseFilters = {
     status: args.status as ExpenseFilters["status"],
     cardId: str(args.cardId),

@@ -21,8 +21,6 @@ const WRITE_NAME_READ_SCOPE = new Set<string>([
   "search",
   "outline_content",
   "optimize_group_meetings",
-  "partner_pipeline_report",
-  "export_expenses",
 ]);
 
 function unsupportedKeys(schema: unknown, path: string, out: string[]) {

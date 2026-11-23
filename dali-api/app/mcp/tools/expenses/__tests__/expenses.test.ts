@@ -82,7 +82,7 @@ describe("tool definitions", () => {
       [
         "list_expenses", "get_expense", "create_expense_receipt_upload", "manage_expense", "decide_expense",
         "list_expense_categories", "list_expense_cards", "manage_expense_card", "manage_expense_category",
-        "create_card_statement_upload", "import_card_statement", "list_card_charges", "export_expenses",
+        "create_card_statement_upload", "import_card_statement", "list_card_charges",
       ].sort(),
     );
     expect(EXPENSES_TOOLS.every((t) => t.featureFlag === "expenses")).toBe(true);
@@ -93,7 +93,7 @@ describe("tool definitions", () => {
     const scopes = Object.fromEntries(EXPENSES_TOOLS.map((t) => [t.def.name, t.def.requiredScope]));
     expect(scopes).toMatchObject({
       list_expenses: "mcp:read", get_expense: "mcp:read", list_expense_categories: "mcp:read",
-      list_expense_cards: "mcp:read", list_card_charges: "mcp:read", export_expenses: "mcp:read",
+      list_expense_cards: "mcp:read", list_card_charges: "mcp:read",
       create_expense_receipt_upload: "mcp:write", manage_expense: "mcp:write", decide_expense: "mcp:write",
       manage_expense_card: "mcp:write", manage_expense_category: "mcp:write",
       create_card_statement_upload: "mcp:write", import_card_statement: "mcp:write",
@@ -126,7 +126,6 @@ describe("access", () => {
     ["decide_expense", { expenseId: "e1", decision: "approve" }],
     ["list_expense_categories", {}],
     ["list_expense_cards", {}],
-    ["export_expenses", { format: "csv" }],
   ];
 
   it("lets a current member through", async () => {
@@ -408,10 +407,20 @@ describe("statements", () => {
   });
 });
 
-describe("export_expenses", () => {
+describe("list_expenses with a file format", () => {
+  it("has no separate export tool", () => {
+    expect(EXPENSES_TOOLS.some((t) => t.def.name === "export_expenses")).toBe(false);
+  });
+
+  it("returns rows without touching S3 when format is json", async () => {
+    svc.listExpenses.mockResolvedValue([]);
+    await expect(call("list_expenses", { format: "json" })).resolves.toEqual({ expenses: [] });
+    expect(s3.putObject).not.toHaveBeenCalled();
+  });
+
   it("writes a csv to S3 under the caller and returns a short-lived link", async () => {
     exp.exportExpensesCsv.mockResolvedValue("a,b\n1,2\n");
-    const r = (await call("export_expenses", { format: "csv", scope: "all", from: "2026-09-01" })) as { url: string; format: string };
+    const r = (await call("list_expenses", { format: "csv", scope: "all", from: "2026-09-01" })) as { url: string; format: string };
     expect(exp.exportExpensesCsv).toHaveBeenCalledWith(viewer, "all", expect.objectContaining({ from: new Date("2026-09-01T00:00:00Z") }));
     const [key, body, type] = s3.putObject.mock.calls[0] as unknown as [string, Uint8Array, string];
     expect(key).toMatch(/^exports\/expenses\/u1\/[0-9a-f-]{36}\.csv$/);
@@ -423,14 +432,14 @@ describe("export_expenses", () => {
 
   it("exports a pdf", async () => {
     exp.exportExpensesPdf.mockResolvedValue(new Uint8Array([1, 2, 3]));
-    await call("export_expenses", { format: "pdf" });
+    await call("list_expenses", { format: "pdf" });
     expect(exp.exportExpensesPdf).toHaveBeenCalledWith(viewer, "mine", expect.any(Object));
     expect((s3.putObject.mock.calls[0] as unknown[])[2]).toBe("application/pdf");
   });
 
   it("writes nothing when the scope is forbidden", async () => {
     exp.exportExpensesCsv.mockRejectedValue(new ExpenseError("forbidden", "Only Core can see every expense."));
-    expect(await code(call("export_expenses", { format: "csv", scope: "all" }))).toBe(FORBIDDEN);
+    expect(await code(call("list_expenses", { format: "csv", scope: "all" }))).toBe(FORBIDDEN);
     expect(s3.putObject).not.toHaveBeenCalled();
   });
 });

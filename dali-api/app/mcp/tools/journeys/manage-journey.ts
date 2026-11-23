@@ -95,7 +95,7 @@ export const MANAGE_JOURNEY: McpTool = {
 };
 
 type ModuleArgs = {
-  action: "add" | "update" | "delete" | "set_prerequisites";
+  action: "create" | "update" | "delete" | "set_prerequisites";
   journeyId: string;
   moduleId?: string;
   title?: string;
@@ -122,13 +122,13 @@ export const MANAGE_JOURNEY_MODULE: McpTool = {
   def: {
     name: "manage_journey_module",
     description:
-      "Add, update or delete modules on an onboarding journey's map (saved to the draft). A module unlocks once every module in its dependsOn is finished; modules with no prerequisites are starting points. Actions: add (title, summary, duration like \"20 min\"; afterModuleId places it after that module and makes it the prerequisite, or pass dependsOn), update (any of title, summary, duration, position {x,y}), delete (also removes it from other modules' prerequisites), set_prerequisites (moduleId + the full dependsOn list; loops are refused). New modules start with one empty page.",
+      "Create, update or delete modules on an onboarding journey's map (saved to the draft). A module unlocks once every module in its dependsOn is finished; modules with no prerequisites are starting points. Actions: create (title, summary, duration like \"20 min\"; afterModuleId places it after that module and makes it the prerequisite, or pass dependsOn), update (any of title, summary, duration, position {x,y}), delete (also removes it from other modules' prerequisites), set_prerequisites (moduleId + the full dependsOn list; loops are refused). New modules start with one empty page.",
     inputSchema: inputSchema({
       type: "object" as const,
       properties: {
-        action: { type: "string", enum: ["add", "update", "delete", "set_prerequisites"] },
+        action: { type: "string", enum: ["create", "update", "delete", "set_prerequisites"] },
         journeyId: { type: "string", minLength: 1 },
-        moduleId: { type: "string", description: "Required except for add." },
+        moduleId: { type: "string", description: "Required except for create." },
         title: { type: "string", maxLength: 300 },
         summary: { type: "string", maxLength: 20_000 },
         duration: { type: "string", maxLength: 40 },
@@ -149,7 +149,7 @@ export const MANAGE_JOURNEY_MODULE: McpTool = {
   run: async (ctx: McpCtx, raw) => {
     const args = raw as ModuleArgs;
     requireForAction(args.action, args, {
-      add: [],
+      create: [],
       update: ["moduleId"],
       delete: ["moduleId"],
       set_prerequisites: ["moduleId", "dependsOn"],
@@ -164,7 +164,7 @@ export const MANAGE_JOURNEY_MODULE: McpTool = {
     });
 
     switch (args.action) {
-      case "add": {
+      case "create": {
         let moduleId = "";
         return saveEdit(viewer, args.journeyId, (d) => {
           if (args.afterModuleId) findModule(d, args.afterModuleId);

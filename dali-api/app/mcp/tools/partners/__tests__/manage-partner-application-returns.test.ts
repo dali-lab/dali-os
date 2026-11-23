@@ -66,9 +66,9 @@ beforeEach(() => {
 });
 
 describe("manage_partner_application schema", () => {
-  it("adds start_return and delete without dropping existing actions", () => {
+  it("keeps start_return and delete", () => {
     const actions = (MANAGE_PARTNER_APPLICATION_TOOL.inputSchema.properties.action as { enum: string[] }).enum;
-    expect(actions).toEqual(expect.arrayContaining(["create", "update_stage", "remove_domain", "start_return", "delete"]));
+    expect(actions).toEqual(expect.arrayContaining(["create", "update_stage", "start_return", "delete"]));
   });
 });
 

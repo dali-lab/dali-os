@@ -1,4 +1,4 @@
-// MCP tool: partner_pipeline_report — the funnel + cycle-time aggregation
+// MCP tool: get_partner_pipeline — the funnel + cycle-time aggregation
 // from /core/partners/reports (specs/partner-crm.md §12), for one term or all
 // time. Scope: mcp:read. Gated to canViewStaffing (Core / Domain Lead).
 
@@ -10,8 +10,8 @@ import {
   loadCycleTimeSection,
 } from "~/partners/lib/partner-reports.server";
 
-export const PARTNER_PIPELINE_REPORT_TOOL = {
-  name: "partner_pipeline_report",
+export const GET_PARTNER_PIPELINE_TOOL = {
+  name: "get_partner_pipeline",
   description:
     "Funnel (counts per stage, conversion New->Interview->Accepted, by source) and cycle time " +
     "(median days Created->Accepted and Created->project) for the partner pipeline, scoped to one " +
@@ -34,7 +34,7 @@ export const PARTNER_PIPELINE_REPORT_TOOL = {
   requiredScope: "mcp:read" as const,
 };
 
-export async function runPartnerPipelineReport(
+export async function runGetPartnerPipeline(
   callerId: string,
   input: { termId?: string; allTime?: boolean },
 ): Promise<unknown> {

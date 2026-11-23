@@ -2797,7 +2797,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
 }
 {
   "name": "manage_partner_application",
-  "description": "Create and manage partner applications (Core only, no partner-facing emails). Actions: create (title required; applicantContactId OR applicantEmail+applicantName; partnerOrgId optional), update_stage (applicationId+stage; silent move — no email sent to partner), update_title (applicationId+title required), update_details (applicationId; updates summary/targetTermIds), save_eval (applicationId; evalScores object with any of the 8 criterion keys feasibility/impact/originality/learning/devChallenges/designChallenges/partnerTeam/funding as 1-5 integers; optional interviewRating 1-5; optional evalNotes string), save_acceptance (applicationId; ambiguityRating 1-5 and/or fundingType enum), add_note (applicationId+body; writes a Note-type activity to the timeline), set_form (formId), clear_form, add_domain (applicationId+domainId), update_domain_scope (applicationDomainId; expectedMembers and/or expectedChallenges as plain text — NOTE: expectedChallenges is a collab block doc on the web; MCP writes a plain-text paragraph block), remove_domain (applicationDomainId), start_return (projectId+targetTermIds; opens an application for a past project coming back, carrying over its partner org, primary contact and last term's spots; promoting it reopens that project), delete (applicationId; permanently removes an application that was never promoted). create also accepts continuesProjectId to mark the application as a return of that project.",
+  "description": "Create and manage partner applications (Core only, no partner-facing emails). Actions: create, update_stage (silent move, no email to the partner), update_title, update_details, start_return (opens an application for a past project coming back; promoting it reopens that project), delete (only for applications that were never promoted). Evaluation is in evaluate_partner_application; form and domains are in set_partner_application_scope.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -2808,14 +2808,6 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
           "update_stage",
           "update_title",
           "update_details",
-          "save_eval",
-          "save_acceptance",
-          "add_note",
-          "set_form",
-          "clear_form",
-          "add_domain",
-          "update_domain_scope",
-          "remove_domain",
           "start_return",
           "delete"
         ],
@@ -2823,7 +2815,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
       },
       "applicationId": {
         "type": "string",
-        "description": "Required for most actions (not create, set_form, clear_form)."
+        "description": "Required for update_stage, update_title, update_details and delete."
       },
       "title": {
         "type": "string",
@@ -2866,7 +2858,8 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
         "description": "Required for update_stage. Move is silent — no partner email sent."
       },
       "summary": {
-        "type": "string"
+        "type": "string",
+        "description": "Application summary (update_details)."
       },
       "targetTermIds": {
         "type": "array",
@@ -2874,15 +2867,42 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
           "type": "string"
         },
         "description": "Replace all target terms (update_details), or the terms a return would run (start_return)."
+      }
+    },
+    "required": [
+      "action"
+    ],
+    "additionalProperties": false
+  },
+  "requiredScope": "mcp:write"
+}
+{
+  "name": "evaluate_partner_application",
+  "description": "Evaluate a partner application (Core only): save the rubric scores, save acceptance details, or add a timeline note. No partner-facing emails.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": [
+          "save_eval",
+          "save_acceptance",
+          "add_note"
+        ],
+        "description": "What to do."
+      },
+      "applicationId": {
+        "type": "string",
+        "description": "Required for every action."
       },
       "evalScores": {
         "type": "object",
-        "description": "Criterion scores for save_eval. Object with any subset of keys: feasibility, impact, originality, learning, devChallenges, designChallenges, partnerTeam, funding — each an integer 1–5.",
+        "description": "Criterion scores for save_eval. Object with any subset of keys: feasibility, impact, originality, learning, devChallenges, designChallenges, partnerTeam, funding, each an integer 1-5.",
         "additionalProperties": true
       },
       "interviewRating": {
         "type": "number",
-        "description": "Overall interview rating 1–5 (save_eval)."
+        "description": "Overall interview rating 1-5 (save_eval)."
       },
       "evalNotes": {
         "type": "string",
@@ -2890,7 +2910,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
       },
       "ambiguityRating": {
         "type": "number",
-        "description": "Ambiguity rating 1–5 (save_acceptance)."
+        "description": "Ambiguity rating 1-5 (save_acceptance)."
       },
       "fundingType": {
         "type": "string",
@@ -2905,6 +2925,36 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
       "body": {
         "type": "string",
         "description": "Note text (add_note). Cannot be empty."
+      }
+    },
+    "required": [
+      "action",
+      "applicationId"
+    ],
+    "additionalProperties": false
+  },
+  "requiredScope": "mcp:write"
+}
+{
+  "name": "set_partner_application_scope",
+  "description": "Set what a partner application covers (Core only): the application form binding and the domains on an application.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": [
+          "set_form",
+          "clear_form",
+          "add_domain",
+          "update_domain_scope",
+          "remove_domain"
+        ],
+        "description": "What to do."
+      },
+      "applicationId": {
+        "type": "string",
+        "description": "Required for add_domain."
       },
       "formId": {
         "type": "string",
@@ -2924,7 +2974,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
       },
       "expectedChallenges": {
         "type": "string",
-        "description": "Plain-text description of expected challenges for this domain (update_domain_scope). COLLAB-BODY FLAG: the web UI stores this as a BlockNote collab doc — MCP writes a single paragraph block. This will overwrite collab content; use only when setting from scratch or the doc is empty."
+        "description": "Plain-text expected challenges for this domain (update_domain_scope). The web UI stores this as a BlockNote collab doc; MCP writes a single paragraph block and overwrites existing content, so use it only when the doc is empty."
       }
     },
     "required": [
@@ -2936,7 +2986,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
 }
 {
   "name": "manage_partner_meeting",
-  "description": "Log and debrief discovery/partner meetings (Core only). create (applicationId required) takes exactly one of: scheduledMeetingId (link an existing ScheduledMeeting), startTime+participantUserIds (create a real ScheduledMeeting via the calendar and link it; optional durationMinutes default 30, title default 'DALI x <contact>', guestEmails default the applicant's email), or scheduledAt (legacy log-only row, no ScheduledMeeting; attendeeUserIds/notes optional) — none of these email the partner directly. debrief (meetingId+applicationId required; debrief text and/or outcome: Advance|Hold|Reject|MoreInfoNeeded).",
+  "description": "Log and debrief discovery/partner meetings (Core only). create takes exactly one of scheduledMeetingId (link an existing meeting), startTime+participantUserIds (create a real meeting via the calendar and link it), or scheduledAt (log-only row). The partner is not emailed directly. debrief takes meetingId and a debrief and/or an outcome (Advance, Hold, Reject, MoreInfoNeeded).",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -3271,7 +3321,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
   "requiredScope": "mcp:write"
 }
 {
-  "name": "partner_pipeline_report",
+  "name": "get_partner_pipeline",
   "description": "Funnel (counts per stage, conversion New->Interview->Accepted, by source) and cycle time (median days Created->Accepted and Created->project) for the partner pipeline, scoped to one term or all time. Requires staffing-view access.",
   "inputSchema": {
     "type": "object",
@@ -7741,18 +7791,17 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
 }
 {
   "name": "manage_job",
-  "description": "Enable/disable/configure or immediately trigger a background job. Actions: list · set_config · run. Core leads only.",
+  "description": "Enable/disable/configure or immediately trigger a background job. Actions: set_config, run. Read jobs with list_jobs. Core leads only.",
   "inputSchema": {
     "type": "object",
     "properties": {
       "action": {
         "type": "string",
         "enum": [
-          "list",
           "set_config",
           "run"
         ],
-        "description": "list — enumerate all jobs with their current state; set_config — patch enabled/interval/settings; run — trigger immediately."
+        "description": "set_config: patch enabled/interval/settings; run: trigger immediately."
       },
       "name": {
         "type": "string",
@@ -7780,17 +7829,16 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
 }
 {
   "name": "manage_feature_flag",
-  "description": "List or configure feature flags (gradual rollout). A flag is on for a user when it's enabled and any target matches: everyone, a listed role, or a named user. Actions: list · set_config. Core leads only.",
+  "description": "Configure feature flag targeting (gradual rollout); read flags with list_feature_flags. A flag is on for a user when it's enabled and any target matches: everyone, a listed role, or a named user. Core leads only.",
   "inputSchema": {
     "type": "object",
     "properties": {
       "action": {
         "type": "string",
         "enum": [
-          "list",
           "set_config"
         ],
-        "description": "list — return all flags and their current targeting; set_config — patch one flag."
+        "description": "set_config: patch one flag."
       },
       "key": {
         "type": "string",
@@ -7829,7 +7877,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
       },
       "variant": {
         "type": "string",
-        "description": "set_config: for multi-value flags (e.g. \\"home-surface\\"), which option targeted users get. Use list to see each flag's options."
+        "description": "set_config: for multi-value flags (e.g. \\"home-surface\\"), which option targeted users get. Use list_feature_flags to see each flag's options."
       },
       "note": {
         "type": "string",
@@ -8031,15 +8079,55 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
   "requiredScope": "mcp:admin"
 }
 {
+  "name": "list_activities",
+  "description": "List time-boxed Activities (onboarding hunts and site modes), newest start first. Pass page.nextCursor as cursor to read the next page until page.hasMore is false. Core leads only.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "limit": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 200,
+        "description": "Page size (default 50, max 200)."
+      },
+      "cursor": {
+        "type": "string",
+        "description": "Pass page.nextCursor from the previous response to get the next page."
+      }
+    },
+    "additionalProperties": false
+  },
+  "requiredScope": "mcp:read"
+}
+{
+  "name": "list_feature_flags",
+  "description": "List all feature flags with their current targeting and variant options. A flag is on for a user when it's enabled and any target matches: everyone, a listed role, or a named user. Core leads only.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {},
+    "additionalProperties": false
+  },
+  "requiredScope": "mcp:read"
+}
+{
+  "name": "list_jobs",
+  "description": "List all background jobs with their interval, settings, enabled state and last run. Core leads only.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {},
+    "additionalProperties": false
+  },
+  "requiredScope": "mcp:read"
+}
+{
   "name": "manage_activity",
-  "description": "Manage time-boxed Activities (onboarding hunts and site modes). action=list: list activities, newest start first; pass page.nextCursor as cursor to read the next page until page.hasMore is false. action=create: create a new Draft activity (name + kind required). action=update: update name/window/audience/termId. action=set_status: transition status to Published/Draft/Archived. action=delete: delete a Draft activity with no events. Core leads only.",
+  "description": "Manage time-boxed Activities (onboarding hunts and site modes). action=create: create a new Draft activity (name + kind required). action=update: update name/window/audience/termId. action=set_status: transition status to Published/Draft/Archived. action=delete: delete a Draft activity with no events. Core leads only.",
   "inputSchema": {
     "type": "object",
     "properties": {
       "action": {
         "type": "string",
         "enum": [
-          "list",
           "create",
           "update",
           "set_status",
@@ -8086,16 +8174,6 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
           "Archived"
         ],
         "description": "set_status: target status."
-      },
-      "limit": {
-        "type": "integer",
-        "minimum": 1,
-        "maximum": 200,
-        "description": "Page size (default 50, max 200)."
-      },
-      "cursor": {
-        "type": "string",
-        "description": "Pass page.nextCursor from the previous response to get the next page."
       }
     },
     "required": [
@@ -8244,7 +8322,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
 }
 {
   "name": "backfill_hiring_cycle",
-  "description": "Import ONE finished historical hiring cycle: the cycle (Completed, stamped with the dates you pass), its application form, per-domain rubrics and challenge forms, applications, reviews, Released decisions and completed interviews. Rows are written directly with the historical timestamps; nothing is released, so no emails, notifications, Slack messages, members, or domain eligibility are created. Applicants without an account get a plain User with no membership. A waitlisted applicant needs a final outcome: pass outcome.waitlistedAt with Rejected (came off the waitlist) or Accepted (hired from it), so nobody lands on the live waitlist. Omit the outcome for undecided applicants. Pass cycleId to append more applications to a cycle created by an earlier call; reruns skip rows that already exist. Max 200 applications per call. Admins only.",
+  "description": "Import ONE finished historical hiring cycle (Completed): its application form, rubrics and challenge forms, applications, reviews, Released decisions and completed interviews, written with the historical timestamps. Nothing is released, so no emails, notifications, Slack messages, members, or domain eligibility are created. Applicants without an account get a plain User with no membership. Pass cycleId to append more applications to a cycle from an earlier call; reruns skip existing rows. Max 200 applications per call. Admins only.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -8270,7 +8348,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
       "applications": {
         "type": "array",
         "maxItems": 200,
-        "description": "[{ applicant: { userId?, email?, netId?, firstName?, lastName? }, createdAt, answers?, domainApplications: [{ domainId, submittedAt, answers?, withdrawn?, outcome?: { type: Accepted|Rejected, decidedAt, notes?, invitedToInterviewAt?, waitlistedAt? }, reviews?: [{ reviewerUserId, submittedAt, scores, feedback?, rejectionRationale?, overallRecommendation? }], interview?: { startTime, endTime, interviewerUserIds?, notes? } }] }]",
+        "description": "[{ applicant: { userId?, email?, netId?, firstName?, lastName? }, createdAt, answers?, domainApplications: [{ domainId, submittedAt, answers?, withdrawn?, outcome?: { type: Accepted|Rejected, decidedAt, notes?, invitedToInterviewAt?, waitlistedAt? }, reviews?: [{ reviewerUserId, submittedAt, scores, feedback?, rejectionRationale?, overallRecommendation? }], interview?: { startTime, endTime, interviewerUserIds?, notes? } }] }]. A waitlisted applicant needs a final outcome: set outcome.waitlistedAt with Rejected (came off the waitlist) or Accepted (hired from it). Omit outcome for undecided applicants.",
         "items": {
           "type": "object"
         }
@@ -9241,6 +9319,16 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
   "requiredScope": "mcp:write"
 }
 {
+  "name": "list_project_templates",
+  "description": "List available project templates (Core only).",
+  "inputSchema": {
+    "type": "object",
+    "properties": {},
+    "additionalProperties": false
+  },
+  "requiredScope": "mcp:read"
+}
+{
   "name": "manage_project_template",
   "description": "Manage project templates (Core only). Pass \`action\`:\\n- \`capture\`: save an existing project's structure (epics, user stories, sprints, tasks, checklists) as a reusable template. Requires: projectId, name.\\n- \`list\`: list available project templates.\\n- \`instantiate\`: create a new project pre-populated from a template. Requires: templateId, name.\\n- \`delete\`: delete a project template. Requires: templateId.",
   "inputSchema": {
@@ -9250,7 +9338,6 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
         "type": "string",
         "enum": [
           "capture",
-          "list",
           "instantiate",
           "delete"
         ],
@@ -9593,14 +9680,14 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
 }
 {
   "name": "manage_journey_module",
-  "description": "Add, update or delete modules on an onboarding journey's map (saved to the draft). A module unlocks once every module in its dependsOn is finished; modules with no prerequisites are starting points. Actions: add (title, summary, duration like \\"20 min\\"; afterModuleId places it after that module and makes it the prerequisite, or pass dependsOn), update (any of title, summary, duration, position {x,y}), delete (also removes it from other modules' prerequisites), set_prerequisites (moduleId + the full dependsOn list; loops are refused). New modules start with one empty page.",
+  "description": "Create, update or delete modules on an onboarding journey's map (saved to the draft). A module unlocks once every module in its dependsOn is finished; modules with no prerequisites are starting points. Actions: create (title, summary, duration like \\"20 min\\"; afterModuleId places it after that module and makes it the prerequisite, or pass dependsOn), update (any of title, summary, duration, position {x,y}), delete (also removes it from other modules' prerequisites), set_prerequisites (moduleId + the full dependsOn list; loops are refused). New modules start with one empty page.",
   "inputSchema": {
     "type": "object",
     "properties": {
       "action": {
         "type": "string",
         "enum": [
-          "add",
+          "create",
           "update",
           "delete",
           "set_prerequisites"
@@ -9612,7 +9699,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
       },
       "moduleId": {
         "type": "string",
-        "description": "Required except for add."
+        "description": "Required except for create."
       },
       "title": {
         "type": "string",
@@ -9662,14 +9749,14 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
 }
 {
   "name": "manage_journey_page",
-  "description": "Edit a journey module's lesson pages, which learners read in order. Bodies are Markdown (headings, lists, code blocks, quotes, tables, images, links). Actions: add (title, markdown, optional index), update (pageId + title and/or markdown; markdown replaces the whole body), delete, move (pageId + toIndex). Saved to the draft.",
+  "description": "Edit a journey module's lesson pages, which learners read in order. Bodies are Markdown (headings, lists, code blocks, quotes, tables, images, links). Actions: create (title, markdown, optional index), update (pageId + title and/or markdown; markdown replaces the whole body), delete, move (pageId + toIndex). Saved to the draft.",
   "inputSchema": {
     "type": "object",
     "properties": {
       "action": {
         "type": "string",
         "enum": [
-          "add",
+          "create",
           "update",
           "delete",
           "move"
@@ -9685,7 +9772,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
       },
       "pageId": {
         "type": "string",
-        "description": "Required except for add."
+        "description": "Required except for create."
       },
       "title": {
         "type": "string",
@@ -9698,7 +9785,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
       "index": {
         "type": "number",
         "minimum": 0,
-        "description": "add: position, default last."
+        "description": "create: position, default last."
       },
       "toIndex": {
         "type": "number",
@@ -9716,14 +9803,14 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
 }
 {
   "name": "manage_journey_slides",
-  "description": "Edit a journey module's slide deck, a short click-through shown beside the lesson. Actions: set (replace the whole deck with \`slides\`; an empty list removes it), add (\`slide\`, optional index), update (slideId + \`slide\` fields to change), delete, move (slideId + toIndex). Saved to the draft.",
+  "description": "Edit a journey module's slide deck, a short click-through shown beside the lesson. Actions: set (replace the whole deck with \`slides\`; an empty list removes it), create (\`slide\`, optional index), update (slideId + \`slide\` fields to change), delete, move (slideId + toIndex). Saved to the draft.",
   "inputSchema": {
     "type": "object",
     "properties": {
       "action": {
         "type": "string",
         "enum": [
-          "add",
+          "create",
           "update",
           "delete",
           "move",
@@ -9855,7 +9942,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
 }
 {
   "name": "set_journey_activity",
-  "description": "Set or remove a journey module's coding lab, whiteboard or document lab, or quiz. Pick it with activity, pass its content in the matching field, or pass remove: true to delete it. Each call replaces that whole activity and saves to the draft. A module has at most one lab, code or studio. code_lab (codeLab): a small web project learners edit in the browser while guided steps check their work. files maps paths to contents and must include index.html (local stylesheets and scripts are inlined; <script type=\\"module\\"> files can import each other, and bare imports load from esm.sh). Each step's check is a JavaScript expression evaluated in the learner's page that is true once the step is done, e.g. document.querySelector('h1')?.textContent.includes('Hello'). studio_lab (studioLab): a whiteboard (kind canvas) or document (kind document) lab for non-code work like critiques, affinity maps and ticket writing. Each criterion is checked automatically (mode auto, with a rule), ticked by the learner (self), or approved by a journey owner or editor after the learner submits (mentor). Automatic rules: item-count {itemType: sticky|text|shape|image|pin|any, color?, min} counts the learner's own board items; hotspots {min} counts hidden problem areas the learner pinned; contains-text {text}; word-count {min}; section {heading, minWords} counts words between a heading containing that text and the next heading; list-items {heading, min} counts list items in that section. Canvas labs take a starter board: items {type: sticky|text|shape|image|pin, x, y, width?, height?, text?, color: yellow|pink|green|blue|purple, src?, alt?, locked?} and hidden hotspots {label, x, y, width, height} learners should pin. Document labs take a starter template in Markdown (use ### headings for the sections rules look for). quiz (quiz): learners must reach passingScore (percent correct) to finish the module, and can retry. multiple-choice questions take options (strings) and correctOption (0-based index); short-answer questions take acceptedAnswers, matched ignoring case, extra spaces and trailing punctuation (leave it empty to accept any response, for reflection questions).",
+  "description": "Set or remove a journey module's coding lab, whiteboard or document lab, or quiz. Pick it with activity, pass its content in the matching field (codeLab, studioLab or quiz), or pass remove: true to delete it. Each call replaces that whole activity and saves to the draft. A module has at most one lab, code or studio.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -9930,7 +10017,8 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
           "files",
           "steps"
         ],
-        "additionalProperties": false
+        "additionalProperties": false,
+        "description": "code_lab: a small web project learners edit in the browser while guided steps check their work. files maps paths to contents and must include index.html (local stylesheets and scripts are inlined; <script type=\\"module\\"> files can import each other, and bare imports load from esm.sh). Each step's check is a JavaScript expression evaluated in the learner's page that is true once the step is done, e.g. document.querySelector('h1')?.textContent.includes('Hello')."
       },
       "studioLab": {
         "type": "object",
@@ -9971,7 +10059,8 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
           "kind",
           "title",
           "criteria"
-        ]
+        ],
+        "description": "studio_lab: a whiteboard (kind canvas) or document (kind document) lab for non-code work like critiques, affinity maps and ticket writing. Each criterion is checked automatically (mode auto, with a rule), ticked by the learner (self), or approved by a journey owner or editor after the learner submits (mentor). Automatic rules: item-count {itemType: sticky|text|shape|image|pin|any, color?, min} counts the learner's own board items; hotspots {min} counts hidden problem areas the learner pinned; contains-text {text}; word-count {min}; section {heading, minWords} counts words between a heading containing that text and the next heading; list-items {heading, min} counts list items in that section. Canvas labs take a starter board: items {type: sticky|text|shape|image|pin, x, y, width?, height?, text?, color: yellow|pink|green|blue|purple, src?, alt?, locked?} and hidden hotspots {label, x, y, width, height} learners should pin. Document labs take a starter template in Markdown (use ### headings for the sections rules look for)."
       },
       "quiz": {
         "type": "object",
@@ -10037,7 +10126,8 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
           "title",
           "questions"
         ],
-        "additionalProperties": false
+        "additionalProperties": false,
+        "description": "quiz: learners must reach passingScore (percent correct) to finish the module, and can retry. multiple-choice questions take options (strings) and correctOption (0-based index); short-answer questions take acceptedAnswers, matched ignoring case, extra spaces and trailing punctuation (leave it empty to accept any response, for reflection questions)."
       }
     },
     "required": [
@@ -10327,7 +10417,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
 }
 {
   "name": "manage_gallery_post",
-  "description": "Write to the Community gallery, as the web does. Actions: 'create' (posts: up to 10, one per photo, with the keys create_gallery_upload returned); 'delete' (your own post); 'react' (toggle one of ❤️ 🔥 😂 👏 😮 🎉, notifies the poster); 'comment' (body, @handles mention people); 'delete_comment' (yours, or any as Core); 'report' (someone else's post; two reports hide it); 'hide' and 'restore' (Core only; restoring clears its reports).",
+  "description": "Write to the Community gallery, as the web does. Actions: 'create' (posts: up to 10, one per photo, with the keys create_gallery_upload returned); 'delete' (your own post); 'react' (toggle one of ❤️ 🔥 😂 👏 😮 🎉, notifies the poster); 'comment' (body, @handles mention people); 'delete_comment' (yours, or any as Core); 'report' (someone else's post; two reports hide it). Hiding and restoring are in moderate_gallery_post.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -10339,9 +10429,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
           "react",
           "comment",
           "delete_comment",
-          "report",
-          "hide",
-          "restore"
+          "report"
         ]
       },
       "postId": {
@@ -10426,6 +10514,32 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
     },
     "required": [
       "action"
+    ],
+    "additionalProperties": false
+  },
+  "requiredScope": "mcp:write"
+}
+{
+  "name": "moderate_gallery_post",
+  "description": "Hide a Community gallery post from the feed, or restore a hidden one (Core only). Restoring clears the post's reports.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": [
+          "hide",
+          "restore"
+        ]
+      },
+      "postId": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "required": [
+      "action",
+      "postId"
     ],
     "additionalProperties": false
   },
@@ -10574,7 +10688,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
 }
 {
   "name": "list_expenses",
-  "description": "List expenses. scope 'mine' (default) is the caller's own; 'approvals' is what the caller can approve (staff see everyone's, a card owner sees expenses on their staff cards; defaults to status SUBMITTED); 'all' is every expense and is for Core and staff only. Filter by status, cardId, categoryId, termId, a purchase date range (from, to as YYYY-MM-DD), noReceipt, or outstanding (approved expenses paid on the filer's own card, owed back to them). Amounts are decimal strings. Use get_expense for one expense's receipts, checks and links.",
+  "description": "List expenses, or export them as a file. scope 'mine' (default) is the caller's own; 'approvals' is what the caller can approve (staff see everyone's, a card owner sees expenses on their staff cards; defaults to status SUBMITTED); 'all' is every expense and is for Core and staff only. Filter by status, cardId, categoryId, termId, a purchase date range (from, to as YYYY-MM-DD), noReceipt, or outstanding (approved expenses paid on the filer's own card, owed back to them). Amounts are decimal strings. format 'json' (default) returns the rows; 'csv' or 'pdf' returns the same export as the Expenses page as a download URL that expires in 5 minutes (limit and offset are ignored). Use get_expense for one expense's receipts, checks and links.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -10634,6 +10748,14 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
       "offset": {
         "type": "integer",
         "minimum": 0
+      },
+      "format": {
+        "type": "string",
+        "enum": [
+          "json",
+          "csv",
+          "pdf"
+        ]
       }
     },
     "additionalProperties": false
@@ -10690,7 +10812,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
 }
 {
   "name": "manage_expense",
-  "description": "Create and change expenses, with the same rules as the Expenses page. Money is a decimal string such as \\"12.50\\"; dates are YYYY-MM-DD. Actions: 'create' (needs receiptKeys from create_expense_receipt_upload; optional paidWith 'STAFF_CARD' or 'OWN_CARD' and cardId; reads the receipts and fills in the merchant, date, total and a category suggestion; saves a draft; with noReceipt true it files without receipts and needs noReceiptReason); 'create_no_receipt' (needs noReceiptReason; optional merchant, purchasedAt, total, purpose, categoryId, paidWith, cardId, or chargeId to file against a statement charge that has no receipt); 'update' (needs expenseId and any of merchant, purchasedAt, total, purpose, categoryId, projectId, attendeeIds, paidWith, cardId, noReceiptReason; the filer edits drafts and returned expenses, approvers can change only categoryId and purpose on a submitted one); 'submit' (needs expenseId; a draft or returned expense with a merchant, date, total and category); 'withdraw' (needs expenseId; filer, while submitted); 'delete' (needs expenseId; a draft only, and removes its receipts); 'mark_paid' (needs expenseId; staff, or the filer for their own approved expense); 'match_charge' (needs expenseId and chargeId; card owner or Core; ties an expense to a statement charge on the same card); 'unmatch_charge' (needs expenseId). Approving and returning are in decide_expense. Returns the expense.",
+  "description": "Create and change expenses, with the same rules as the Expenses page. Money is a decimal string such as \\"12.50\\"; dates are YYYY-MM-DD. Actions: 'create' (needs receiptKeys from create_expense_receipt_upload, or noReceipt true with noReceiptReason; reads the receipts, fills in the merchant, date, total and a category suggestion; saves a draft), 'create_no_receipt', 'update' (the filer edits drafts and returned expenses; approvers can change only categoryId and purpose on a submitted one), 'submit' (a draft or returned expense with a merchant, date, total and category), 'withdraw' (filer, while submitted), 'delete' (a draft only), 'mark_paid' (staff, or the filer for their own approved expense), 'match_charge' (card owner or Core; ties an expense to a statement charge on the same card), 'unmatch_charge'. Approving and returning are in decide_expense. Returns the expense.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -10710,7 +10832,8 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
       },
       "expenseId": {
         "type": "string",
-        "minLength": 1
+        "minLength": 1,
+        "description": "Required for every action except create and create_no_receipt."
       },
       "receiptKeys": {
         "type": "array",
@@ -10728,7 +10851,8 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
         "enum": [
           "STAFF_CARD",
           "OWN_CARD"
-        ]
+        ],
+        "description": "create, create_no_receipt, update."
       },
       "cardId": {
         "type": "string",
@@ -10736,14 +10860,17 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
       },
       "chargeId": {
         "type": "string",
-        "minLength": 1
+        "minLength": 1,
+        "description": "Required for match_charge; on create_no_receipt, the statement charge to file against."
       },
       "noReceipt": {
-        "type": "boolean"
+        "type": "boolean",
+        "description": "create: file without receipts."
       },
       "noReceiptReason": {
         "type": "string",
-        "maxLength": 1000
+        "maxLength": 1000,
+        "description": "Required for create_no_receipt and for create with noReceipt."
       },
       "merchant": {
         "type": "string",
@@ -11059,75 +11186,6 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
     },
     "required": [
       "cardId"
-    ],
-    "additionalProperties": false
-  },
-  "requiredScope": "mcp:read"
-}
-{
-  "name": "export_expenses",
-  "description": "Export expenses as a CSV or PDF file, the same export as the Expenses page, for the scope and filters given (same meaning as list_expenses; 'all' is Core and staff only). Returns a download URL that expires in 5 minutes, with the file name and format. Download it with curl -L -o <file> '<url>'.",
-  "inputSchema": {
-    "type": "object",
-    "properties": {
-      "format": {
-        "type": "string",
-        "enum": [
-          "csv",
-          "pdf"
-        ]
-      },
-      "scope": {
-        "type": "string",
-        "enum": [
-          "mine",
-          "approvals",
-          "all"
-        ]
-      },
-      "status": {
-        "type": "array",
-        "items": {
-          "type": "string",
-          "enum": [
-            "DRAFT",
-            "SUBMITTED",
-            "RETURNED",
-            "APPROVED",
-            "PAID"
-          ]
-        },
-        "maxItems": 5
-      },
-      "cardId": {
-        "type": "string",
-        "minLength": 1
-      },
-      "categoryId": {
-        "type": "string",
-        "minLength": 1
-      },
-      "termId": {
-        "type": "string",
-        "minLength": 1
-      },
-      "from": {
-        "type": "string",
-        "description": "Earliest purchase date, YYYY-MM-DD."
-      },
-      "to": {
-        "type": "string",
-        "description": "Latest purchase date, YYYY-MM-DD."
-      },
-      "noReceipt": {
-        "type": "boolean"
-      },
-      "outstanding": {
-        "type": "boolean"
-      }
-    },
-    "required": [
-      "format"
     ],
     "additionalProperties": false
   },

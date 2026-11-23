@@ -8,33 +8,8 @@ import { parseDay, withViewer } from "./shared";
 
 export const EXPORT_URL_TTL_SECONDS = 300;
 
-export const EXPORT_EXPENSES_DEF = {
-  name: "export_expenses",
-  description:
-    "Export expenses as a CSV or PDF file, the same export as the Expenses page, for the scope and filters given (same meaning as list_expenses; 'all' is Core and staff only). Returns a download URL that expires in 5 minutes, with the file name and format. Download it with curl -L -o <file> '<url>'.",
-  inputSchema: {
-    type: "object" as const,
-    properties: {
-      format: { type: "string", enum: ["csv", "pdf"] },
-      scope: { type: "string", enum: ["mine", "approvals", "all"] },
-      status: { type: "array", items: { type: "string", enum: ["DRAFT", "SUBMITTED", "RETURNED", "APPROVED", "PAID"] }, maxItems: 5 },
-      cardId: { type: "string", minLength: 1 },
-      categoryId: { type: "string", minLength: 1 },
-      termId: { type: "string", minLength: 1 },
-      from: { type: "string", description: "Earliest purchase date, YYYY-MM-DD." },
-      to: { type: "string", description: "Latest purchase date, YYYY-MM-DD." },
-      noReceipt: { type: "boolean" },
-      outstanding: { type: "boolean" },
-    },
-    required: ["format"],
-    additionalProperties: false,
-  },
-  requiredScope: "mcp:read" as const,
-};
-
-export async function runExportExpenses(ctx: McpCtx, args: Record<string, unknown>) {
+export async function exportExpensesFile(ctx: McpCtx, args: Record<string, unknown>, format: "csv" | "pdf") {
   if (!isS3Configured()) throw new McpInvalidError("File storage is not configured in this environment");
-  const format = args.format as "csv" | "pdf";
   const scope = (args.scope as "mine" | "approvals" | "all" | undefined) ?? "mine";
   const filters: ExpenseFilters = {
     status: args.status as ExpenseFilters["status"],

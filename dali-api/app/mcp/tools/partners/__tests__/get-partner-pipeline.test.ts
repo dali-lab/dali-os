@@ -31,9 +31,9 @@ import {
   loadCycleTimeSection,
 } from "~/partners/lib/partner-reports.server";
 import {
-  runPartnerPipelineReport,
-  PARTNER_PIPELINE_REPORT_TOOL,
-} from "../partner-pipeline-report";
+  runGetPartnerPipeline,
+  GET_PARTNER_PIPELINE_TOOL,
+} from "../get-partner-pipeline";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -55,14 +55,14 @@ beforeEach(() => {
   });
 });
 
-describe("partner_pipeline_report", () => {
+describe("get_partner_pipeline", () => {
   it("requires mcp:read scope", () => {
-    expect(PARTNER_PIPELINE_REPORT_TOOL.requiredScope).toBe("mcp:read");
+    expect(GET_PARTNER_PIPELINE_TOOL.requiredScope).toBe("mcp:read");
   });
 
   it("rejects non-staffing callers", async () => {
     vi.mocked(canViewStaffing).mockResolvedValue(false);
-    await expect(runPartnerPipelineReport("u1", {})).rejects.toMatchObject({
+    await expect(runGetPartnerPipeline("u1", {})).rejects.toMatchObject({
       name: "McpForbiddenError",
     });
   });
@@ -70,19 +70,19 @@ describe("partner_pipeline_report", () => {
   it("rejects passing both termId and allTime", async () => {
     vi.mocked(canViewStaffing).mockResolvedValue(true);
     await expect(
-      runPartnerPipelineReport("u1", { termId: "t1", allTime: true }),
+      runGetPartnerPipeline("u1", { termId: "t1", allTime: true }),
     ).rejects.toMatchObject({ name: "McpInvalidError" });
   });
 
   it("resolves 'all' when allTime is set", async () => {
     vi.mocked(canViewStaffing).mockResolvedValue(true);
-    await runPartnerPipelineReport("u1", { allTime: true });
+    await runGetPartnerPipeline("u1", { allTime: true });
     expect(resolveReportsTerm).toHaveBeenCalledWith("all");
   });
 
   it("passes termId through and returns the combined shape", async () => {
     vi.mocked(canViewStaffing).mockResolvedValue(true);
-    const result = await runPartnerPipelineReport("u1", { termId: "term-1" });
+    const result = await runGetPartnerPipeline("u1", { termId: "term-1" });
 
     expect(resolveReportsTerm).toHaveBeenCalledWith("term-1");
     expect(loadFunnelSection).toHaveBeenCalledWith("term-1");
@@ -97,7 +97,7 @@ describe("partner_pipeline_report", () => {
 
   it("defaults to the current term when nothing is passed", async () => {
     vi.mocked(canViewStaffing).mockResolvedValue(true);
-    await runPartnerPipelineReport("u1", {});
+    await runGetPartnerPipeline("u1", {});
     expect(resolveReportsTerm).toHaveBeenCalledWith(null);
   });
 });

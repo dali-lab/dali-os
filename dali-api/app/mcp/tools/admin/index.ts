@@ -26,6 +26,9 @@ import {
   MANAGE_OUTBOUND_MESSAGE_TOOL,
   runManageOutboundMessage,
 } from "./manage-outbound-message";
+import { LIST_ACTIVITIES_TOOL, runListActivities } from "./list-activities";
+import { LIST_FEATURE_FLAGS_TOOL, runListFeatureFlags } from "./list-feature-flags";
+import { LIST_JOBS_TOOL, runListJobs } from "./list-jobs";
 import { MANAGE_ACTIVITY_TOOL, runManageActivity } from "./manage-activity";
 import { LIST_AI_USAGE_TOOL, runListAiUsage } from "./list-ai-usage";
 import {
@@ -123,6 +126,9 @@ export const ADMIN_TOOLS: McpTool[] = [
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     run: (ctx, args) => runManageOutboundMessage(ctx, args as any),
   },
+  { def: LIST_ACTIVITIES_TOOL, run: (ctx, args) => runListActivities(ctx, args as Parameters<typeof runListActivities>[1]) },
+  { def: LIST_FEATURE_FLAGS_TOOL, run: (ctx) => runListFeatureFlags(ctx) },
+  { def: LIST_JOBS_TOOL, run: (ctx) => runListJobs(ctx) },
   {
     def: MANAGE_ACTIVITY_TOOL,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -1,4 +1,4 @@
-// MCP `manage_feature_flag` — list or configure feature-flag targeting.
+// MCP `manage_feature_flag` — configure feature-flag targeting.
 // Mirrors the Admin → Feature Flags panel and api.feature-flags.$key.ts route.
 // Requires the `mcp:admin` scope; caller must be isCore.
 
@@ -21,17 +21,16 @@ import type { McpCtx } from "../../registry";
 export const MANAGE_FEATURE_FLAG_TOOL = {
   name: "manage_feature_flag",
   description:
-    "List or configure feature flags (gradual rollout). A flag is on for a " +
+    "Configure feature flag targeting (gradual rollout); read flags with list_feature_flags. A flag is on for a " +
     "user when it's enabled and any target matches: everyone, a listed role, " +
-    "or a named user. Actions: list · set_config. Core leads only.",
+    "or a named user. Core leads only.",
   inputSchema: {
     type: "object" as const,
     properties: {
       action: {
         type: "string",
-        enum: ["list", "set_config"],
-        description:
-          "list — return all flags and their current targeting; set_config — patch one flag.",
+        enum: ["set_config"],
+        description: "set_config: patch one flag.",
       },
       key: {
         type: "string",
@@ -58,7 +57,7 @@ export const MANAGE_FEATURE_FLAG_TOOL = {
       variant: {
         type: "string",
         description:
-          "set_config: for multi-value flags (e.g. \"home-surface\"), which option targeted users get. Use list to see each flag's options.",
+          "set_config: for multi-value flags (e.g. \"home-surface\"), which option targeted users get. Use list_feature_flags to see each flag's options.",
       },
       note: {
         type: "string",
@@ -87,12 +86,7 @@ export async function runManageFeatureFlag(ctx: McpCtx, args: Args) {
     throw new McpForbiddenError("Only Core leads can manage feature flags.");
   }
 
-  if (args.action === "list") {
-    return { flags: await listFlagsForAdmin() };
-  }
-
   requireForAction(args.action, args as Record<string, unknown>, {
-    list: [],
     set_config: ["key"],
   });
 
