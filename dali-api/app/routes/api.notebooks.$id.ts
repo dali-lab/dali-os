@@ -12,11 +12,12 @@ import {
   mergeNotebooks,
   notebookErrorResponse,
   setNotebookTemplate,
+  trashNote,
   trashNotebook,
 } from "~/calendar/lib/notebooks.server";
 
 // GET  /api/notebooks/:id — the notebook with its tabs.
-// POST /api/notebooks/:id — { intent: "new-note" | "set-template" | "add-page" | "merge-into" | "dissolve" | "trash", ... }
+// POST /api/notebooks/:id — { intent: "new-note" | "set-template" | "add-page" | "merge-into" | "dissolve" | "trash" | "trash-note", ... }
 
 const BodySchema = z.discriminatedUnion("intent", [
   z.object({ intent: z.literal("new-note") }),
@@ -25,6 +26,7 @@ const BodySchema = z.discriminatedUnion("intent", [
   z.object({ intent: z.literal("merge-into"), targetId: z.string().min(1) }),
   z.object({ intent: z.literal("dissolve") }),
   z.object({ intent: z.literal("trash") }),
+  z.object({ intent: z.literal("trash-note"), pageId: z.string().min(1) }),
 ]);
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -89,6 +91,17 @@ export async function action({ request, params }: Route.ActionArgs) {
         await trashNotebook(notebookId, actorId);
         await logAuditEvent({ action: "notebook.trash", userId: actorId, targetId: notebookId, request });
         return withCors(request, Response.json({ ok: true }));
+      case "trash-note": {
+        const result = await trashNote(body.pageId, actorId, notebookId);
+        await logAuditEvent({
+          action: "document.delete",
+          userId: actorId,
+          targetId: body.pageId,
+          metadata: { soft: true, notebookId, notebookTrashed: result.notebookTrashed },
+          request,
+        });
+        return withCors(request, Response.json({ ok: true, ...result }));
+      }
     }
   } catch (err) {
     return withCors(request, notebookErrorResponse(err));

@@ -47,6 +47,7 @@ async function mount(element: () => ReturnType<typeof createElement>) {
       children: [
         { path: "/", Component: () => element() },
         { path: "/documents/:id", Component: () => createElement("p", null, "opened") },
+        { path: "/drive", Component: () => createElement("p", null, "drive") },
         {
           path: "/calendar",
           action: async ({ request }) => {
@@ -259,6 +260,54 @@ describe("NotebookRail manage authority", () => {
     expect(await openMenu("Options for Oct 6")).toEqual(
       expect.arrayContaining(["Detach from meeting", "Remove from notebook"]),
     );
+  });
+});
+
+describe("NotebookRail move a note to Trash", () => {
+  const confirm = () =>
+    click([...document.body.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find(
+      (b) => b.textContent?.trim() === "Move to Trash",
+    )!);
+
+  it("offers Move to Trash on each note and asks first", async () => {
+    await rail();
+    await menuItem("Options for Agenda", "Move to Trash");
+    expect(document.body.querySelector('[role="dialog"]')?.textContent).toContain("Move this note to Trash?");
+    expect(posts).toEqual([]);
+  });
+
+  it("trashes the open note and opens the next one", async () => {
+    await rail();
+    await menuItem("Options for Oct 6", "Move to Trash");
+    await confirm();
+    expect(posts).toEqual([{ url: "/api/notebooks/nb1", body: { intent: "trash-note", pageId: "nb1" } }]);
+    expect(container.textContent).toContain("opened");
+  });
+
+  it("stays on the open note when another note is trashed", async () => {
+    await rail();
+    await menuItem("Options for Agenda", "Move to Trash");
+    await confirm();
+    expect(posts).toEqual([{ url: "/api/notebooks/nb1", body: { intent: "trash-note", pageId: "p3" } }]);
+    expect(container.textContent).not.toContain("opened");
+    expect(container.textContent).not.toContain("drive");
+  });
+
+  it("goes to the Drive when the notebook went with its last note", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(new Response(JSON.stringify({ ok: true, notebookTrashed: true })));
+    await rail({ tabs: [notebook.tabs[2]] });
+    await menuItem("Options for Agenda", "Move to Trash");
+    await confirm();
+    expect(container.textContent).toContain("drive");
+  });
+
+  it("keeps the note when the dialog is cancelled", async () => {
+    await rail();
+    await menuItem("Options for Agenda", "Move to Trash");
+    await click([...document.body.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find(
+      (b) => b.textContent?.trim() === "Cancel",
+    )!);
+    expect(posts).toEqual([]);
   });
 });
 
@@ -571,7 +620,7 @@ describe("NotebookRail Move to notebook", () => {
   it("is offered to a manager, above Remove from notebook", async () => {
     await rail();
     const items = await openMenu("Options for Oct 6");
-    expect(items).toEqual(["Rename…", "Detach from meeting", "Move to notebook…", "Remove from notebook"]);
+    expect(items).toEqual(["Rename…", "Detach from meeting", "Move to notebook…", "Remove from notebook", "Move to Trash"]);
   });
 
   it("is not offered to someone who cannot manage", async () => {

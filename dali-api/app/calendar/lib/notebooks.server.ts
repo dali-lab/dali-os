@@ -486,6 +486,37 @@ export async function dissolveNotebook(notebookId: string, actorId: string): Pro
 
 /** Archive the notebook and its tabs at one instant, so Trash can restore the
  *  tabs that went with it and not ones trashed earlier. */
+export async function trashNote(
+  pageId: string,
+  actorId: string,
+  notebookId?: string,
+): Promise<{ notebookTrashed: boolean }> {
+  const page = await prisma.page.findUnique({
+    where: { id: pageId },
+    select: {
+      ...PAGE_ACCESS_SELECT,
+      meetingNoteId: true,
+      parent: { select: { id: true, kind: true } },
+    },
+  });
+  if (!page || page.archivedAt !== null) throw new NotebookError("Document not found", 404);
+  const access = await getPageAccess(actorId, page);
+  if (!access.canView) throw new NotebookError("Document not found", 404);
+  if (!access.canEdit) throw new NotebookError("You can't edit this document", 403);
+  if (page.workspaceType === "Member" && page.workspaceId !== actorId) {
+    throw new NotebookError("Only the note's owner can delete it", 403);
+  }
+  if (page.parent?.kind !== "Notebook") throw new NotebookError("This document isn't in a notebook", 400);
+  if (notebookId && page.parent.id !== notebookId) throw new NotebookError("Document not found", 404);
+  await loadEditableNotebook(page.parent.id, actorId);
+
+  await prisma.page.update({ where: { id: pageId }, data: { archivedAt: new Date() } });
+  await trashNotebookIfAbandoned(page.parent.id);
+  if (page.meetingNoteId) await syncMeetingShares(page.meetingNoteId);
+  const notebook = await prisma.page.findUnique({ where: { id: page.parent.id }, select: { archivedAt: true } });
+  return { notebookTrashed: notebook?.archivedAt != null };
+}
+
 export async function trashNotebook(notebookId: string, actorId: string): Promise<void> {
   await loadManageableNotebook(notebookId, actorId);
   const subtree = await collectSubtree(notebookId);
