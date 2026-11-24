@@ -495,6 +495,23 @@ function TabMenu({ notebook, tab, current }: { notebook: NotebookView; tab: Note
     }
   }
 
+  async function trashNote() {
+    const ok = await dialog.confirm({
+      title: "Move this note to Trash?",
+      description: `“${tab.label}” goes to Trash. You can restore it from there.`,
+      confirmLabel: "Move to Trash",
+      tone: "destructive",
+    });
+    if (!ok) return;
+    await run(notebookRequest(notebook.id, { intent: "trash-note", pageId: tab.id }), (data) => {
+      toast.success("Note moved to Trash");
+      const next = notebook.tabs.find((t) => t.id !== tab.id);
+      if (data?.notebookTrashed || !next) navigate("/drive");
+      else if (current) navigate(`/documents/${next.id}`);
+      else revalidator.revalidate();
+    });
+  }
+
   return (
     <>
       <Menu
@@ -520,6 +537,14 @@ function TabMenu({ notebook, tab, current }: { notebook: NotebookView; tab: Note
         {tab.isNote && <Menu.Item onSelect={() => void detach()}>Detach from meeting</Menu.Item>}
         <Menu.Item onSelect={() => setPicking(true)}>Move to notebook…</Menu.Item>
         <Menu.Item onSelect={() => void remove()}>Remove from notebook</Menu.Item>
+        {notebook.canEdit && (
+          <>
+            <Menu.Separator />
+            <Menu.Item destructive onSelect={() => void trashNote()}>
+              Move to Trash
+            </Menu.Item>
+          </>
+        )}
       </Menu>
       {dating && (
         <SetNoteDateModal

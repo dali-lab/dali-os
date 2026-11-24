@@ -7,7 +7,8 @@ export type NotebookIntent =
   | { intent: "add-page"; pageId: string }
   | { intent: "merge-into"; targetId: string }
   | { intent: "dissolve" }
-  | { intent: "trash" };
+  | { intent: "trash" }
+  | { intent: "trash-note"; pageId: string };
 
 export type JsonRequest = { url: string; body: unknown };
 

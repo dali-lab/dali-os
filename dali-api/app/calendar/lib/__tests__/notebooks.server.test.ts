@@ -68,6 +68,7 @@ import {
   setNoteDate,
   setNotebookTemplate,
   setSeriesNotebook,
+  trashNote,
   trashNotebook,
 } from "~/calendar/lib/notebooks.server";
 
@@ -926,6 +927,75 @@ describe("dissolveNotebook", () => {
     access({ folder1: NONE });
     await dissolveNotebook("nb1", "u1");
     expect(m.$transaction).toHaveBeenCalled();
+  });
+});
+
+describe("trashNote", () => {
+  const tab = (over: Record<string, unknown> = {}) =>
+    docRow({ parentPageId: "nb1", parent: { id: "nb1", kind: "Notebook" }, ...over });
+
+  it("moves the note to Trash and checks whether that emptied the notebook", async () => {
+    pages({ doc1: tab(), nb1: notebookRow() });
+
+    const out = await trashNote("doc1", "u1");
+
+    expect(m.page.update).toHaveBeenCalledWith({ where: { id: "doc1" }, data: { archivedAt: expect.any(Date) } });
+    expect(trashNotebookIfAbandoned).toHaveBeenCalledWith("nb1");
+    expect(out).toEqual({ notebookTrashed: false });
+    expect(syncMeetingShares).not.toHaveBeenCalled();
+  });
+
+  it("reports when trashing the last note took the notebook with it", async () => {
+    const rows: Record<string, unknown> = { doc1: tab(), nb1: notebookRow() };
+    pages(rows);
+    vi.mocked(trashNotebookIfAbandoned).mockImplementation(async () => {
+      rows.nb1 = notebookRow({ archivedAt: new Date() });
+    });
+
+    expect(await trashNote("doc1", "u1")).toEqual({ notebookTrashed: true });
+  });
+
+  it("re-syncs the meeting's shares for a meeting note", async () => {
+    pages({ doc1: tab({ meetingNoteId: "m1" }), nb1: notebookRow() });
+    await trashNote("doc1", "u1");
+    expect(syncMeetingShares).toHaveBeenCalledWith("m1");
+  });
+
+  it("lets the owner trash their personal note but not someone with an edit share", async () => {
+    pages({ doc1: tab({ workspaceType: "Member", workspaceId: "u1" }), nb1: notebookRow({ workspaceType: "Member", workspaceId: "u1" }) });
+    await trashNote("doc1", "u1");
+    expect(m.page.update).toHaveBeenCalledTimes(1);
+
+    const err = await rejection(trashNote("doc1", "u2"));
+    expect(err.status).toBe(403);
+    expect(m.page.update).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["can't see the note", { doc1: NONE }, 404],
+    ["can only view the note", { doc1: VIEW_ONLY }, 403],
+    ["can't edit the notebook", { nb1: VIEW_ONLY }, 403],
+  ])("refuses someone who %s", async (_label, byId, status) => {
+    pages({ doc1: tab(), nb1: notebookRow() });
+    access(byId);
+    expect((await rejection(trashNote("doc1", "u1"))).status).toBe(status);
+    expect(m.page.update).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["missing", {}, 404],
+    ["already in Trash", { doc1: tab({ archivedAt: new Date() }) }, 404],
+    ["not in a notebook", { doc1: tab({ parent: { id: "folder1", kind: "Folder" } }) }, 400],
+  ])("refuses a note that is %s", async (_label, rows, status) => {
+    pages(rows);
+    expect((await rejection(trashNote("doc1", "u1"))).status).toBe(status);
+    expect(m.page.update).not.toHaveBeenCalled();
+  });
+
+  it("refuses a note from a different notebook than the one named", async () => {
+    pages({ doc1: tab(), nb1: notebookRow() });
+    expect((await rejection(trashNote("doc1", "u1", "nb2"))).status).toBe(404);
+    expect(m.page.update).not.toHaveBeenCalled();
   });
 });
 
