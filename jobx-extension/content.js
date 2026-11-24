@@ -5,8 +5,8 @@
 // paid roles and one of that role's pay periods, reviews the entries, and
 // starts the fill. Data comes from DALI via the background worker (see
 // background.js for why the fetch can't happen here). Each entry is mapped
-// onto the day-rows present on THIS page, filled, and saved one day at a time.
-// It NEVER submits the timesheet itself.
+// onto the day-rows present on THIS page and saved with its own background
+// postback. It NEVER submits the timesheet itself.
 
 (function () {
   "use strict";
@@ -75,9 +75,9 @@
 
   // Entries JobX already has, read from its saved rows: a th.date like
   // "Sunday, November 8, 2026" plus td.start / td.end like "9:35 AM".
-  function savedOnPage() {
+  function savedOnPage(root = document) {
     const set = new Set();
-    document.querySelectorAll("tr.QuickDisplayRow").forEach((tr) => {
+    root.querySelectorAll("tr.QuickDisplayRow").forEach((tr) => {
       const th = tr.querySelector("th.date");
       const s = (tr.querySelector("td.start") || {}).textContent || "";
       const e = (tr.querySelector("td.end") || {}).textContent || "";
@@ -96,82 +96,50 @@
     return entrySig(step.key, step.sh, step.sm, step.sap, step.eh, step.em, step.eap);
   }
 
-  function highlight(el) {
-    el.style.outline = "2px solid #0f6e7d";
-    el.style.outlineOffset = "1px";
-    el.style.borderRadius = "4px";
-  }
-
-  // The per-day Save button: Skin_body_ctl01_AddButton_<date>120000.
   function saveButtonFor(k) {
     return document.getElementById(ID_PREFIX + "AddButton_" + k);
   }
 
-  // Fill one day's fields in the ISOLATED world (CSP-safe). Returns true if all
-  // editable fields + the Save button were found. Filling and SAVING are split
-  // (see saveDay) so ASP.NET's onchange handlers commit the values before the
-  // postback fires — clicking Save in the same tick posts back stale/empty data.
-  function fillDay(k, step) {
-    const P = ID_PREFIX;
-    const pairs = [
-      [P + "PayCodes1_" + k, "1"],
-      [P + "StartHour1_" + k, step.sh],
-      [P + "StartMinute1_" + k, step.sm],
-      [P + "StartAmPm1_" + k, step.sap],
-      [P + "EndHour1_" + k, step.eh],
-      [P + "EndMinute1_" + k, step.em],
-      [P + "EndAmPm1_" + k, step.eap],
-    ];
-    // IMPORTANT: do NOT dispatch 'change'. JobX has an onchange handler that does
-    // jQuery `$('#' + this.name)`, and the control's NAME contains '$'
-    // (Skin$body$ctl01$…), which jQuery can't parse — it throws "unrecognized
-    // expression" and ABORTS the save flow. ASP.NET serializes the form's current
-    // input VALUES on postback regardless of change events, so setting .value is
-    // enough; firing change only triggers JobX's broken handler. Set silently.
-    let allFound = true;
-    for (const [id, val] of pairs) {
-      const el = document.getElementById(id);
-      if (!el) { allFound = false; continue; }
-      el.value = String(val);
-      highlight(el);
+  const FIELDS = ["PayCodes1", "StartHour1", "StartMinute1", "StartAmPm1", "EndHour1", "EndMinute1", "EndAmPm1"];
+
+  // The request a click on the day's Save Entry sends, built from the page's
+  // untouched form so the other days' rows post their defaults, plus the
+  // hidden fields (ASP.NET tokens) from the previous save's response. Null if
+  // a field or the value it needs is missing.
+  function saveRequest(base, tokens, step) {
+    const k = step.key + ID_SUFFIX;
+    const save = saveButtonFor(k);
+    if (!save) return null;
+    const values = {
+      PayCodes1: "1", StartHour1: step.sh, StartMinute1: step.sm, StartAmPm1: step.sap,
+      EndHour1: step.eh, EndMinute1: step.em, EndAmPm1: step.eap,
+    };
+    const body = new FormData();
+    for (const [n, v] of base) body.append(n, v);
+    for (const [n, v] of tokens) body.set(n, v);
+    for (const f of FIELDS) {
+      const el = document.getElementById(ID_PREFIX + f + "_" + k);
+      const v = String(values[f]);
+      if (!el || !Array.from(el.options || []).some((o) => o.value === v)) return null;
+      body.set(el.name, v);
     }
-    // The note field is date-keyed like the time fields, but "TSENote" has no
-    // trailing digit (unlike "StartHour1").
-    const note = document.getElementById(P + "TSENote_" + k);
-    if (note) {
-      note.value = step.note || "";
-      highlight(note);
-    }
-    return allFound && !!document.getElementById(P + "AddButton_" + k);
+    const note = document.getElementById(ID_PREFIX + "TSENote_" + k);
+    if (note) body.set(note.name, step.note || "");
+    body.set(save.name, save.value);
+    return body;
   }
 
-  // Trigger the day's Save AFTER fillDay + a settle delay. The Save button is
-  // <input type=submit> whose onclick runs WebForm_DoPostBackWithOptions(target,
-  // "", true, …) — `true` = validate. A native .click() runs that onclick
-  // (validation → __doPostBack) and submits via the page's own path. CSP-safe;
-  // no form.submit() (that bypasses validation/__doPostBack → loads but no save).
-  function saveDay(k) {
-    const save = document.getElementById(ID_PREFIX + "AddButton_" + k);
-    if (!save || typeof save.click !== "function") return false;
-    save.click();
-    return true;
-  }
+  // ── Fill engine ───────────────────────────────────────────────────────────
+  // Saves are posted in the background, one after another, and the page
+  // reloads once at the end. A reload mid-fill just stops it; rerunning skips
+  // what was already saved.
 
-  // ── Resume-after-reload engine ────────────────────────────────────────────
-  //
-  // JobX saves each day via an ASP.NET postback that reloads the page, wiping any
-  // other unsaved fills. So we can't fill all days at once. Instead we persist a
-  // "plan" (the remaining days to enter) in chrome.storage.local, fill+save ONE
-  // day, let the page reload, then on the next load auto-continue with the next
-  // day — repeating until the plan is empty. The panel is the one confirmation
-  // up front; hands-off after.
+  const RESULT_KEY = "fillResult";
+  let stopRequested = false;
 
-  const PLAN_KEY = "fillPlan";
-  const MAX_STEPS = 60; // safety cap (a 14-day period, a few blocks a day); guards against loops.
-
-  // Turn a DALI payload into a plan: only entries whose day exists on this page,
-  // each a self-contained instruction the resume loop can execute after any
-  // reload. `skipped` carries the rest with the reason, for the panel to show.
+  // Turn a DALI payload into a plan: only entries whose day exists on this page
+  // and that JobX doesn't already have. `skipped` carries the rest with the
+  // reason, for the panel to show.
   function buildPlan(payload) {
     const present = daysOnPage();
     const saved = savedOnPage();
@@ -201,144 +169,55 @@
     return { steps, skipped, alreadySaved, hireLabel: payload.hireLabel || "this role", stepsDone: 0, total: steps.length };
   }
 
-  async function startPlan(payload) {
+  async function runFill(payload) {
     const plan = buildPlan(payload);
     if (!plan.steps.length) return;
     requireStorage();
-    await chrome.storage.local.set({ [PLAN_KEY]: plan });
+    const form = document.getElementById("aspnetForm");
+    if (!form) throw new Error("Couldn't find the JobX timesheet form. Refresh this page and try again.");
+    const base = new FormData(form);
+    const tokens = new Map();
+    const total = plan.steps.length;
+    let done = 0, result = null;
+    stopRequested = false;
     state.open = false;
-    await updateButtons();
-    runPlanStep(); // kick off; subsequent steps fire on each reload via init
-  }
+    state.plan = { stepsDone: 0, total };
+    render();
 
-  // Execute the next step of a stored plan, if any. Fills one day, clicks its
-  // Save (which reloads the page); init() on the next load calls this again.
-  async function runPlanStep() {
-    requireStorage();
-    const store = await chrome.storage.local.get(PLAN_KEY);
-    const plan = store[PLAN_KEY];
-    if (!plan || !plan.steps) return;
-
-    if (plan.stepsDone >= MAX_STEPS) {
-      await chrome.storage.local.remove(PLAN_KEY);
-      await updateButtons();
-      toast("Stopped: step limit reached. Check your JobX entries.", true);
-      return;
-    }
-
-    // The persisted `steps` list IS the source of truth: each block is popped and
-    // saved before the page reloads, so on resume steps[0] is always the next
-    // unsaved block. This naturally handles multiple blocks on the same day — we
-    // do NOT skip a day just because it already has one saved entry.
-    if (!plan.steps.length) {
-      await chrome.storage.local.remove(PLAN_KEY);
-      await updateButtons();
-      toast(`Done — saved ${plan.total || plan.stepsDone} entr${(plan.total || plan.stepsDone) === 1 ? "y" : "ies"} for ${plan.hireLabel}. Review them in JobX, then submit when you're ready.`, false);
-      return;
-    }
-
-    const step = plan.steps[0];
-    const k = step.key + ID_SUFFIX;
-    const present = daysOnPage();
-    if (!present.has(step.key)) {
-      // This day isn't on the current page — skip it and move on next tick.
-      plan.steps.shift();
-      await chrome.storage.local.set({ [PLAN_KEY]: plan });
-      runPlanStep();
-      return;
-    }
-
-    // Re-checked on every reload so a restarted or double-started fill never
-    // saves the same entry twice.
-    if (savedOnPage().has(stepSig(step))) {
-      plan.steps.shift();
-      plan.total = Math.max(0, (plan.total || 0) - 1);
-      await chrome.storage.local.set({ [PLAN_KEY]: plan });
-      runPlanStep();
-      return;
-    }
-
-    // Verify the editable fields + save button exist for this day before we
-    // commit to it (in the isolated world, just for the missing-check + highlight).
-    const checkIds = [
-      ID_PREFIX + "StartHour1_" + k, ID_PREFIX + "StartMinute1_" + k, ID_PREFIX + "StartAmPm1_" + k,
-      ID_PREFIX + "EndHour1_" + k, ID_PREFIX + "EndMinute1_" + k, ID_PREFIX + "EndAmPm1_" + k,
-    ];
-    const missing = checkIds.filter((id) => !document.getElementById(id));
-    const save = saveButtonFor(k);
-    if (!save || missing.length) {
-      // Don't half-fill / save a broken day. Abort so nothing wrong is committed.
-      await chrome.storage.local.remove(PLAN_KEY);
-      await updateButtons();
-      toast(`Stopped at ${step.label}: ${!save ? "no Save button" : "missing fields"}. Nothing saved for that day.`, true);
-      return;
-    }
-
-    // Pop this step BEFORE saving: the save reloads the page; on reload the
-    // shifted plan continues with the next step (incl. a 2nd block same day).
-    plan.steps.shift();
-    plan.stepsDone += 1;
-    await chrome.storage.local.set({ [PLAN_KEY]: plan });
-    await updateButtons();
-    toast(`Saving ${step.label}…`, false);
-
-    // 1) Fill the day's fields. 2) Wait so ASP.NET's onchange handlers commit the
-    // values. 3) Click Save (the page's own postback path). The page reloads on
-    // save; waitUntilReady() in init() resumes the next step after that settles.
-    setTimeout(() => {
-      const ok = fillDay(k, step);
-      if (!ok) {
-        toast(`Missing fields for ${step.label}; nothing saved. Click Save manually.`, true);
-        return;
+    for (const step of plan.steps) {
+      if (stopRequested) {
+        result = { text: `Stopped after saving ${done} of ${total}. Entries already saved stay in JobX.`, isError: false };
+        break;
       }
-      // Gap between fill and save is the fix for "loads but doesn't save": the
-      // change handlers must run before the postback serializes the form.
-      setTimeout(() => {
-        const saved = saveDay(k);
-        if (!saved) {
-          toast(`Couldn't trigger Save for ${step.label}. Click its Save Entry manually.`, true);
-          return;
-        }
-        // If Save is an in-place async postback (no full navigation), keep the
-        // loop going after the loading clears. If it was a full reload, this frame
-        // is already gone and init() drives the resume — harmless either way.
-        watchForInPlaceCompletion();
-      }, 700);
-    }, 300);
-  }
-
-  // Handle the case where Save is an in-place async postback (the page does NOT
-  // fully navigate, so init() never re-fires). Wait for the loading overlay to
-  // appear (save in flight) and then clear (save done), then run the next step.
-  // If the page actually did a full reload, this function's frame is already gone
-  // and init() drives the resume instead — so this is a no-op in that case.
-  function watchForInPlaceCompletion() {
-    let sawLoading = false;
-    let tries = 0;
-    const maxTries = 150; // 30s
-    const poll = () => {
-      tries++;
-      const loading = isLoadingOverlayVisible();
-      if (loading) sawLoading = true;
-      if (sawLoading && !loading) {
-        setTimeout(() => runPlanStep(), 400);
-        return;
+      const body = saveRequest(base, tokens, step);
+      if (!body) {
+        result = { text: `Stopped at ${step.label}: this JobX page is missing its fields. Nothing saved for that entry.`, isError: true };
+        break;
       }
-      if (tries >= maxTries) return; // give up quietly; user can re-click Fill
-      setTimeout(poll, 200);
+      let doc;
+      try {
+        const res = await fetch(form.action, { method: "POST", body, credentials: "same-origin" });
+        doc = new DOMParser().parseFromString(await res.text(), "text/html");
+      } catch (err) {
+        result = { text: `Stopped at ${step.label}: couldn't reach JobX.`, isError: true };
+        break;
+      }
+      if (!savedOnPage(doc).has(stepSig(step))) {
+        result = { text: `JobX didn't save ${step.label}. Enter it by hand to see why. Everything before it was saved.`, isError: true };
+        break;
+      }
+      doc.querySelectorAll('input[type="hidden"][name]').forEach((el) => tokens.set(el.name, el.value));
+      done++;
+      state.plan = { stepsDone: done, total };
+      render();
+    }
+
+    result = result || {
+      text: `Done: saved ${plural(done, "entry", "entries")} for ${plan.hireLabel}. Review them in JobX, then submit when you're ready.`,
+      isError: false,
     };
-    setTimeout(poll, 200);
-  }
-
-  async function stopPlan() {
-    await chrome.storage.local.remove(PLAN_KEY);
-    toast("Auto-fill stopped. Entries already saved stay in JobX.", false);
-  }
-
-  async function activePlan() {
-    const store = await chrome.storage.local.get(PLAN_KEY);
-    const plan = store[PLAN_KEY];
-    return plan && plan.steps && plan.steps.length ? plan : null;
+    await chrome.storage.local.set({ [RESULT_KEY]: result });
+    location.reload();
   }
 
   // ── DALI data (via the background worker) ─────────────────────────────────
@@ -620,7 +499,7 @@
     return h("div", { class: "progress", role: "status" },
       h("span", { class: "spinner" }),
       `Saving ${p.stepsDone} of ${p.total || p.stepsDone + p.steps.length}…`,
-      h("button", { class: "stop", type: "button", onclick: () => stopPlan().then(updateButtons) }, "Stop"),
+      h("button", { class: "stop", type: "button", onclick: () => { stopRequested = true; } }, "Stop"),
     );
   }
 
@@ -749,9 +628,9 @@
       h("div", { class: "foot" },
         h("button", {
           class: "primary", type: "button", disabled: state.loading || !n,
-          onclick: () => startPlan(d).catch(handleError),
+          onclick: () => runFill(d).catch(handleError),
         }, n ? `Fill & save ${plural(n, "entry", "entries")}` : plan.alreadySaved ? "All entries are already in JobX" : "Nothing to fill"),
-        h("div", { class: "fine" }, "Saves each day in JobX, one at a time. It never submits your timesheet."),
+        h("div", { class: "fine" }, "Saves each entry in JobX. It never submits your timesheet."),
       ),
     ];
   }
@@ -817,11 +696,6 @@
     load({ hire: state.data && state.data.hireKey, period: periodKey });
   }
 
-  async function updateButtons() {
-    state.plan = extensionOk() ? await activePlan() : null;
-    render();
-  }
-
   function toast(text, isError) {
     state.toast = { text, isError };
     render();
@@ -845,73 +719,14 @@
     return /tsx_stumanagetimesheet\.aspx/i.test(location.pathname);
   }
 
-  // After the save postback, JobX reloads the page AND then fetches the timesheet
-  // data via a separate XHR (Tsx_FetchHireInfo.aspx?i=pp...) that populates the
-  // day rows asynchronously. Acting before that XHR completes hits an empty/half-
-  // built form. So we wait for the next step's editable field to be present AND
-  // STABLE — unchanged across several consecutive checks — which means the data
-  // fetch has landed and settled. Then an extra settle delay before filling.
-  function waitUntilReady(nextKey) {
-    return new Promise((resolve) => {
-      const startHourId = ID_PREFIX + "StartHour1_" + nextKey + ID_SUFFIX;
-      let tries = 0;
-      let stableCount = 0;
-      const maxTries = 200;          // 200 × 250ms = 50s ceiling
-      const STABLE_NEEDED = 4;       // field present for 4×250ms = 1s straight
-      const tick = () => {
-        tries++;
-        const loading = isLoadingOverlayVisible();
-        const field = document.getElementById(startHourId);
-        // Ready signal: field exists, not disabled, and no loading overlay.
-        const ready = !!field && !field.disabled && !loading;
-        stableCount = ready ? stableCount + 1 : 0;
-        if (stableCount >= STABLE_NEEDED) {
-          // One more settle beat so any trailing onchange wiring finishes.
-          setTimeout(() => resolve(true), 500);
-          return;
-        }
-        if (tries >= maxTries) { resolve(false); return; }
-        setTimeout(tick, 250);
-      };
-      tick();
-    });
-  }
-
-  // Heuristic for JobX's "data loading" overlay. JobX's data fetch
-  // (Tsx_FetchHireInfo) shows a loading state; ASP.NET UpdateProgress panels also
-  // use a visible "loading"/"progress" element. Treat any visible such element as
-  // "still loading". Also treat document.readyState !== 'complete' as loading.
-  // Our own UI lives in a shadow root, so its spinner never matches here.
-  function isLoadingOverlayVisible() {
-    if (document.readyState !== "complete") return true;
-    const nodes = document.querySelectorAll(
-      '[id*="loading" i], [class*="loading" i], [id*="UpdateProgress" i], ' +
-      '[class*="updateprogress" i], [id*="progress" i], [class*="spinner" i], [class*="busy" i]'
-    );
-    for (const n of nodes) {
-      const style = window.getComputedStyle(n);
-      if (style.display !== "none" && style.visibility !== "hidden" && n.offsetParent !== null) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  // ── Init: on every page load, inject UI and resume any active plan ─────────
+  // ── Init: inject the UI and show the result of a fill that just finished ──
   async function init() {
     if (!isManagePage()) return;
     mount();
-    // Read the raw plan, not activePlan(): the last save's reload arrives with
-    // an emptied plan, and runPlanStep() is what clears it and reports "Done".
-    const plan = (await chrome.storage.local.get(PLAN_KEY))[PLAN_KEY];
-    if (!plan) return;
-    if (plan.steps && plan.steps.length) {
-      state.plan = plan;
-      render();
-      // Wait for the next step's own fields to be ready before filling.
-      await waitUntilReady(plan.steps[0].key);
-    }
-    runPlanStep();
+    const result = (await chrome.storage.local.get(RESULT_KEY))[RESULT_KEY];
+    if (!result) return;
+    await chrome.storage.local.remove(RESULT_KEY);
+    toast(result.text, result.isError);
   }
 
   init();
