@@ -7,6 +7,13 @@ export function newPublicToken(): string {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+export function isFormOpen(
+  form: { published: boolean; closesAt: Date | null },
+  now = new Date(),
+): boolean {
+  return form.published && (!form.closesAt || form.closesAt > now);
+}
+
 // Publishing mints the link token on first publish and reuses it after, so a
 // shared link stays valid; unpublishing keeps the token so a re-publish
 // restores the same link. A managed form's feature passes clearWindow: the
@@ -19,7 +26,7 @@ export async function setFormPublished(
 ): Promise<{ ok: true } | { error: string; status: number }> {
   const form = await prisma.form.findUnique({
     where: { id: formId },
-    select: { publicToken: true, _count: { select: { versions: true } } },
+    select: { publicToken: true, closesAt: true, _count: { select: { versions: true } } },
   });
   if (!form) return { error: "Not found", status: 404 };
   if (published && form._count.versions === 0)
@@ -33,6 +40,9 @@ export async function setFormPublished(
       published,
       ...(published ? { publicToken: form.publicToken ?? newPublicToken() } : {}),
       ...(opts.clearWindow ? { opensAt: null, closesAt: null } : {}),
+      ...(published && !opts.clearWindow && form.closesAt && form.closesAt <= new Date()
+        ? { closesAt: null }
+        : {}),
     },
   });
   return { ok: true };

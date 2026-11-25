@@ -35,7 +35,7 @@ describe("listedFormsFor", () => {
     await listedFormsFor("user-1");
     expect(mockPrisma.form.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { listed: true, published: true, publicToken: { not: null } },
+        where: expect.objectContaining({ listed: true, published: true, publicToken: { not: null } }),
       }),
     );
   });

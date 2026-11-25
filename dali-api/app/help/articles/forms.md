@@ -64,7 +64,7 @@ Open the three-dot menu at the top and choose **Form settings**.
 
 - **One response per member**, and **Let people edit their response** under it.
 - **Notify on submission** sends you a notification when someone responds.
-- **Opens** and **Closes** times. Select **Save schedule** after changing them.
+- **Opens** and **Closes** times. Select **Save schedule** after changing them. Once the close time passes, the link stops taking responses. Publishing the form again after that clears the close time and reopens it.
 - **Remind people 1 day before closing**. This needs a close time.
 - **Confirmation message** shown after submitting. Select **Save message** after editing it.
 - **Email people a copy of their response**. People who aren't signed in only get a short note at the first Email question, without their answers, so add an Email question if the form is public.

@@ -237,6 +237,12 @@ describe("editOwnResponse gates", () => {
     expect(await edit({})).toMatchObject({ status: 404 });
   });
 
+  it("404s once the form is past its close time", async () => {
+    db.form.findUnique.mockResolvedValue(formRow({ closesAt: new Date(Date.now() - 60_000) }));
+    expect(await edit({ name: "x" })).toMatchObject({ status: 404 });
+    expect(db.formSubmission.update).not.toHaveBeenCalled();
+  });
+
   it("requires fill access", async () => {
     access.mockResolvedValue("denied");
     expect(await edit({})).toMatchObject({ status: 403 });

@@ -45,6 +45,7 @@ import { isOnboardingProfileForm } from "~/members/lib/onboarding-form.server";
 import { syncSlackUserId } from "~/slack/lib/slack-sync.server";
 import { notifyFormSubmission, sendFormReceipt } from "./submission-notify.server";
 import { resolvePrefill } from "./prefill.server";
+import { isFormOpen } from "./form-publish.server";
 
 export type PublicForm = {
   formId: string;
@@ -129,6 +130,7 @@ export async function loadPublicForm(
       id: true,
       name: true,
       published: true,
+      closesAt: true,
       confirmationMessage: true,
       page: { select: { iconEmoji: true } },
       versions: {
@@ -143,7 +145,7 @@ export async function loadPublicForm(
       cycleBindings: { select: TERM_BINDING_SELECT },
     },
   });
-  if (!form || !form.published) return null;
+  if (!form || !isFormOpen(form)) return null;
   const version = form.versions[0];
   if (!version) return null;
 
@@ -480,9 +482,9 @@ export async function formAccessMeta(
 ): Promise<FormAccessMeta | null> {
   const form = await prisma.form.findUnique({
     where: { publicToken: token },
-    select: { id: true, name: true, published: true },
+    select: { id: true, name: true, published: true, closesAt: true },
   });
-  if (!form || !form.published) return null;
+  if (!form || !isFormOpen(form)) return null;
   return { id: form.id, name: form.name };
 }
 
@@ -509,7 +511,12 @@ export type ListedForm = { id: string; name: string; fillUrl: string };
 
 export async function listedFormsFor(userId: string, request?: Request): Promise<ListedForm[]> {
   const forms = await prisma.form.findMany({
-    where: { listed: true, published: true, publicToken: { not: null } },
+    where: {
+      listed: true,
+      published: true,
+      publicToken: { not: null },
+      OR: [{ closesAt: null }, { closesAt: { gt: new Date() } }],
+    },
     orderBy: { name: "asc" },
     select: {
       id: true,
@@ -607,6 +614,7 @@ export async function submitAnonymousForm(args: {
     select: {
       id: true,
       published: true,
+      closesAt: true,
       versions: {
         where: { id: args.versionId },
         select: { id: true, questions: true, updatedAt: true },
@@ -614,7 +622,7 @@ export async function submitAnonymousForm(args: {
       cycleBindings: { select: TERM_BINDING_SELECT },
     },
   });
-  if (!form || !form.published) {
+  if (!form || !isFormOpen(form)) {
     return { error: "Form not found for this link.", status: 404 };
   }
   // Defense-in-depth: this is the only entry point that creates unattributed
@@ -682,6 +690,7 @@ export async function submitMemberForm(args: {
       id: true,
       name: true,
       published: true,
+      closesAt: true,
       oneResponsePerMember: true,
       versions: {
         where: { id: args.versionId },
@@ -701,6 +710,7 @@ export async function submitMemberForm(args: {
       status: 404,
     };
   }
+  if (!isFormOpen(form)) return { error: "This form is closed.", status: 404 };
   const stale = staleVersionError(form.versions[0], args.versionUpdatedAt);
   if (stale) return stale;
   const version = await resolveSubmitVersion(form);

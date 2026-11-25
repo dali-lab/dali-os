@@ -8,6 +8,7 @@ import {
 } from "~/lib/file-validation";
 import type { Question } from "~/types";
 import { formFillAccess } from "./public-form";
+import { isFormOpen } from "./form-publish.server";
 
 type Failure = { error: string; status: number };
 
@@ -25,9 +26,14 @@ export async function presignFormUpload(args: {
 }): Promise<FormUploadPost | Failure> {
   const form = await prisma.form.findUnique({
     where: { publicToken: args.token },
-    select: { id: true, published: true, versions: { select: { questions: true } } },
+    select: {
+      id: true,
+      published: true,
+      closesAt: true,
+      versions: { select: { questions: true } },
+    },
   });
-  if (!form || !form.published) return { error: "Form not found for this link.", status: 404 };
+  if (!form || !isFormOpen(form)) return { error: "Form not found for this link.", status: 404 };
 
   if (!args.userId && (await formFillAccess(form, null, args.request)) !== "ok") {
     return { error: "Sign in to upload files to this form.", status: 401 };
