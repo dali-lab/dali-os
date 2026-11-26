@@ -3,16 +3,17 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("~/lib/db.server");
 
 import { prisma } from "~/lib/db.server";
-import { setFormPublished } from "~/forms/lib/form-publish.server";
+import { isFormOpen, setFormPublished } from "~/forms/lib/form-publish.server";
 
 const mockPrisma = prisma as unknown as Record<
   string,
   Record<string, ReturnType<typeof vi.fn>>
 >;
 
-function existing(opts: { publicToken: string | null; versions: number }) {
+function existing(opts: { publicToken: string | null; versions: number; closesAt?: Date | null }) {
   mockPrisma.form.findUnique.mockResolvedValue({
     publicToken: opts.publicToken,
+    closesAt: opts.closesAt ?? null,
     _count: { versions: opts.versions },
   });
 }
@@ -99,5 +100,53 @@ describe("setFormPublished", () => {
     const data = mockPrisma.form.update.mock.calls[0][0].data;
     expect(data).not.toHaveProperty("opensAt");
     expect(data).not.toHaveProperty("closesAt");
+  });
+});
+
+describe("setFormPublished with a close time", () => {
+  const PAST = new Date(Date.now() - 60_000);
+  const FUTURE = new Date(Date.now() + 60 * 60_000);
+
+  it("clears a close time that already passed, so publishing reopens the form", async () => {
+    existing({ publicToken: "tok", versions: 1, closesAt: PAST });
+
+    await setFormPublished("f1", true);
+
+    expect(mockPrisma.form.update.mock.calls[0][0].data).toEqual({
+      published: true,
+      publicToken: "tok",
+      closesAt: null,
+    });
+  });
+
+  it("keeps a close time that is still ahead", async () => {
+    existing({ publicToken: "tok", versions: 1, closesAt: FUTURE });
+
+    await setFormPublished("f1", true);
+
+    expect(mockPrisma.form.update.mock.calls[0][0].data).not.toHaveProperty("closesAt");
+  });
+
+  it("keeps a passed close time when unpublishing", async () => {
+    existing({ publicToken: "tok", versions: 1, closesAt: PAST });
+
+    await setFormPublished("f1", false);
+
+    expect(mockPrisma.form.update.mock.calls[0][0].data).toEqual({ published: false });
+  });
+});
+
+describe("isFormOpen", () => {
+  const now = new Date("2026-11-18T05:00:00Z");
+
+  it.each([
+    [true, null, true],
+    [true, new Date("2026-11-18T05:00:01Z"), true],
+    [true, new Date("2026-11-18T05:00:00Z"), false],
+    [true, new Date("2026-11-18T04:59:00Z"), false],
+    [false, null, false],
+    [false, new Date("2026-11-19T00:00:00Z"), false],
+  ])("published=%s closesAt=%s is %s", (published, closesAt, open) => {
+    expect(isFormOpen({ published, closesAt }, now)).toBe(open);
   });
 });

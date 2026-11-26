@@ -90,6 +90,12 @@ describe("presignFormUpload", () => {
     expect(await presign()).toMatchObject({ status: 404 });
   });
 
+  it("404s once the form is past its close time", async () => {
+    db.form.findUnique.mockResolvedValue(form({ closesAt: new Date(Date.now() - 60_000) }));
+    expect(await presign()).toMatchObject({ status: 404 });
+    expect(uploadPost).not.toHaveBeenCalled();
+  });
+
   it("only signs keys under one of the form's file questions", async () => {
     for (const key of [
       "applications/name/abc-a.png",

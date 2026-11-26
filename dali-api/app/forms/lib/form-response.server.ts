@@ -10,6 +10,7 @@ import {
   type PublicForm,
 } from "./public-form";
 import { formUsages, managingUsage } from "./form-usages.server";
+import { isFormOpen } from "./form-publish.server";
 import {
   RESPONSE_LOCK_SELECT,
   responseDeletePlan,
@@ -95,6 +96,7 @@ async function formForEdit(token: string) {
       id: true,
       name: true,
       published: true,
+      closesAt: true,
       oneResponsePerMember: true,
       allowResponseEdit: true,
       page: { select: { iconEmoji: true } },
@@ -111,7 +113,7 @@ export async function loadEditableResponse(args: {
   request?: Request;
 }): Promise<({ ok: true } & EditableResponse) | Failure> {
   const form = await formForEdit(args.token);
-  if (!form || !form.published) {
+  if (!form || !isFormOpen(form)) {
     return { error: "Form not found for this link.", status: 404 };
   }
   if (!args.userId) return { error: "Sign in to edit your response.", status: 401 };
