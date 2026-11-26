@@ -7,7 +7,7 @@ const PAGE_LIMITS = { defaultLimit: 50, maxLimit: 200 };
 export const LIST_PROJECTS_TOOL = {
   name: "list_projects",
   description:
-    "List projects. Default: every project in the lab (id, name, status, terms, partner orgs, staffed flag), paged. With mine: only projects the caller is staffed on (any term), each with current-term role, current sprint and open task count, unpaged. Use get_project to drill into one.",
+    "List projects. Default: every project in the lab (id, name, status, terms, partner orgs, staffed flag), paged; filter by status or by the terms a project ran in. With mine: only projects the caller is staffed on (any term), each with current-term role, current sprint and open task count, unpaged. Use get_project to drill into one.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -25,6 +25,13 @@ export const LIST_PROJECTS_TOOL = {
         items: { enum: ["Active", "Paused", "Archived"], type: "string" },
         maxItems: 3,
       },
+      terms: {
+        description: "Only projects that ran in any of these terms, by code (e.g. 22F), as returned by `list_terms`. Ignored with mine.",
+        type: "array",
+        items: { type: "string", minLength: 1 },
+        minItems: 1,
+        maxItems: 60,
+      },
       ...pageProps(PAGE_LIMITS),
     },
     additionalProperties: false,
@@ -36,6 +43,7 @@ type Input = PageArgs & {
   mine?: boolean;
   currentTermOnly?: boolean;
   status?: ("Active" | "Paused" | "Archived")[];
+  terms?: string[];
 };
 
 export async function runListProjects(callerId: string, input: Input & { mine: true }): ReturnType<typeof listMyProjects>;
@@ -51,7 +59,11 @@ export async function runListProjects(callerId: string, input: Input) {
 
 async function listAllProjects(callerId: string, input: Input) {
   const window = offsetWindow(input, PAGE_LIMITS);
-  const where = input.status?.length ? { status: { in: input.status } } : undefined;
+  const filters = {
+    ...(input.status?.length ? { status: { in: input.status } } : {}),
+    ...(input.terms?.length ? { projectTerms: { some: { term: { code: { in: input.terms } } } } } : {}),
+  };
+  const where = Object.keys(filters).length ? filters : undefined;
   const [fetched, total, assignments] = await Promise.all([
     prisma.project.findMany({
       where,

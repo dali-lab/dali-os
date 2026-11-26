@@ -21,7 +21,7 @@ You can also reach the setup page from **How to connect Claude** in Settings, un
 
 When you approve, you grant one or more levels of access.
 
-- **Read**: look at your DALI data, such as your tasks, calendar, projects, documents, notifications and profile.
+- **Read**: look at your DALI data, such as your tasks, calendar, projects, documents, notifications and profile. This includes lab history: which projects ran in a past term, who was on a team that term, and every project a member has worked on.
 - **Write**: make changes on your behalf, such as creating and updating tasks, scheduling meetings, booking rooms, submitting forms or signing documents you are asked to sign.
 - **Admin**: elevated lab actions, such as announcements and background jobs. Only Core and Admin can grant this, and tools still check your role every time.
 

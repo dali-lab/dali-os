@@ -38,6 +38,8 @@ import { validateInput, type JsonSchema } from "~/lib/mcp-input";
 const mockPrisma = prisma as unknown as {
   user: { findUnique: ReturnType<typeof vi.fn> };
   term: { findFirst: ReturnType<typeof vi.fn> };
+  projectAssignment: { findMany: ReturnType<typeof vi.fn> };
+  coreAssignment: { findMany: ReturnType<typeof vi.fn> };
 };
 
 const BASE_USER = {
@@ -161,6 +163,57 @@ describe("get_member_profile", () => {
   });
 
   // ── Error cases ───────────────────────────────────────────────────────────
+
+  // ── History ───────────────────────────────────────────────────────────────
+
+  it("returns every past project and Core role by term to any member when history is asked for", async () => {
+    mockPrisma.user.findUnique.mockResolvedValue(BASE_USER);
+    mockPrisma.projectAssignment.findMany.mockResolvedValue([
+      { level: "P1", term: { code: "22F" }, project: { id: "proj-9", name: "Anivision" }, domain: { displayName: "Design" } },
+      { level: "P2", term: { code: "26S" }, project: { id: "proj-1", name: "DALI OS" }, domain: { displayName: "Fullstack Dev" } },
+    ]);
+    mockPrisma.coreAssignment.findMany.mockResolvedValue([{ leadTitle: "Dev Lead", term: { code: "25F" } }]);
+
+    const out = await runGetMemberProfile("u-other", { memberId: "u-target", history: true });
+    expect(out.history).toEqual({
+      projects: [
+        { termCode: "22F", project: { id: "proj-9", name: "Anivision" }, domain: "Design", level: "P1" },
+        { termCode: "26S", project: { id: "proj-1", name: "DALI OS" }, domain: "Fullstack Dev", level: "P2" },
+      ],
+      core: [{ termCode: "25F", leadTitle: "Dev Lead" }],
+    });
+    expect(mockPrisma.projectAssignment.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { userId: "u-target" },
+        orderBy: [{ term: { sortKey: "asc" } }, { project: { name: "asc" } }],
+      }),
+    );
+    expect(mockPrisma.coreAssignment.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { userId: "u-target" }, orderBy: [{ term: { sortKey: "asc" } }] }),
+    );
+  });
+
+  it("leaves history out and skips the queries by default", async () => {
+    mockPrisma.user.findUnique.mockResolvedValue(BASE_USER);
+    const out = await runGetMemberProfile("u-other", { memberId: "u-target" });
+    expect(out).not.toHaveProperty("history");
+    expect(mockPrisma.projectAssignment.findMany).not.toHaveBeenCalled();
+    expect(mockPrisma.coreAssignment.findMany).not.toHaveBeenCalled();
+  });
+
+  it("does not read history for a member who doesn't exist", async () => {
+    mockPrisma.user.findUnique.mockResolvedValue(null);
+    await expect(
+      runGetMemberProfile("u-other", { memberId: "missing", history: true }),
+    ).rejects.toBeInstanceOf(MemberNotFoundError);
+    expect(mockPrisma.projectAssignment.findMany).not.toHaveBeenCalled();
+  });
+
+  it("rejects a non-boolean history flag via the schema", () => {
+    const schema = GET_MEMBER_PROFILE_TOOL.inputSchema as JsonSchema;
+    expect(validateInput({ memberId: "u1", history: "yes" }, schema).ok).toBe(false);
+    expect(validateInput({ memberId: "u1", history: true }, schema).ok).toBe(true);
+  });
 
   it("throws MemberNotFoundError when no daliMember row exists", async () => {
     mockPrisma.user.findUnique.mockResolvedValue({ ...BASE_USER, daliMember: null });
