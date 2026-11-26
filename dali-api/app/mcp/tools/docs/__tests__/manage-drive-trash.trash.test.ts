@@ -15,7 +15,7 @@ vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn().mockResolvedValue(undefin
 vi.mock("~/forms/lib/form-access.server", () => ({ canManageFormPlacement: vi.fn() }));
 vi.mock("~/forms/lib/form-page.server", () => ({ setFormArchived: vi.fn(), deleteForm: vi.fn(), moveForm: vi.fn() }));
 vi.mock("~/drive/lib/page-copy.server", () => ({ duplicatePage: vi.fn() }));
-vi.mock("~/calendar/lib/notebooks.server", () => ({ trashNotebook: vi.fn() }));
+vi.mock("~/calendar/lib/notebooks.server", () => ({ trashNote: vi.fn(), trashNotebook: vi.fn() }));
 vi.mock("~/members/lib/personal-notes-actions.server", () => ({ archiveNote: vi.fn() }));
 vi.mock("~/members/lib/personal-notes.server", () => ({
   requireNoteOwner: vi.fn(),
@@ -29,7 +29,7 @@ import { isCore, isLabMemberOrAlum, isProjectMember } from "~/lib/roles";
 import { canEditFile } from "~/lib/fileAccess.server";
 import { canManageFormPlacement } from "~/forms/lib/form-access.server";
 import { setFormArchived } from "~/forms/lib/form-page.server";
-import { trashNotebook } from "~/calendar/lib/notebooks.server";
+import { trashNote, trashNotebook } from "~/calendar/lib/notebooks.server";
 import { archiveNote } from "~/members/lib/personal-notes-actions.server";
 import { NoteForbiddenError, requireNoteOwner } from "~/members/lib/personal-notes.server";
 import { runManageDriveTrash } from "../manage-drive-trash";
@@ -140,6 +140,30 @@ describe("manage_drive_trash trash: pages", () => {
     m.page.findUnique.mockResolvedValue(livePage({ kind: "Notebook" }));
     vi.mocked(trashNotebook).mockRejectedValue(Object.assign(new Error("You can't manage this notebook"), { status: 403 }));
     await expect(trash("doc", "p1")).rejects.toMatchObject({ status: 403 });
+  });
+
+  it.each(["Lab", "Project", "Member"])("trashes a %s note inside a notebook through the notebook rules", async (workspaceType) => {
+    m.page.findUnique.mockResolvedValue(
+      livePage({ workspaceType, workspaceId: workspaceType === "Lab" ? null : "w1", parent: { kind: "Notebook" } }),
+    );
+    vi.mocked(trashNote).mockResolvedValue({ notebookTrashed: true });
+    expect(await trash("doc", "p1")).toEqual({ ok: true, notebookTrashed: true });
+    expect(trashNote).toHaveBeenCalledWith("p1", "u1");
+    expect(requireNoteOwner).not.toHaveBeenCalled();
+    expect(m.page.update).not.toHaveBeenCalled();
+  });
+
+  it("passes on the notebook rules' refusal for a note", async () => {
+    m.page.findUnique.mockResolvedValue(livePage({ parent: { kind: "Notebook" } }));
+    vi.mocked(trashNote).mockRejectedValue(Object.assign(new Error("You can't edit this notebook"), { status: 403 }));
+    await expect(trash("doc", "p1")).rejects.toMatchObject({ status: 403 });
+  });
+
+  it("leaves a document in an ordinary folder to its workspace's rules", async () => {
+    m.page.findUnique.mockResolvedValue(livePage({ workspaceType: "Member", workspaceId: "u1", parent: { kind: "Folder" } }));
+    await trash("doc", "p1");
+    expect(trashNote).not.toHaveBeenCalled();
+    expect(requireNoteOwner).toHaveBeenCalledWith("p1", "u1");
   });
 
   it("archives a personal note for its owner", async () => {

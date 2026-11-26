@@ -4,7 +4,7 @@ import { getPageAccess } from "~/lib/pageAccess.server";
 import { canEditFile } from "~/lib/fileAccess.server";
 import { logAuditEvent } from "~/lib/audit";
 import { canManageFormPlacement } from "~/forms/lib/form-access.server";
-import { trashNotebook } from "~/calendar/lib/notebooks.server";
+import { trashNote, trashNotebook } from "~/calendar/lib/notebooks.server";
 import { archiveNote } from "~/members/lib/personal-notes-actions.server";
 import { NoteForbiddenError, NoteNotFoundError, requireNoteOwner } from "~/members/lib/personal-notes.server";
 import { requireForAction } from "../../errors";
@@ -16,7 +16,7 @@ import { archiveDescendants, restorePageSubtree } from "~/drive/lib/page-trash.s
 export const MANAGE_DRIVE_TRASH_TOOL_DEF = {
   name: "manage_drive_trash",
   description:
-    "Move a drive item to the trash, or restore it from the trash. Works on pages in any workspace (lab, project, notebook, personal note), project and drive files, and forms. Trashing a folder trashes everything inside it, and restoring it brings back what was trashed with it. Pages need edit access (lab pages: the creator or Core; personal notes: the owner; notebooks: someone who can manage them); files need edit-file access; forms need edit access on the form. See list_drive_trash for what is in the trash and purge_drive_item to delete for good.",
+    "Move a drive item to the trash, or restore it from the trash. Works on pages in any workspace (lab, project, notebook, personal note), project and drive files, and forms. Trashing a folder trashes everything inside it, and restoring it brings back what was trashed with it. Pages need edit access (lab pages: the creator or Core; personal notes: the owner; notebooks: someone who can manage them; a note inside a notebook: edit access on the note and the notebook, and a personal note's owner — trashing a notebook's last note trashes the notebook too, unless a meeting series files into it); files need edit-file access; forms need edit access on the form. See list_drive_trash for what is in the trash and purge_drive_item to delete for good.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -90,7 +90,7 @@ async function trashFile(callerId: string, id: string) {
 async function trashPage(callerId: string, id: string) {
   const page = await prisma.page.findUnique({
     where: { id },
-    select: { id: true, kind: true, workspaceType: true, workspaceId: true },
+    select: { id: true, kind: true, workspaceType: true, workspaceId: true, parent: { select: { kind: true } } },
   });
   if (!page) throw new ManageDriveTrashError("Document not found", 404);
   if (page.kind === "Form") throw new ManageDriveTrashError("This is a form. Pass type form.", 400);
@@ -98,6 +98,9 @@ async function trashPage(callerId: string, id: string) {
   if (page.kind === "Notebook") {
     await trashNotebook(id, callerId);
     return { ok: true as const };
+  }
+  if (page.parent?.kind === "Notebook") {
+    return { ok: true as const, ...(await trashNote(id, callerId)) };
   }
   switch (page.workspaceType) {
     case "Lab":

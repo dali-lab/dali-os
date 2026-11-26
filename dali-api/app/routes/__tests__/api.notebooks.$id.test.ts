@@ -27,6 +27,7 @@ vi.mock("~/calendar/lib/notebooks.server", () => {
     getNotebook: vi.fn(),
     mergeNotebooks: vi.fn(),
     setNotebookTemplate: vi.fn(),
+    trashNote: vi.fn(),
     trashNotebook: vi.fn(),
   };
 });
@@ -116,6 +117,37 @@ describe("POST /api/notebooks/:id", () => {
   it("trash", async () => {
     expect((await post({ intent: "trash" })).status).toBe(200);
     expect(lib.trashNotebook).toHaveBeenCalledWith("nb1", "u1");
+  });
+
+  it("trash-note trashes that note of this notebook as the caller and logs it as a soft delete", async () => {
+    vi.mocked(lib.trashNote).mockResolvedValue({ notebookTrashed: false });
+    const res = await post({ intent: "trash-note", pageId: "doc1" });
+    expect(await res.json()).toEqual({ ok: true, notebookTrashed: false });
+    expect(lib.trashNote).toHaveBeenCalledWith("doc1", "u1", "nb1");
+    expect(vi.mocked(logAuditEvent).mock.calls[0][0]).toMatchObject({
+      action: "document.delete",
+      userId: "u1",
+      targetId: "doc1",
+      metadata: { soft: true, notebookId: "nb1", notebookTrashed: false },
+    });
+  });
+
+  it("trash-note reports when the notebook went with its last note", async () => {
+    vi.mocked(lib.trashNote).mockResolvedValue({ notebookTrashed: true });
+    expect(await (await post({ intent: "trash-note", pageId: "doc1" })).json()).toEqual({ ok: true, notebookTrashed: true });
+  });
+
+  it("trash-note returns the refusal and logs nothing", async () => {
+    vi.mocked(lib.trashNote).mockRejectedValue(new NotebookError("Only the note's owner can delete it", 403));
+    const res = await post({ intent: "trash-note", pageId: "doc1" });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "Only the note's owner can delete it" });
+    expect(logAuditEvent).not.toHaveBeenCalled();
+  });
+
+  it("trash-note needs a pageId", async () => {
+    expect((await post({ intent: "trash-note" })).status).toBe(400);
+    expect(lib.trashNote).not.toHaveBeenCalled();
   });
 
   it("logs merge, dissolve and trash against the notebook being changed", async () => {
