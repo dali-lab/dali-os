@@ -51,6 +51,25 @@ describe("get_project", () => {
     expect(Object.keys(out).sort()).toEqual(["overview", "settings", "showcase"]);
   });
 
+  it("passes terms to the overview", async () => {
+    await runGetProject("u1", { projectId: "p1", terms: ["22F"] });
+    expect(runGetProjectOverview).toHaveBeenCalledWith({ projectId: "p1", terms: ["22F"] });
+  });
+
+  it("rejects terms without the overview part", async () => {
+    await expect(
+      runGetProject("u1", { projectId: "p1", include: ["settings"], terms: ["22F"] }),
+    ).rejects.toMatchObject({ status: 400 });
+    expect(runGetProjectSettings).not.toHaveBeenCalled();
+  });
+
+  it("caps terms at 20 and rejects an empty list via the schema", () => {
+    const schema = GET_PROJECT_TOOL.inputSchema as JsonSchema;
+    expect(validateInput({ projectId: "p1", terms: [] }, schema).ok).toBe(false);
+    expect(validateInput({ projectId: "p1", terms: Array.from({ length: 21 }, (_, i) => `t${i}`) }, schema).ok).toBe(false);
+    expect(validateInput({ projectId: "p1", terms: ["22F", "23W"] }, schema).ok).toBe(true);
+  });
+
   it("lets a part's not-found error through", async () => {
     vi.mocked(runGetProjectSettings).mockRejectedValue(Object.assign(new Error("Project p1 not found"), { status: 404 }));
     await expect(runGetProject("u1", { projectId: "p1", include: ["settings"] })).rejects.toMatchObject({ status: 404 });

@@ -86,6 +86,61 @@ describe("project overview", () => {
     expect(typeof out.activeSprint?.endsAt).toBe("string");
   });
 
+  describe("rostersByTerm", () => {
+    const bare = {
+      id: "p1", name: "Alpha", description: null, status: "Archived", imageUrl: null,
+      repoUrls: [], overviewPageId: null, prdPageId: null, projectTerms: [], partners: [],
+    };
+    const row = (code: string, id: string, level = "P1") => ({
+      level,
+      term: { code },
+      user: { id, firstName: id.toUpperCase(), lastName: "Lovelace" },
+      domain: { id: "d1", displayName: "Design" },
+    });
+
+    beforeEach(() => {
+      vi.mocked(currentTerm).mockResolvedValue({ id: "t-now", code: "27W" } as never);
+      mockPrisma.project.findUnique.mockResolvedValue(bare);
+      mockPrisma.epic.findFirst.mockResolvedValue(null);
+      mockPrisma.task.groupBy.mockResolvedValue([]);
+    });
+
+    it("groups each requested term's roster under its code, empty when no one was staffed", async () => {
+      mockPrisma.projectAssignment.findMany
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([row("22F", "ada", "P3"), row("23W", "bo"), row("22F", "cy")]);
+
+      const out = await runGetProjectOverview({ projectId: "p1", terms: ["22F", "23W", "24S"] });
+      expect(out.currentTermRoster).toEqual([]);
+      expect(out.rostersByTerm).toEqual({
+        "22F": [
+          { userId: "ada", name: "ADA Lovelace", domain: "Design", level: "P3" },
+          { userId: "cy", name: "CY Lovelace", domain: "Design", level: "P1" },
+        ],
+        "23W": [{ userId: "bo", name: "BO Lovelace", domain: "Design", level: "P1" }],
+        "24S": [],
+      });
+      expect(mockPrisma.projectAssignment.findMany).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          where: { projectId: "p1", term: { code: { in: ["22F", "23W", "24S"] } } },
+        }),
+      );
+    });
+
+    it("dedupes repeated term codes", async () => {
+      mockPrisma.projectAssignment.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+      const out = await runGetProjectOverview({ projectId: "p1", terms: ["22F", "22F"] });
+      expect(Object.keys(out.rostersByTerm!)).toEqual(["22F"]);
+    });
+
+    it("leaves rostersByTerm out and skips the query when no terms are asked for", async () => {
+      mockPrisma.projectAssignment.findMany.mockResolvedValue([]);
+      const out = await runGetProjectOverview({ projectId: "p1" });
+      expect(out).not.toHaveProperty("rostersByTerm");
+      expect(mockPrisma.projectAssignment.findMany).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it("throws when the project is missing", async () => {
     vi.mocked(currentTerm).mockResolvedValue({ id: "t1", code: "26S" } as never);
     mockPrisma.project.findUnique.mockResolvedValue(null);

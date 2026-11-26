@@ -9,6 +9,7 @@ vi.mock("~/lib/roles", async (orig) => {
 import { prisma } from "~/lib/db.server";
 import { currentTerm } from "~/lib/roles";
 import { runListProjects, LIST_PROJECTS_TOOL } from "~/mcp/tools/list-projects";
+import { validateInput, type JsonSchema } from "~/lib/mcp-input";
 
 const mockPrisma = prisma as unknown as {
   project: { findMany: ReturnType<typeof vi.fn>; count: ReturnType<typeof vi.fn> };
@@ -76,6 +77,36 @@ describe("list_projects", () => {
     expect(mockPrisma.project.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { status: { in: ["Active"] } } }),
     );
+  });
+
+  it("filters to projects that ran in any of the given terms", async () => {
+    mockPrisma.project.findMany.mockResolvedValue([]);
+    mockPrisma.projectAssignment.findMany.mockResolvedValue([]);
+    await runListProjects("u1", { terms: ["22F", "23W"] });
+    const where = { projectTerms: { some: { term: { code: { in: ["22F", "23W"] } } } } };
+    expect(mockPrisma.project.findMany).toHaveBeenCalledWith(expect.objectContaining({ where }));
+    expect(mockPrisma.project.count).toHaveBeenCalledWith({ where });
+  });
+
+  it("combines status and term filters", async () => {
+    mockPrisma.project.findMany.mockResolvedValue([]);
+    mockPrisma.projectAssignment.findMany.mockResolvedValue([]);
+    await runListProjects("u1", { status: ["Archived"], terms: ["22F"] });
+    expect(mockPrisma.project.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          status: { in: ["Archived"] },
+          projectTerms: { some: { term: { code: { in: ["22F"] } } } },
+        },
+      }),
+    );
+  });
+
+  it("rejects an empty or oversized term list via the schema", () => {
+    const schema = LIST_PROJECTS_TOOL.inputSchema as JsonSchema;
+    expect(validateInput({ terms: [] }, schema).ok).toBe(false);
+    expect(validateInput({ terms: Array.from({ length: 61 }, (_, i) => `t${i}`) }, schema).ok).toBe(false);
+    expect(validateInput({ terms: ["22F"] }, schema).ok).toBe(true);
   });
 
   it("no filter → no where clause (all statuses, matching the hub's archive view)", async () => {

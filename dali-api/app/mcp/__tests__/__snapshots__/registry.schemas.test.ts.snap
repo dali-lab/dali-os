@@ -81,7 +81,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
 }
 {
   "name": "get_member_profile",
-  "description": "Get a single member's profile. Publicly visible fields (name, email, domains, roles, projects, achievements) are returned for any member. Private fields (personalEmail, netId, phone, birthday, dietary, timezone, bioDocId) are returned only when looking up your own profile. Education profile (attended courses, taught, CE credits) is returned for self or Core/Admin callers.",
+  "description": "Get a single member's profile. Publicly visible fields (name, email, domains, roles, projects, achievements) are returned for any member. Private fields (personalEmail, netId, phone, birthday, dietary, timezone, bioDocId) are returned only when looking up your own profile. Education profile (attended courses, taught, CE credits) is returned for self or Core/Admin callers. projectAssignments covers the current term; pass history for every project and Core role the member has held, by term.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -89,6 +89,10 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
         "type": "string",
         "minLength": 1,
         "description": "The User.id of the member to look up."
+      },
+      "history": {
+        "type": "boolean",
+        "description": "Also return every past project assignment and Core role, oldest term first. Default false."
       }
     },
     "required": [
@@ -412,7 +416,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
 }
 {
   "name": "list_projects",
-  "description": "List projects. Default: every project in the lab (id, name, status, terms, partner orgs, staffed flag), paged. With mine: only projects the caller is staffed on (any term), each with current-term role, current sprint and open task count, unpaged. Use get_project to drill into one.",
+  "description": "List projects. Default: every project in the lab (id, name, status, terms, partner orgs, staffed flag), paged; filter by status or by the terms a project ran in. With mine: only projects the caller is staffed on (any term), each with current-term role, current sprint and open task count, unpaged. Use get_project to drill into one.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -437,6 +441,16 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
         },
         "maxItems": 3
       },
+      "terms": {
+        "description": "Only projects that ran in any of these terms, by code (e.g. 22F), as returned by \`list_terms\`. Ignored with mine.",
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1
+        },
+        "minItems": 1,
+        "maxItems": 60
+      },
       "limit": {
         "type": "integer",
         "minimum": 1,
@@ -454,7 +468,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
 }
 {
   "name": "get_project",
-  "description": "Read one project, as the project page shows it. include picks the parts: overview (default) is status, current-term roster, active sprint, current epic and task counts; settings is terms, domains, per-term scopes, repos, Figma files and Slack/GitHub/Google identities (no payroll chart strings); showcase is the public dali.website card. Each part comes back under its own key.",
+  "description": "Read one project, as the project page shows it. include picks the parts: overview (default) is status, current-term roster (plus past rosters with terms), active sprint, current epic and task counts; settings is terms, domains, per-term scopes, repos, Figma files and Slack/GitHub/Google identities (no payroll chart strings); showcase is the public dali.website card. Each part comes back under its own key.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -475,6 +489,16 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
         },
         "minItems": 1,
         "description": "Parts to return. Default: overview."
+      },
+      "terms": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1
+        },
+        "minItems": 1,
+        "maxItems": 20,
+        "description": "Term codes (e.g. 22F) whose rosters the overview adds under rostersByTerm, one key per code; a term with no one staffed is an empty list. Pass the project's termCodes for its full staffing history."
       }
     },
     "required": [

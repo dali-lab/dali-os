@@ -5,7 +5,7 @@ import { fullName } from "~/lib/display";
 import { currentSprintBand } from "~/projects/lib/task-board";
 import { DAY } from "~/projects/lib/timeline-days";
 
-type Input = { projectId: string };
+type Input = { projectId: string; terms?: string[] };
 
 export class ProjectNotFoundError extends Error {
   status = 404;
@@ -13,6 +13,16 @@ export class ProjectNotFoundError extends Error {
     super(`Project ${id} not found`);
     this.name = "ProjectNotFoundError";
   }
+}
+
+type RosterRow = {
+  level: string;
+  user: { id: string; firstName: string | null; lastName: string | null };
+  domain: { displayName: string };
+};
+
+function rosterEntry(a: RosterRow) {
+  return { userId: a.user.id, name: fullName(a.user), domain: a.domain.displayName, level: a.level };
 }
 
 export async function runGetProjectOverview(input: Input) {
@@ -45,7 +55,8 @@ export async function runGetProjectOverview(input: Input) {
   });
   if (!project) throw new ProjectNotFoundError(input.projectId);
 
-  const [currentAssignments, openEpic, taskCounts] = await Promise.all([
+  const requestedTerms = [...new Set(input.terms ?? [])];
+  const [currentAssignments, openEpic, taskCounts, pastAssignments] = await Promise.all([
     termId
       ? prisma.projectAssignment.findMany({
           where: { projectId: input.projectId, termId },
@@ -69,6 +80,18 @@ export async function runGetProjectOverview(input: Input) {
       where: { projectId: input.projectId },
       _count: { _all: true },
     }),
+    requestedTerms.length
+      ? prisma.projectAssignment.findMany({
+          where: { projectId: input.projectId, term: { code: { in: requestedTerms } } },
+          orderBy: [{ level: "asc" }, { user: { lastName: "asc" } }],
+          select: {
+            level: true,
+            term: { select: { code: true } },
+            user: { select: { id: true, firstName: true, lastName: true } },
+            domain: { select: { id: true, displayName: true } },
+          },
+        })
+      : Promise.resolve([]),
   ]);
 
   const taskCountByStatus: Record<string, number> = {
@@ -116,12 +139,17 @@ export async function runGetProjectOverview(input: Input) {
       id: p.partnerOrg.id,
       name: p.partnerOrg.name,
     })),
-    currentTermRoster: currentAssignments.map((a) => ({
-      userId: a.user.id,
-      name: fullName(a.user),
-      domain: a.domain.displayName,
-      level: a.level,
-    })),
+    currentTermRoster: currentAssignments.map(rosterEntry),
+    ...(requestedTerms.length
+      ? {
+          rostersByTerm: Object.fromEntries(
+            requestedTerms.map((code) => [
+              code,
+              pastAssignments.filter((a) => a.term.code === code).map(rosterEntry),
+            ]),
+          ),
+        }
+      : {}),
     activeSprint,
     currentEpic: openEpic
       ? {

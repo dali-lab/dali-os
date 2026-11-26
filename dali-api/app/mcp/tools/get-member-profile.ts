@@ -1,19 +1,3 @@
-// MCP `get_member_profile` — single-member drill-down. Returns identity,
-// domain eligibility, current-term roles, and profile fields. Gating:
-//
-//   Any authenticated member: all fields the web /members/:id shows publicly —
-//     name, daliEmail, dartmouthEmail, pronouns, classYear, majors, minors, hometown,
-//     linkedinUrl, githubUsername, personalSite, handle, photoUrl (resolved),
-//     tier, domains, currentTermRoles, projectAssignments (current term),
-//     achievements.
-//
-//   Self only: personalEmail, netId, phoneNumber, birthday, dietaryRestrictions,
-//     timezone, bioDocId.
-//
-//   Self or Core/Admin: education profile (attended, taught, CE credits).
-//
-// Requires the `mcp:read` scope.
-
 import { prisma } from "~/lib/db.server";
 import { currentTerm, isAdminViaEnv, isCore } from "~/lib/roles";
 import { resolvePhotoUrl } from "~/lib/photo";
@@ -26,7 +10,8 @@ export const GET_MEMBER_PROFILE_TOOL = {
     "Get a single member's profile. Publicly visible fields (name, email, domains, roles, projects, achievements) are " +
     "returned for any member. Private fields (personalEmail, netId, phone, birthday, dietary, timezone, bioDocId) are " +
     "returned only when looking up your own profile. Education profile (attended courses, taught, CE credits) is returned " +
-    "for self or Core/Admin callers.",
+    "for self or Core/Admin callers. projectAssignments covers the current term; pass history for every project and Core " +
+    "role the member has held, by term.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -35,6 +20,10 @@ export const GET_MEMBER_PROFILE_TOOL = {
         minLength: 1,
         description: "The User.id of the member to look up.",
       },
+      history: {
+        type: "boolean",
+        description: "Also return every past project assignment and Core role, oldest term first. Default false.",
+      },
     },
     required: ["memberId"],
     additionalProperties: false,
@@ -42,7 +31,7 @@ export const GET_MEMBER_PROFILE_TOOL = {
   requiredScope: "mcp:read" as const,
 };
 
-type Input = { memberId: string };
+type Input = { memberId: string; history?: boolean };
 
 export class MemberNotFoundError extends Error {
   status = 404;
@@ -50,6 +39,36 @@ export class MemberNotFoundError extends Error {
     super(`No DALI member found with id ${memberId}`);
     this.name = "MemberNotFoundError";
   }
+}
+
+async function loadHistory(userId: string) {
+  const byTerm = { term: { sortKey: "asc" as const } };
+  const [projects, core] = await Promise.all([
+    prisma.projectAssignment.findMany({
+      where: { userId },
+      orderBy: [byTerm, { project: { name: "asc" } }],
+      select: {
+        level: true,
+        term: { select: { code: true } },
+        project: { select: { id: true, name: true } },
+        domain: { select: { displayName: true } },
+      },
+    }),
+    prisma.coreAssignment.findMany({
+      where: { userId },
+      orderBy: [byTerm],
+      select: { leadTitle: true, term: { select: { code: true } } },
+    }),
+  ]);
+  return {
+    projects: projects.map((a) => ({
+      termCode: a.term.code,
+      project: a.project,
+      domain: a.domain.displayName,
+      level: a.level,
+    })),
+    core: core.map((c) => ({ termCode: c.term.code, leadTitle: c.leadTitle })),
+  };
 }
 
 export async function runGetMemberProfile(callerId: string, input: Input) {
@@ -107,7 +126,6 @@ export async function runGetMemberProfile(callerId: string, input: Input) {
           domain: { select: { id: true, displayName: true } },
         },
       },
-      // Current-term project assignments — shown publicly on the web profile.
       projectAssignments: termId
         ? {
             where: { termId },
@@ -170,10 +188,11 @@ export async function runGetMemberProfile(callerId: string, input: Input) {
 
   // Education profile: self or Core/Admin caller.
   const callerIsCore = isSelf || (await isCore(callerId));
-  const [photoUrlResolved, achievements, education] = await Promise.all([
+  const [photoUrlResolved, achievements, education, history] = await Promise.all([
     resolvePhotoUrl(user.photoUrl),
     achievementsForMember(input.memberId),
     callerIsCore ? getEducationProfile(input.memberId) : Promise.resolve(null),
+    input.history ? loadHistory(input.memberId) : Promise.resolve(null),
   ]);
 
   return {
@@ -212,6 +231,7 @@ export async function runGetMemberProfile(callerId: string, input: Input) {
       earned: a.earned,
     })),
     joinedAt: user.daliMember.createdAt.toISOString(),
+    ...(history ? { history } : {}),
     // ── Self-only private fields ───────────────────────────────────────────
     netId: isSelf ? user.netId : null,
     personalEmail: isSelf ? user.personalEmail : null,
