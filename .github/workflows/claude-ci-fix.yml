@@ -33,8 +33,12 @@ permissions:
 
 jobs:
   fix:
+    # Same-repo PRs only. The steps before claude-code-action (which does its
+    # own write-access check) mint the promote App token, so a fork PR whose
+    # branch happens to be named `claude/issue-N` must never reach them.
     if: >
       github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
       startsWith(github.event.workflow_run.head_branch, 'claude/issue-')
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 30

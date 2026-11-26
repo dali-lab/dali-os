@@ -232,7 +232,8 @@ jobs:
       github.event.action == 'submitted' &&
       github.event.review.state == 'changes_requested' &&
       startsWith(github.event.pull_request.head.ref, 'claude/issue-') &&
-      github.event.sender.type != 'Bot'
+      github.event.sender.type != 'Bot' &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.review.author_association)
     runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - name: Mint App token (so pushes trigger downstream workflows)
